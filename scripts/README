@@ -1,0 +1,2 @@
+Helper scripts. Each one can be run from any directory: it names
+its project folder at the top and accepts another as an argument.

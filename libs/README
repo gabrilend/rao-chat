@@ -1,0 +1,2 @@
+Libraries the project brings in. An external library may be given
+a very high index, so a reader can skip it.

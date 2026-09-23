@@ -1,0 +1,2 @@
+Output: whatever the program hands back. The last thing the
+program does is write here, and what it writes last is goodbye.
