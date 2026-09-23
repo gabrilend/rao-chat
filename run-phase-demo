@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+#
+# run-phase-demo - the front door to this project's phase demonstrations.
+#
+# Each phase of development ends with a demo: a runnable program showing what
+# that phase built, recombining tools from earlier phases. The demos are part of
+# what the project delivers and are kept working. This script finds every demo
+# that exists, offers them by number, and runs the one picked.
+#
+# A demo is issues/completed/demos/phase-N-demo, executable; any other file in
+# that folder supports one of them. Phases are found by listing, not by counting
+# to nine, so phase 10 and beyond are offered like any other.
+#
+# Usage:
+#   ./run-phase-demo              ask which phase
+#   ./run-phase-demo 3            run phase 3's demo
+#   ./run-phase-demo <dir> [N]    the same, for the project at <dir>
+
+DIR="/home/ritz/programs/rao-chat"
+if [ -d "${1:-}" ]; then
+    DIR="$1"
+    shift
+fi
+
+DEMO_DIR="${DIR}/issues/completed/demos"
+if [ ! -d "${DEMO_DIR}" ]; then
+    echo "No demos folder at ${DEMO_DIR}; is ${DIR} the project root?" >&2
+    exit 1
+fi
+
+# Collect the phase numbers of executable demos, in numeric order.
+PHASES=()
+for DEMO in "${DEMO_DIR}"/phase-*-demo; do
+    [ -x "${DEMO}" ] || continue
+    NUMBER="${DEMO##*/phase-}"
+    NUMBER="${NUMBER%-demo}"
+    case "${NUMBER}" in
+        # A phase number is digits only; anything else is a support file.
+        ''|*[!0-9]*) continue ;;
+        *) PHASES+=("${NUMBER}") ;;
+    esac
+done
+mapfile -t PHASES < <(printf '%s\n' "${PHASES[@]}" | sort -n | sed '/^$/d')
+
+if [ "${#PHASES[@]}" -eq 0 ]; then
+    echo "No phase has a demo yet. Each phase ends with one, at:"
+    echo "    ${DEMO_DIR}/phase-N-demo"
+    exit 0
+fi
+
+CHOICE="${1:-}"
+if [ -z "${CHOICE}" ]; then
+    echo "Phases with a demo: ${PHASES[*]}"
+    printf 'Which phase (1-%s)? ' "${PHASES[${#PHASES[@]}-1]}"
+    read -r CHOICE
+fi
+
+for NUMBER in "${PHASES[@]}"; do
+    if [ "${CHOICE}" = "${NUMBER}" ]; then
+        exec "${DEMO_DIR}/phase-${NUMBER}-demo" "${DIR}"
+    fi
+done
+
+echo "Phase ${CHOICE} has no demo. Phases with one: ${PHASES[*]}" >&2
+exit 1
