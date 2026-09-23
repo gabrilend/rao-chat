@@ -141,10 +141,17 @@ room keeps that list, and every message written in the room goes to it.
   person has not, the third person's messages still reach them.  Owner:
   "Nobody can control if someone else is listening to someone else, but we
   can control if they're listening to us."
-- **Being removed starts a new conversation for the removed person.**  They
-  keep everything they received.  Their copy of the room carries on as
-  theirs, with whoever is still writing to them.  (How exactly is open
-  question 1.)
+- **Being removed splits the room.**  Rooms and conversations are a way of
+  sorting on each person's own screen, nothing more.  When you remove
+  someone, their server is told, and their copy of the room becomes a new
+  room of its own, with everything they had received kept in it.  From
+  then on you talk into your room and they talk into theirs; their
+  messages no longer reach you there.  Everyone else stays on both lists
+  unless they choose otherwise, so they now hear two rooms where there
+  was one.  Owner: "yes it's a different room, no their messages don't
+  reach you, because they're talking into their room with 5 people (used
+  to be 6) and you're talking into your room of 5 people (used to be 6) -
+  everyone else is listening eagerly."
 - **Replying.**  When a message arrives in a room you have never seen, your
   server makes that room for you.  Whom your replies go to is open
   question 2.
@@ -296,9 +303,11 @@ governs only retries after a failure.
 
 The locked-screen interval varies so that many phones do not all check in
 together, while averaging exactly 30 seconds: each wait is 30 seconds plus
-an offset drawn from a deck of whole seconds between −10 and +10.  (Whether
-the deck is drawn with or without putting cards back is open question 4;
-only "without" guarantees the exact average.)
+an offset dealt from a shuffled deck of whole-second cards, **without
+putting cards back**; when the deck runs out it is reshuffled.  Because the
+cards add up to zero, one pass through the deck takes exactly as long as
+the same number of plain 30-second waits.  (Which cards are in the deck is
+open question 4.)
 
 On Android, waking every 30 seconds with the screen off needs a
 **foreground service**, which shows a permanent notification; without one,
@@ -440,12 +449,7 @@ each other.
 
 To be asked and answered one at a time before the roadmap is written.
 
-1. **What "a new conversation for them" means.**  When you remove someone
-   from a room, does their copy of the room simply stop receiving from you
-   (everything else unchanged), or does their server split it off as a new
-   room of its own, so that what follows is visibly a different
-   conversation?  And do their messages still reach you, if they keep you
-   on their list?
+1. *(answered; see below)*
 2. **Whom your replies go to.**  When someone adds you to a room and you
    reply, who receives it: only the person who added you; everyone you
    have received a message from in that room; or everyone on the adder's
@@ -457,12 +461,12 @@ To be asked and answered one at a time before the roadmap is written.
    the parent's id always (the reader learns that a parent exists, not its
    name); or only to people who are also in the parent (they learn nothing
    about rooms they are not in)?
-4. **The deck for the locked-screen check-in:** drawn *with* replacement
-   (each wait independent; the average is 30 seconds only in the long
-   run), or *without* (a shuffled deck whose offsets sum to zero, so the
-   total over one pass through the deck is exactly what 30-second waits
-   would give)?  And how many cards: 21 (every second from −10 to +10), or
-   10?
+4. **Which cards are in the locked-screen deck.**  The owner listed
+   0, 1, 2 … 10 (eleven cards).  Those are all zero or positive, so every
+   wait would be 30–40 seconds, averaging 35.  For the waits to average
+   exactly 30 the cards must add up to zero.  Choices: −10 … +10 in
+   one-second steps (21 cards); −10, −8 … +8, +10 in two-second steps (11
+   cards); or −5 … +5 (11 cards, a ±5 second spread).
 5. **Trusting the web page.**  Serve the web client only on the home
    network; over HTTPS with a certificate (hard for a home address); or
    have people keep a copy of the page on their computer and open it from
@@ -495,7 +499,12 @@ To be asked and answered one at a time before the roadmap is written.
   with its own recipients; names are the reader's own.
 - **The phone's connection** (2026-09-23): live while the screen is on,
   even with the app in the background; about every 30 seconds while
-  locked.
+  locked, the offsets dealt from a deck **without** replacement (owner:
+  "oh yes, without replacement, my bad").
+- **Removing someone** (2026-09-23): splits the room.  The removed
+  person's copy becomes a room of its own; their messages stop reaching
+  the remover there; everyone else hears both rooms.  Rooms are a
+  client-side way of sorting.  See section 3.
 - **Licence** (2026-09-23): the GNU Affero General Public License, version
   3 or later, as rmail.  `LICENSE` holds the full text.  rmail's extra
   permission for hook scripts is not carried over; rao-chat has no hooks
