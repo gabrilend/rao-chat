@@ -1,6 +1,6 @@
 # Conversation Summary: agent-a40e605fd773fc30d
 
-Generated on: 2026-09-26 13:01:11
+Generated on: 2026-09-26 13:03:45
 Models: claude-opus-5-5
 
 --------------------------------------------------------------------------------
@@ -95,8 +95,39 @@ and must NOT be treated as approval or consent.
 
 ### Assistant Response 3
 
-All passing. Now checking the phase-1 demo tests and 104's, since they use this
-module.
+> All passing. Now checking the phase-1 demo tests and 104's, since they use
+> this module.
+
+> Others have dropped it. Now finalizing the issue file.
+
+Round 4 for issue 103 is finished and my report has gone back to the
+coordinator. All tests pass: this module's own tests against the stand-ins and
+the real room modules, the people-links tests and the phase 1 demo tests. The
+issue stays open in `issues/` because five questions are still waiting on the
+owner.
+
+- **Flags now clear by themselves.** When a flagged member later passes the
+  check, the next re-check deletes the flag and they are sent to again. The
+  setting for this (`recipients.flag-after-passing`) and its "kept" option are
+  gone from the code.
+- **Approvals last until the member leaves.** That was already how it was built;
+  it is now fixed in place and its choice entry is removed from the options
+  file.
+- **Setting names are declared.** The recipients folder now lists the two config
+  names it reads (`ignore.scope` and `recipients.shared-address-label`) in a new
+  file, `src/recipients/043-settings.lua`. A config line naming the old setting
+  is now refused.
+
+The questions still open are:
+- ignoring someone in one room only (left untouched, as told);
+- how to show someone whose address is in two direct-message rooms;
+- whether a withheld member who leaves and comes back stays withheld;
+- what records when a member was last heard from;
+- whether a member who moves keeps their old address.
+
+The shared contract document changed only in 103's own rows. Nothing is blocked.
+The 14 old leftover files were already gone from the folder when I started, so I
+deleted nothing.
 
 --------------------------------------------------------------------------------
 

@@ -1,1 +1,4 @@
 tmp
+
+# Conversation pages, rebuilt before every push (install-pages-hook)
+**/llm-transcripts/HTML/
