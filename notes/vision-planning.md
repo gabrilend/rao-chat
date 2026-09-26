@@ -1471,3 +1471,41 @@ rao-home/
   a VPN's exit address ignores everyone using that exit.
 - **Record shape of the log** (`log.record-shape`): owner "okay" —
   read as the builder's leaning, **tsv** (to be confirmed).
+- **Record shape confirmed: tsv.**  Owner: "okay... wink ;)"
+
+### The parent-membership rule becomes detection (2026-09-25)
+
+Asked to walk through a child room whose parent a home server does not
+hold, the owner:
+
+> Oh I see... I think the issue is that the "rooms" and "servers" are
+> really just UI pretty-printing. A server is expected to have rooms
+> sorted with slashes, like a directory structure, but it doesn't have to
+> do that. And you could invite people to rooms even if they're not in
+> higher tiers. The UI might flag them and highlight them in orange or
+> something, to be manually reviewed by the user before sending messages
+> to them... but it's a UI thing. At the end of the day, we can't control
+> who gets to be in which room, because it's just a contact list on a
+> person's computer. The "server" is really just for organizational
+> purposes and holds no guarantees about authentication, however, we can
+> *detect* when such things aren't true, and I believe we should.
+
+("Server" here means a top-level room — the Discord-server-like level —
+not the home server program.)
+
+What follows:
+
+- **Nothing about the tree is enforced; mismatches are detected.**  Every
+  address is accepted into every room.  An address in a declared child
+  room that is not a member of the parent, as this home server sees it, is
+  added but **flagged**; the client shows it highlighted (orange).
+- **A flagged member receives none of your messages until you review
+  it.**  Approving makes it an ordinary member; declining withholds it.
+- **A child room whose parent this home does not hold** cannot be checked,
+  so its newcomers are flagged "cannot check".  The refuse/accept choice
+  (`tree.unheld-parent-join`) is replaced by this.
+- **Someone shut out of a parent** by a token change shows up flagged in
+  its children, since the check is re-run whenever the parent's members
+  change.
+- The declared parent's only job is now this detection; filing and
+  declaring are both organisation.

@@ -92,10 +92,18 @@ Not integrated: nothing calls `heard_from` or `confirm_leave` yet (phase
 - **You cannot choose who hears anyone else.**  Each person keeps their own
   withheld list.  To shut someone out entirely, the room's token is
   changed by hand (101).
-- **Addresses are added freely**, with two refusals: an ignored address
-  (103a), and, in a child room, an address that is not a member of the
-  parent (102's check).  A second address for someone (they moved) is
-  added beside the first.
+- **Addresses are added freely**, with one refusal: an ignored address
+  (103a).  A second address for someone (they moved) is added beside the
+  first.
+- **Flagged members.**  In a declared child room, an address that 102's
+  check answers `no` (not in the parent) or `cannot-check` (parent not
+  held here) is added but **flagged**.  A flagged member is left out of the
+  send list until the person reviews it: approving makes it an ordinary
+  member, declining withholds it.  The client shows flagged members
+  highlighted (owner: "The UI might flag them and highlight them in orange
+  or something, to be manually reviewed by the user before sending
+  messages to them").  When a parent's members change, its children's
+  members are checked again and newly failing ones flagged.
 - **An address is removed only by its own say-so** (a confirmed leave,
   phase 2).  Speaking again adds it back.  This is what stops a forged
   leave notice from cutting anyone off.
@@ -107,7 +115,9 @@ Not integrated: nothing calls `heard_from` or `confirm_leave` yet (phase
 ## Suggested Implementation Steps
 
 1. Reading and writing members through 101's entry; `withheld`.
-2. Adding a member, with the ignore and parent-membership refusals.
+2. Adding a member, with the ignore refusal and the parent-membership
+   flag; approving and declining a flagged member; re-checking children
+   when a parent's members change.
 3. Withholding and un-withholding.
 4. The send list: members minus withheld, as the list phase 2 delivers to.
 5. Removing a member by its own confirmed leave (called by phase 2).
@@ -116,7 +126,9 @@ Not integrated: nothing calls `heard_from` or `confirm_leave` yet (phase
    files, `live_room_for`, and their choices.
 8. Tests: every member hears you by default; withholding; a move adds an
    address; a forged leave does nothing until confirmed; speaking again
-   re-adds; a child room refuses an address not in the parent.
+   re-adds; a child room flags an address not in the parent and leaves it
+   off the send list until approved; dropping someone from a parent flags
+   them in its children.
 
 ## Blockers that are not the owner's
 

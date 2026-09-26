@@ -98,12 +98,17 @@ view the contents in the tree. Very Microsoft Windows Explorer core."
   first.
 - **The parent-membership rule** — tiers of trust.  Owner: "The farther
   down in the directory structure you go, the more people you'll need to
-  have invited you. It also guarantees that lower rooms have only members
-  that exist in higher rooms."  Nothing in the tokens enforces this, so
-  every server does: **an address is accepted as a member of a child room
-  only if it is a member of the parent room, as this server sees it.**
-  This module answers "may this address join this room?"; 103 asks before
-  adding.
+  have invited you."  **Detected, not enforced** (owner, 2026-09-25: "we
+  can't control who gets to be in which room, because it's just a contact
+  list on a person's computer ... however, we can *detect* when such
+  things aren't true, and I believe we should").  This module answers
+  "does this address belong in this room, by its parent?": `yes`; `no`
+  (a declared child, and the address is not a member of the parent as this
+  home server sees it); or `cannot-check` (a declared child whose parent
+  this home does not hold).  103 adds the address either way and flags it
+  on `no` or `cannot-check`.  The check is re-run for a room's children
+  whenever the room's members change, so someone dropped from a parent
+  shows up flagged in its children.
 - **The `where` file** holds the room folder's path and the room's path of
   labels from the top (`home/ritz/programming`, in your own labels), kept
   beside the room so either is one read away.  Rewritten when a label,
@@ -116,14 +121,18 @@ view the contents in the tree. Very Microsoft Windows Explorer core."
 
 1. Parent by token fingerprint (101 gives the lookup); children, ancestors,
    top rooms.
-2. The parent-membership check, for 103.
+2. The parent-membership check, for 103, answering `yes` / `no` /
+   `cannot-check` (replacing the refusal and `tree.unheld-parent-join`),
+   and "which members of this room's children now fail the check?" for
+   re-checking when a parent's members change.
 3. `where` rewritten on `created`, `label`, `parent`, `filed`.
 4. Keep `024-forest-text.lua`, fed from the new tree.
 5. Retire `move_room`, parent disclosure, `what_contact_receives`, the
    reader's forest (`023`), and their choices.
 6. Tests: a three-level tree on one home; the same tree on a second home
    with different labels (the fingerprints match, the labels do not); an
-   address refused in a child room when not in the parent; a child whose
+   address answered `no` in a child room when not in the parent, and
+   `cannot-check` when the parent is not held; a child whose
    parent is not held is a top room.
 
 ## Blockers that are not the owner's
@@ -143,7 +152,7 @@ them one at a time.  An issue with any of them unanswered is in progress.
    Declared children and filed rooms show in one tree; a room with both
    shows under its declared parent.  This module builds it.
 2. **When a member leaves the parent**, the client also removes them from
-   the parent's child rooms; the server only refuses them as new members
+   the parent's child rooms; the server flags them in the children (detection, not refusal)
    (owner: "This is UI work").  This module offers "which child rooms hold
    this address?" for the client.  Reading to be confirmed by the owner.
 

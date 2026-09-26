@@ -11,10 +11,11 @@ Nothing exists.
 ## Intended Behavior
 
 **Joining.**  Someone gives you a room's token and one member's address
-(for a child room, you must already be in its parent).  Your server makes
+(for a child room, members who find you are not in its parent will see you
+flagged until they approve you).  Your server makes
 the room (101) and sends that member a hello sealed with the token.
 Holding the token is the proof: the member adds your address (103, with
-its ignore and parent-membership refusals) and sends you its members
+its ignore refusal and parent-membership flag) and sends you its members
 (207).
 
 **Every first contact with an address carries a hello**, sealed with the
@@ -34,7 +35,8 @@ adding the address.
 4. Receiving: call back (204), then add the member (103).
 5. Tests: joining with a token adds you on the member's side; a hello with
    a wrong port is not confirmed; a hello with no port is an error; a
-   hello to a child room from an address not in the parent is refused.
+   hello to a child room from an address not in the parent is added
+   flagged.
 
 ## Blockers that are not the owner's
 

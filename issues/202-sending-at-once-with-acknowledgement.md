@@ -24,8 +24,9 @@ due.
   case we'll re-assess at scale."
 - **Receiving**: open the frame (201) — the key that opens it says which
   room it is for — and file it there (105), unless the sending address is
-  on the ignore list at `hide`, or the room is a child room and the address
-  is not a member of its parent.  Holding the token is being invited, so a
+  on the ignore list at `hide` (103a's filing choice).  An address that
+  fails a child room's parent check is filed and flagged, not refused
+  (103).  Holding the token is being invited, so a
   genuine message from a new address is filed; the address becomes a
   member once its hello (205) says where to call back.  Acknowledge, so
   the sender stops retrying.
@@ -45,7 +46,8 @@ due.
 
 ## Blockers that are not the owner's
 
-- Needs 201; filing needs 105; the refusals need 103a and 102.
+- Needs 201; filing needs 105; the ignore refusal needs 103a; flagging
+  needs 102 and 103.
 
 ## Open questions
 

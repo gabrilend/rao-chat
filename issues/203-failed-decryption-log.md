@@ -36,8 +36,9 @@ under you. And from under them. Also, fail2ban is a thing".
 
 ## Open questions
 
-1. **Frames that open but are refused** (an ignored address, or a child
-   room's outsider): a flood of those is not a failed decryption.  Count
+1. **Frames that open but are refused** (an ignored address; a child
+   room's outsider is flagged, not refused): a flood of those is not a
+   failed decryption.  Count
    them in this log too, in a separate log, or not at all?
 2. **RAM or disk.**  A log in RAM is lost at reboot; fail2ban only needs
    recent lines.  Is that acceptable?

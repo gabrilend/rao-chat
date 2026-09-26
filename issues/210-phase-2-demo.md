@@ -18,7 +18,8 @@ under `tmp/shared-memory/`, and shows, with figures and real outputs:
 - joining a room with its token and one address, and a direct message
   between two homes, sealed and filed the same way;
 - two rooms with the same label told apart by their tokens;
-- a child room refusing an outsider of its parent;
+- a child room flagging an outsider of its parent, and the flag cleared by
+  approving it;
 - contact syncing reaching a newcomer; an ignored address refused;
 - a token changed by hand and given out through direct messages, the room's
   history kept;

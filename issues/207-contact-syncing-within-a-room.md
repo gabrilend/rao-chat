@@ -23,7 +23,8 @@ something, or the user could make it auto-triggered..."
 - **Anyone may ask** for a room's members with a `members-ask` message; the
   answer is sent automatically.  In the app, a button, or automatic.
 - **Received members are added** (103), except addresses on the ignore
-  list (103a) and, in a child room, addresses not in the parent (102).
+  list (103a); in a child room, addresses not in the parent (102) are
+  added flagged, left off the send list until approved.
 - **Consent**: being in a room is consent to your address being passed to
   its members.
 
@@ -31,10 +32,10 @@ something, or the user could make it auto-triggered..."
 
 1. `members` and `members-ask` inner kinds.
 2. Sending on a new member; answering an ask.
-3. Adding what arrives, through the ignore filter.
+3. Adding what arrives, through the ignore filter and the parent flag.
 4. Tests: three homes; a newcomer who joined through one reaches all; an
-   ignored address sent back is refused; a child room's list never adds an
-   outsider of the parent.
+   ignored address sent back is refused; a child room's list flags an
+   outsider of the parent instead of sending to it.
 
 ## Blockers that are not the owner's
 

@@ -95,8 +95,8 @@ outputs, not descriptions.  Scenes, each in its own scratch home:
    after.
 3. **The tree.**  `home`, a child `home/kitchen`, a grandchild; drawn as
    text; the same tree on a second home with different labels, matched by
-   fingerprint; an address refused in a child room because it is not in
-   the parent.
+   fingerprint; an address flagged in a child room because it is not in
+   the parent, off the send list until approved.
 4. **Members and withheld.**  A room of six: every member on the send list;
    one withheld; the send list shrinking by one while the member list does
    not.

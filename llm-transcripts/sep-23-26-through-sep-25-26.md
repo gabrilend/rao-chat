@@ -1,6 +1,6 @@
 # Conversation Summary: 1d5c453f-a553-4ffa-9c95-7be3f588866f
 
-Generated on: 2026-09-25 20:27:50
+Generated on: 2026-09-25 20:34:06
 Models: claude-opus-5-5
 
 ## Contents
@@ -4710,6 +4710,127 @@ only reach history if a commit carries them, and the first build was never
 committed at all. I'd suggest one work-in-progress commit now: the planning
 document, the issues, all the code including the `-done` files, and the
 transcripts riding along. Shall I make it? Or wait until we've walked the tally?
+
+--------------------------------------------------------------------------------
+
+### User Request 35
+
+1. Words in a suggested token. 4 words would take one graphics card about 4 days
+   to guess, 5 about 90 years, 6 about 700,000 years. Those estimates assume 5
+   billion guesses a second, which wasn't measured. The builder suggests 6.
+
+okay
+
+> 3. A copy of a message arriving from a second address, identical except for
+> the address it came from. As a duplicate, it's saved once. As an error, every
+> message fetched from another member during cross-checking would raise one. The
+> builder suggests duplicate.
+
+duplicate. Sometimes people say things like "okay" or "duplicate" or "duplicate"
+or "duplicate" or "duplicate" or... teehee I'm being silly :)
+
+> 4. Ignoring an address. Match the exact address and port, or the whole
+> address? Your words "until they change IP addresses" point to the whole
+> address. That would also ignore everyone else sharing it, such as a household.
+
+IP. Sucks to suck, don't room with hackers or spammers I guess. Does make VPNs
+harder though...
+
+> 5. Record shape of the log. Over 200 one-line messages: tab-separated is 105.5
+> bytes per message, labelled block 155.5, JSON line 172.5.
+
+okay
+
+> 2. Joining a child room whose parent your server doesn't hold. If refused,
+> your programming friend's server could never accept anyone into programming,
+> while other servers would. The builder suggests allowing it.
+
+can you walk me through this problem?
+
+> Committing. Nothing has been committed since the planning document. Your rule
+> is to commit when an issue is complete, and none are. But the -done files only
+> reach history if a commit carries them, and the first build was never
+> committed at all. I'd suggest one work-in-progress
+> commit now: the planning document, the issues, all the code including the
+> -done files, and the transcripts riding along. Shall I make it? Or wait until
+> we've walked the tally?
+
+let's commit as we go, this deserves to show history.
+
+--------------------------------------------------------------------------------
+
+### Assistant Response 35
+
+> You've answered four of them. Recording those in the planning document and the
+> issues first:
+
+> Now the commit. Previewing what it would take first:
+
+> About 80 changed files don't appear in the preview at all, among them the word
+> list and the JSON library. Finding which ones:
+
+> Everything is now included except the goodbye file. Committing:
+
+Committed as `99a2c77`, with the transcripts included. It has the planning
+document, all the issues, the code, and every `-done` file. The only thing left
+out is the demo's goodbye file, which is rewritten on every run. Since the
+`-done` files are now in history, they can be removed in a later commit.
+
+Your answers are in the planning document:
+- 6-word suggested tokens;
+- a repeated message from a second address counts as a duplicate (your
+  "duplicate duplicate duplicate" quoted as written);
+- ignoring matches the whole IP address. I noted the VPN consequence: ignoring a
+  VPN exit address ignores everyone using it.
+
+For the log's record shape, I read your "okay" as the builder's suggestion,
+tab-separated. Please confirm.
+
+I haven't changed the code for these answers yet. They're still switches in the
+options files, and turning them into fixed behaviour is the next small round.
+
+## The child room whose parent your server doesn't hold
+
+**The rule.** Say `home` has three members: A, B and C. `kitchen` is a declared
+child of `home`. When a newcomer says hello in `kitchen`, each server checks its
+own copy of `home`'s member list: "is this address in `home`?" If not, it's
+refused. Every server does this for itself, since there is no central list.
+
+**The gap.** Say D is not in `home`, but C hands D the `kitchen` token anyway.
+D's server now holds `kitchen` but has never seen `home`. When a newcomer E says
+hello to D's server in `kitchen`, it has to answer "is E in `home`?" with no
+list to check against.
+
+- **Refuse:** D's server accepts no one new in `kitchen`. D only ever hears the
+  members it already knew.
+- **Accept:** D's server takes anyone and trusts that the other servers checked.
+
+**Why it matters less than it looks.** Under either setting, A's and B's servers
+still check their own `home` lists. They refuse E, and they refuse D too,
+because D isn't in `home`. The setting only changes what an outsider's own
+server shows its owner. The rule holds for everyone else either way.
+
+The builder suggested accept because of your programming-friend example. But
+that example is now filing, not a declared child, so the friend never hits this
+rule. I'd suggest **refuse**: it fits your tiers of trust, and the only person
+it affects is someone the rest of the room already treats as an outsider.
+
+**A related hole this turned up.** Say you shut someone out of `home` by
+changing its token by hand. Their address is still on `home`'s member list on
+everyone's servers, because members are only removed when they leave of their
+own accord. So every server still lets them through the check for `home`'s child
+rooms, and they still hold those child rooms' tokens. Shutting someone out of a
+parent doesn't shut them out of its children.
+
+The fix is for "shut out" to be two steps done together: change the token, and
+delete their address from your own copy of the member list by hand. The "removed
+only by their own say-so" rule was meant to stop forged leave notices from other
+people. It wasn't meant to stop you editing your own list.
+
+Two questions:
+1. Refuse or accept?
+2. Should shutting someone out also remove their address from your own copy of
+   the member list, so the child rooms follow?
 
 --------------------------------------------------------------------------------
 
