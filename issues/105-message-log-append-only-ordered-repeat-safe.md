@@ -138,6 +138,11 @@ From room-folders, the log uses only `config_value`, `log_path`,
    identical on two homes whose local tags differ; lines in retired
    shapes refused.
 
+### Round 4 (2026-09-25)
+
+1. The `log-retired-keys-in-config` choice goes: 101's config reader now
+   refuses any line no module declares.  Declare `log.duplicate-check`.
+
 ## Blockers that are not the owner's
 
 - Needs 101's room folders and bell.

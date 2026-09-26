@@ -1585,3 +1585,29 @@ What follows:
   with a port, named in each room's entry, listed with its port in a
   `mailboxes` file.  A child room belongs to its declared parent's
   mailbox.
+
+### Five more from the tally, round 3 finds (2026-09-25)
+
+1. **A flagged member who later passes the check**
+   (`recipients.flag-after-passing`): **cleared** — the flag disappears by
+   itself once the member matches the tree.
+2. **How long an approval lasts** (`recipients-approval-lasts`): **until
+   they leave**.
+3. **A flagged member in `people/`** (`people-flagged-members`): **counts**
+   toward the person's rooms.
+4. **A child room whose parent this home does not hold**
+   (`mailboxes.unheld-parent`): **its own mailbox and port.**  Owner: "we
+   should make it so that they can merge into the parent rooms later on if
+   possible."  Moving a room into its parent's mailbox changes its port, so
+   the move is offered once the parent arrives (phase 1, reusing the
+   waiting-mailbox move), and in phase 2 the move tells every member the new
+   port, the old port still being tried for that room until they confirm.
+   **Open:** merge automatically when the parent arrives, or ask first?
+5. **Config lines nothing reads** (`log-retired-keys-in-config`).  Owner:
+   "what do you mean by "home" here? Mailbox? I think it should probably
+   just give an error if it doesn't recognize a value."  ("Home" is the one
+   folder a home server keeps everything in — `config`, `mailboxes`, every
+   room — so config is per home server, holding many mailboxes.)  **The
+   config reader knows every setting name any module uses; any line it does
+   not recognise is an error** — catching retired settings, typos and
+   settings from a newer version alike.  Unknown values were already errors.

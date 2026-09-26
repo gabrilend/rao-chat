@@ -204,6 +204,27 @@ A home server keeps everything under one folder, `rao-home/`:
    by the same code; changing a token keeps the log; the fingerprint is
    the same on two homes for the same token; every bell kind.
 
+### Round 4 (2026-09-25)
+
+1. **Unknown config lines are errors.**  Every module declares the setting
+   names it reads (a small list each module hands to the config reader, or
+   read from the options files — builder's call, recorded); opening a home
+   whose `config` holds a name nobody declared is an error naming the line.
+   Owner: "I think it should probably just give an error if it doesn't
+   recognize a value."  Replaces the log's retired-keys choice.
+2. **Own mailbox, fixed**: `mailboxes.unheld-parent` goes; a child whose
+   parent is not held always gets its own mailbox and port.
+3. **Merging into the parent's mailbox later.**  Once a room's declared
+   parent arrives, the room can be moved into the parent's mailbox (reuse
+   the waiting-mailbox move, which otherwise retires).  Built both ways,
+   switched: `mailboxes.merge-when-parent-arrives` = `ask` (listed as
+   waiting for the person's yes) or `automatic`.  The move rings `mailbox`;
+   phase 2 (issue 205/202) announces the new port and keeps trying the old
+   one for that room until members confirm.
+4. Tests: an unknown config line refused; a known one accepted; a child
+   made without its parent gets its own mailbox; after the parent arrives,
+   `ask` lists it as mergeable and `automatic` moves it.
+
 ## Blockers that are not the owner's
 
 None; this is the foundation the others plug into.  The contract document

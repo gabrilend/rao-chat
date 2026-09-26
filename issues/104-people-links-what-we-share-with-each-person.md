@@ -136,6 +136,12 @@ about 8 s of it 104's rebuilds.
    rooms both labelled `programming`; a label holding `/`; a person with two
    addresses counted once.
 
+### Round 4 (2026-09-25)
+
+1. **Fixed**: a flagged member counts toward a person's rooms (the
+   `people-flagged-members` choice entry goes; the code already does this).
+2. Declare this module's setting names to 101's config reader (101 round 4).
+
 ## Blockers that are not the owner's
 
 - Needs 101 (entries, bell kinds), 102 (the tree), 103 (members).

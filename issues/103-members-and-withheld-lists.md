@@ -155,6 +155,14 @@ Items 1, 2 and 4 are done and described in Current Behavior.  Left:
    system in the builder's session; every file is in commit 99a2c77, so
    removing them loses nothing.
 
+### Round 4 (2026-09-25)
+
+1. **Fixed in place**: `recipients.flag-after-passing` = cleared (the
+   switch and the `kept` variant go); an approval lasts until the member
+   leaves (the choice entry goes).
+2. Declare this module's setting names to 101's config reader (101 round 4).
+3. Tests updated for both.
+
 ## Blockers that are not the owner's
 
 - Needs 101's entry and bell kinds, and 102's parent-membership check.

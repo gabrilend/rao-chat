@@ -1,6 +1,6 @@
 # Conversation Summary: agent-a2b919b5425a39f09
 
-Generated on: 2026-09-25 21:45:35
+Generated on: 2026-09-25 21:49:50
 Models: claude-opus-5-5
 
 --------------------------------------------------------------------------------
@@ -110,6 +110,63 @@ fault is fixed (say which and why). Update your issue's Current Behavior and
 report counts.
 
 Address this before completing your current task.
+
+--------------------------------------------------------------------------------
+
+### Assistant Response 2
+
+> Swap the log and people items into order.
+
+Now that 104's listener is fixed, the demo runs all 10 of its 10 scenes on the
+real modules and `./run-phase-demo 1` exits cleanly. The demo's tests pass 281
+of 281.
+
+**What was wrong with the people checks.** Two things:
+- **Checks assumed the default options.** They expected no link to a person's
+  own direct message, and every link one folder deep inside the person's folder.
+  With the other options set, each person also gets a link to their own direct
+  message, and under one naming option the links sit one folder deeper. So the
+  counts came out wrong.
+- **A slip in my test.** The pass that was meant to use the first-listed options
+  was actually running on the last-listed ones. The real last-listed pass only
+  checked that the scene built and drew.
+
+**What the checks do now.** The test works out what to expect from the options
+actually set in each home, and it runs the full checks under both sets of
+options:
+- A person's folder holds the rooms they share with you. The girlfriend has 2
+  links normally and 3 when own-direct-message links are on. The coder has 3 and
+  4.
+- Every link must have exactly the shape its naming option produces. Under the
+  deeper option, the extra folder must be named after the room the link points
+  to.
+- Anything else fails. Listed by name, all 29 people checks pass.
+
+**Loading 104 late is dropped.** All seven modules are loaded before the first
+scene again, and the people scene is back in 8th place, before the log. Every
+loaded module hears every change the scenes make. Loading 104 only for its own
+scene meant the other seven scenes never exercised it, which could hide a fault
+in how it works with the others. That was only a stopgap while 104 was broken,
+and your rule is errors over fallbacks.
+
+**Figures from the people scene:**
+- It shows one folder per direct message: coder, girlfriend, housemate. The
+  girlfriend's two machines give her 2 links, to home and programming.
+- There is a second top room also called programming, shared with the coder. How
+  its link is named under each option:
+  - one option adds a short tag to each name (`programming~074b`,
+    `programming~a99a`);
+  - one numbers the second (`programming-2`);
+  - one gives each room its own folder.
+- The scene took 1250 ms, the slowest of the ten. It builds four homes, and 104
+  rebuilds the whole people folder on every change.
+
+The tally now lists 31 open choices, 24 waiting on you. I updated the issue's
+Current Behavior and posted the result on the builders' board.
+
+**Still open:** the issue stays in progress on my one question for you. When a
+scene is about one choice, what should all the other choices be set to: the
+first option each builder listed, or each builder's recommended option?
 
 --------------------------------------------------------------------------------
 

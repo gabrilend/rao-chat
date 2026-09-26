@@ -166,6 +166,13 @@ outputs, not descriptions.  Scenes, each in its own scratch home:
 4. Tests: every scene on the real modules; the whole demo through
    `run-phase-demo 1`.
 
+### Round 4 (2026-09-25)
+
+1. The mailboxes scene shows a child with its own mailbox, then merged
+   into its parent's mailbox after the parent arrives (both `ask` and
+   `automatic`), and an unknown config line refused.
+2. The demo's config baseline sets only declared names.
+
 ## Blockers that are not the owner's
 
 - Needs 101–105 and 103a rewritten.  Scenes whose module is not ready are

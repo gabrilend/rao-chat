@@ -166,6 +166,11 @@ view the contents in the tree. Very Microsoft Windows Explorer core."
    `cannot-check`; dropping someone from `home` shows them failing in
    `home`'s grandchildren.
 
+### Round 4 (2026-09-25)
+
+1. Declare this module's setting names to 101's config reader (101 round 4).
+2. Point the open mailbox question at 101's new merge choice.
+
 ## Blockers that are not the owner's
 
 - Needs 101's entry, token fingerprint and bell kinds.
