@@ -5,8 +5,8 @@
 --
 -- Neither changes who is in a room, so neither may move a link.  These
 -- checks make sure people/ hears both rings, changes nothing, and that a
--- flagged member still counts toward a person's rooms (the choice
--- people-flagged-members in 079-options.lua).  The flag itself is written
+-- flagged member still counts toward a person's rooms (the owner's
+-- answer in round 4, fixed in place).  The flag itself is written
 -- by hand in stand-in and real-101 modes, and by the real 103 in real mode.
 --
 -- Run: luajit 076-test-mailboxes-and-flags.lua [DIR] <stand-in|real-101|real>
@@ -70,7 +70,6 @@ do
     local home = H.fresh_home("flagged-counts", {
         ["ignore.scope"] = "home",
         ["recipients.shared-address-label"] = "all-labels",
-        ["recipients.flag-after-passing"] = "kept",
         ["tree.filing-loop"] = "unfile",
     })
     H.direct(home, "coder", { CODER })

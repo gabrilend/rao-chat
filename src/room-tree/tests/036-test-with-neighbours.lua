@@ -32,11 +32,10 @@ rooms.set_config(home, "people.link-collision", "suffix-id")
 rooms.set_config(home, "people.direct-message-link", "leave-out")
 rooms.set_config(home, "people.members-without-dm", "leave-out")
 -- 103a reads these when judging an address (see src/recipients/059-options.lua);
--- keys 103 no longer reads are harmless in a config file
+-- (only names some module declares may be set; a retired one such as
+-- recipients.flag-after-passing is now refused by 101)
 rooms.set_config(home, "ignore.scope", "home")
 rooms.set_config(home, "recipients.shared-address-label", "all-labels")
--- 103 reads this when a flagged member later passes a re-check
-rooms.set_config(home, "recipients.flag-after-passing", "kept")
 
 local girlfriend = { "192.168.1.20", 7777 }
 local sister = { "sister.example.org", 7001 }

@@ -102,8 +102,12 @@ for _, check in ipairs(t.CHECKS) do
         "already deleted", label .. "a deleted message cannot be corrected")
 end
 
--- log.who-may-edit is no longer read: absent is fine, and a value left in
--- an old config (same-address) changes nothing.
+-- log.who-may-edit is no longer read: absent is fine.  A value left in an
+-- old config (same-address) used to stop applying with no word said; since
+-- round 4 the real room-folders module refuses any config line no module
+-- declares (the log declares only log.duplicate-check, 087-settings.lua),
+-- so the leftover line is an error naming it.  The stand-in keeps no
+-- declarations, so there the line is written and the log still ignores it.
 do
     local home = t.fresh_home(t.settings("scan"))
     local room = t.new_room(home)
@@ -111,9 +115,37 @@ do
     log.append(home, room, message)
     t.check(log.correct(home, room, edit_of(message, { from = STRANGER })) == "filed",
         "an edit files with no log.who-may-edit in config")
-    rooms.set_config(home, "log.who-may-edit", "same-address")
-    t.check(log.correct(home, room, edit_of(message, { from = FRIEND, written = 2000 })) == "filed",
-        "a leftover log.who-may-edit = same-address is ignored")
+    local file = assert(io.open(home.dir .. "/config", "ab"))
+    file:write("log.who-may-edit = same-address\n")
+    file:close()
+    local by_neighbour = {
+        -- the real module: the leftover line is refused, naming it
+        real = function()
+            t.refuses(function() log.correct(home, room, edit_of(message, { from = FRIEND, written = 2000 })) end,
+                "log.who-may-edit", "a leftover log.who-may-edit line is refused by the config reader")
+            t.refuses(function() rooms.set_config(home, "log.record-shape", "block") end,
+                "log.record-shape", "a retired log setting cannot be written either")
+        end,
+        -- the stand-in: no declarations; the log never reads the line
+        ["stand-in"] = function()
+            t.check(log.correct(home, room, edit_of(message, { from = FRIEND, written = 2000 })) == "filed",
+                "stand-in: a leftover log.who-may-edit line is not read by the log")
+        end,
+    }
+    by_neighbour[t.neighbour]()
+end
+
+-- The log's declared settings (round 4): exactly the one name it reads.
+do
+    local declared = dofile(t.DIR .. "/src/message-log/087-settings.lua")
+    t.check(#declared == 1 and declared[1] == "log.duplicate-check",
+        "087-settings declares log.duplicate-check and nothing else")
+    -- the real module found it by scanning src/, owned by message-log
+    if t.neighbour == "real" then
+        local owner = rooms.declared_settings()["log.duplicate-check"]
+        t.check(owner ~= nil and owner.module == "message-log",
+            "the real config reader lists log.duplicate-check as message-log's")
+    end
 end
 
 -- An edit already in the file whose message has not arrived is left out.

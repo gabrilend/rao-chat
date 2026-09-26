@@ -268,19 +268,54 @@ function view.mailboxes(record)
     lines[#lines + 1] = string.format("  port %d now tries %d key(s): %s", record.shared.port,
                                       #record.shared.tried, joined(record.shared.tried))
     lines[#lines + 1] = ""
-    lines[#lines + 1] = "\"attic\" declares a parent (\"loft\") this home does not hold; then loft is made here:"
-    for _, row in ipairs(record.unheld) do
-        lines[#lines + 1] = "  mailboxes.unheld-parent = " .. row.variant
-        lines[#lines + 1] = string.format("      attic before loft: %-7s port %-5d %s…", row.before.kind,
-                                          row.before.port, row.before.tag:sub(1, 8))
-        lines[#lines + 1] = string.format("      loft:              %-7s port %-5d %s…", row.loft.kind,
-                                          row.loft.port, row.loft.tag:sub(1, 8))
-        lines[#lines + 1] = string.format("      attic after loft:  %-7s port %-5d %s…  (%s)", row.after.kind,
-                                          row.after.port, row.after.tag:sub(1, 8),
-                                          row.after.tag == row.loft.tag and "moved into loft's mailbox"
-                                          or "kept its own mailbox")
-        mailbox_rows(lines, row.mailboxes, "      ")
+    lines[#lines + 1] = "\"attic\" declares a parent (\"loft\") this home does not hold, so it starts its own mailbox;"
+    lines[#lines + 1] = "\"trunk\" is made under attic (joins attic's mailbox); then loft is made here:"
+    for _, row in ipairs(record.merge) do
+        -- {{{ local function where
+        local function where(name, box)
+            return string.format("      %-22s %-5s port %-5d %s…  %s", name, box.kind, box.port, box.tag:sub(1, 8),
+                                 box.tag == row.loft.tag and "(loft's mailbox)"
+                                 or (box.tag == row.before.tag and "(attic's own)" or ""))
+        end
+        -- }}}
+        lines[#lines + 1] = "  mailboxes.merge-when-parent-arrives = " .. row.variant
+        lines[#lines + 1] = where("attic before loft:", row.before)
+        lines[#lines + 1] = where("trunk before loft:", row.trunk_before)
+        lines[#lines + 1] = "      mergeable before loft: " .. row.mergeable_before
+        lines[#lines + 1] = where("loft:", row.loft)
+        lines[#lines + 1] = where("attic after loft:", row.after)
+        lines[#lines + 1] = where("trunk after loft:", row.trunk_after)
+        lines[#lines + 1] = "      mergeable after loft:  " .. #row.mergeable
+        for _, found in ipairs(row.mergeable) do
+            lines[#lines + 1] = string.format("        mailbox %s… (%d rooms) -> %s…", found.mailbox:sub(1, 8),
+                                              found.rooms, found.into:sub(1, 8))
+        end
+        if row.said_yes then
+            -- ask: the person's yes was given
+            lines[#lines + 1] = "      the person says yes (merge_mailbox):"
+            lines[#lines + 1] = where("attic after yes:", row.after_yes)
+            lines[#lines + 1] = where("trunk after yes:", row.trunk_after_yes)
+            lines[#lines + 1] = "      mergeable after yes:   " .. row.mergeable_after_yes
+        else
+            -- automatic: nothing was left to say yes to
+            lines[#lines + 1] = "      nothing left to say yes to"
+        end
+        lines[#lines + 1] = "      mailboxes afterwards (the emptied one keeps its port for phase 2):"
+        mailbox_rows(lines, row.mailboxes, "        ")
     end
+    local config = record.config
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = string.format("config: every line must name a declared setting (%d declared, "
+                                      .. "%d set in this home):", #config.declared, config.lines_before)
+    for _, item in ipairs(config.declared) do
+        lines[#lines + 1] = string.format("    %-38s declared by %s", item.name, item.module)
+    end
+    lines[#lines + 1] = "  set_config with a misspelt name: " .. outcome(config.set_made_up)
+    lines[#lines + 1] = string.format("    (config file %d bytes before, %d after)", config.bytes_before_refused_set,
+                                      config.bytes_after_refused_set)
+    lines[#lines + 1] = "  a line added by hand: " .. config.hand_line
+    lines[#lines + 1] = "  opening the home again: " .. outcome(config.reopen)
+    lines[#lines + 1] = "  reading its config:     " .. outcome(config.read)
     return lines
 end
 -- }}}

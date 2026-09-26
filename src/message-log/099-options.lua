@@ -42,6 +42,12 @@
 --   log-deleted-view — the person chooses, in the client.  The log keeps a
 --     deleted message in the view, empty and marked (built); nothing is
 --     left open here.
+-- Removed in round 4 (answered 2026-09-25):
+--   log-retired-keys-in-config — refuse, in 101's config reader: every
+--     module declares its setting names there, and a config line naming
+--     none of them (a retired setting such as log.who-may-edit, a typo, or
+--     a setting from a newer version) is an error.  This module declares
+--     log.duplicate-check, its only setting.
 
 return {
     {
@@ -143,43 +149,5 @@ return {
             },
         },
         leaning = "in phase 2, file edits that arrive early.",
-    },
-    {
-        id = "log-retired-keys-in-config",
-        question = "A home whose config still names a retired log key (log.record-shape = block, "
-            .. "log.who-may-edit = same-address, ...) from an earlier build: ignore the line, or "
-            .. "refuse to start until it is removed?",
-        waits_on = "owner",
-        detail = "issue 105 open question 9 (found in round 3, when four log keys stopped being "
-            .. "read); the config file is 101's, so a check for every module would live there",
-        config_key = "",
-        variants = {
-            {
-                name = "ignore",
-                summary = "Built: the log reads only log.duplicate-check; any other log.* line in "
-                    .. "config is never looked at.",
-                built_in = "src/message-log/081-message-log.lua",
-                tests = "src/message-log/tests/093-test-edits.lua",
-                findings = {
-                    "A home set to log.who-may-edit = same-address before round 3 now accepts "
-                        .. "edits from any address with no word said; tested.",
-                    "A home set to log.record-shape = block or jsonl before round 3 holds logs "
-                        .. "the tsv reader refuses loudly (\"fields, wanted 7\"), so a shape "
-                        .. "change cannot pass unnoticed; tested.",
-                },
-            },
-            {
-                name = "refuse",
-                summary = "Not built: the log (or 101's config reader, for every module) raises an "
-                    .. "error naming a retired key when it is present in config.",
-                built_in = "",
-                tests = "",
-                findings = "Would turn the silent change above into an error the person sees once, "
-                    .. "matching the house rule that fallbacks are errors; needs a list of retired "
-                    .. "keys somewhere every module can add to.",
-            },
-        },
-        leaning = "refuse, in 101's config reader, so every module's retired keys are caught in one "
-            .. "place; ask the owner.",
     },
 }

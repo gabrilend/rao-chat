@@ -72,4 +72,32 @@ home, h, p = set_up_ring("rings-typo")
 rooms.set_config(home, "tree.filing-loop", "maybe")
 t.refuses(function() arrive_ritz(home) end, "must be refuse or unfile", "unknown value: an error")
 
+-- The declared settings (round 4): 101 refuses any config line no module
+-- declares, and any read of an undeclared name, so 023-settings.lua must
+-- list exactly what this module reads — tree.filing-loop, the options
+-- file's one switchable key, read by name in 021-room-tree.lua.
+do
+    local declared = dofile(DIR .. "/src/room-tree/023-settings.lua")
+    local switched = {}
+    for _, choice in ipairs(dofile(DIR .. "/src/room-tree/039-options.lua")) do
+        -- a switchable choice: its key must be declared
+        if choice.config_key ~= "" then
+            switched[#switched + 1] = choice.config_key
+        end
+    end
+    table.sort(declared)
+    table.sort(switched)
+    t.same_list(declared, switched, "023-settings declares exactly the options file's switchable keys")
+    local source = assert(io.open(DIR .. "/src/room-tree/021-room-tree.lua", "rb")):read("*a")
+    t.check(source:find('"tree.filing-loop"', 1, true) ~= nil, "tree.filing-loop is read by name in 021")
+    -- the real 101: it found the name by scanning src/, owned by room-tree
+    if t.which == "real" then
+        local owner = rooms.declared_settings()["tree.filing-loop"]
+        t.check(owner ~= nil and owner.module == "room-tree", "the real 101 lists tree.filing-loop as room-tree's")
+        local typo = t.fresh_home(rooms, "rings-undeclared")
+        t.refuses(function() rooms.set_config(typo, "tree.filing-loops", "unfile") end,
+            "tree.filing-loops", "the real 101 refuses a misspelt tree setting")
+    end
+end
+
 t.finish("035-test-rings")

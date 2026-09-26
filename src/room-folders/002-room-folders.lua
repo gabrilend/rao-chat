@@ -26,7 +26,11 @@
 -- Rooms are also grouped into mailboxes, each with its own listening
 -- port: a top-level group room starts a new one and every room made under
 -- it joins it; all direct messages share one.  The mailbox is only named
--- in each room's entry — the folders stay side by side.
+-- in each room's entry — the folders stay side by side.  A child room
+-- whose parent is not held here starts a mailbox of its own, and once the
+-- parent arrives its mailbox's rooms can merge into the parent's — by
+-- themselves or when the person says yes (mailboxes.merge-when-parent-
+-- arrives).
 --
 -- This file is the front door the other modules use.  Every change it
 -- makes is written whole-or-not-at-all (003-disk) and then announced on
@@ -44,13 +48,15 @@ local bell    = require("005-change-bell")
 local entries = require("006-entry")
 local tokens  = require("007-tokens")
 local mailbox_file = require("014-mailboxes")
+local declared = require("017-declared-settings")
 
 -- The header written into a brand-new config file, so a person opening
 -- it in an editor knows what it is.
 local NEW_CONFIG_TEXT =
     "# rao-chat settings: one 'key = value' per line (rmail's config format).\n" ..
     "# A setting a module asks for and does not find here is an error, never\n" ..
-    "# a quiet default; the error names the key to add.\n"
+    "# a quiet default; the error names the key to add.  A line naming a\n" ..
+    "# setting no module reads is an error too, naming the line.\n"
 
 -- How many words a suggested token has.  Answered by the owner (six:
 -- about 77.5 bits from the 7,772-word list, out of reach of an offline
@@ -58,10 +64,15 @@ local NEW_CONFIG_TEXT =
 -- planning document's "Answers from the tally").  No longer a setting.
 local SUGGESTED_WORD_COUNT = 6
 
--- The config key deciding which mailbox a child room goes in when its
--- declared parent is not held here (019-options "rooms-unheld-parent-
--- mailbox", issue 102's open question).  Read only in that case.
-local UNHELD_PARENT_KEY = "mailboxes.unheld-parent"
+-- The setting deciding what happens once a child room's declared parent
+-- arrives here while the child sits in a mailbox of its own: "automatic"
+-- (its mailbox's rooms move into the parent's mailbox at once; the
+-- owner's preference) or "ask" (they are listed by mergeable_mailboxes
+-- until the person says yes with merge_mailbox).  Read only when such a
+-- merge is possible.  Declared in 016-settings.lua.  (Round 3's
+-- mailboxes.unheld-parent is retired: such a child always starts its own
+-- mailbox.)
+local MERGE_KEY = "mailboxes.merge-when-parent-arrives"
 
 -- The fields a make_room spec must have, every one of them.
 local SPEC_FIELDS = { "label", "token", "kind", "parent", "filed_under", "members", "mailbox_port" }
@@ -85,6 +96,19 @@ local function check_tag(value)
     if not entries.is_local_tag(value) then
         error("not a local tag (32 lower-case hex characters): " .. tostring(value), 3)
     end
+end
+-- }}}
+
+-- {{{ local function read_config_lines
+-- The config file as a list of { key, value, number }, every line checked:
+-- its shape (004) and that some module declares its name (017).  Called by
+-- every read, so a line added by hand is judged the next time anything
+-- reads the config, not only at open_home.
+local function read_config_lines(home)
+    local path = home.dir .. "/config"
+    local lines = formats.parse_config_lines(disk.read_all(path), path)
+    declared.check_config_lines(lines, path)
+    return lines
 end
 -- }}}
 
@@ -131,27 +155,36 @@ local function open_home(dir)
             disk.make_dir(dir .. "/" .. folder)
         end
     end
-    return { dir = dir }
+    local home = { dir = dir }
+    -- the config must be one this program understands: a line no module
+    -- reads stops the opening, naming the line (017-declared-settings).
+    read_config_lines(home)
+    return home
 end
 -- }}}
 
 -- {{{ local function read_config
 local function read_config(home)
     check_home(home)
-    local path = home.dir .. "/config"
-    return formats.parse_config(disk.read_all(path), path)
+    local config = {}
+    for _, line in ipairs(read_config_lines(home)) do
+        config[line.key] = line.value
+    end
+    return config
 end
 -- }}}
 
 -- {{{ local function set_config
+-- A name no module declares is refused before anything is written: the
+-- line would make the next read of the config an error.
 local function set_config(home, key, value)
     check_home(home)
+    declared.check_name(key, "set_config")
     local path = home.dir .. "/config"
-    local text = disk.read_all(path)
-    -- parse first: refuse to edit a file that is already broken, so the
-    -- error points at the original damage rather than at this write.
-    formats.parse_config(text, path)
-    disk.write_atomic(path, formats.config_with(text, key, value))
+    -- read and check first: refuse to edit a file that is already broken,
+    -- so the error points at the original damage rather than at this write.
+    read_config_lines(home)
+    disk.write_atomic(path, formats.config_with(disk.read_all(path), key, value))
 end
 -- }}}
 
@@ -161,6 +194,8 @@ end
 -- picking a variant nobody chose.
 local function config_value(home, key)
     check_home(home)
+    -- a name no module declares: the caller forgot its <index>-settings.lua.
+    declared.check_name(key, "config_value")
     local value = read_config(home)[key]
     -- absent: name the key and the file, and show the fix.
     if value == nil then
@@ -406,16 +441,9 @@ local function direct_mailbox(home)
 end
 -- }}}
 
--- {{{ local function waiting_mailbox
--- The tag of the waiting mailbox (only under mailboxes.unheld-parent =
--- waiting-mailbox), or "" if it has not been made.
-local function waiting_mailbox(home)
-    return the_one_mailbox(read_mailboxes(home), "waiting")
-end
--- }}}
-
 -- {{{ local function check_mailbox_spec
--- A make_mailbox spec has exactly { label, kind, port }.
+-- A make_mailbox spec has exactly { label, kind, port }.  (The fifth field
+-- of a mailbox, awaits_parent_of, is make_room's alone.)
 local function check_mailbox_spec(spec)
     if type(spec) ~= "table" then
         error("make_mailbox needs a spec table {label, kind, port}, got " .. type(spec), 3)
@@ -440,9 +468,12 @@ end
 -- {{{ local function add_mailbox
 -- Appends one new mailbox to the file (every rule of 014 checked on the
 -- whole new list, so a second direct mailbox is refused here) and returns
--- its new tag.  Rings nothing: each caller decides what to ring.
-local function add_mailbox(home, list, label, kind, port)
-    local mailbox = { tag = new_local_tag(), label = label, kind = kind, port = port }
+-- its new tag.  `awaits_parent_of` is the tag of the child room the
+-- mailbox is made for while that room's parent is not held here, or "".
+-- Rings nothing: each caller decides what to ring.
+local function add_mailbox(home, list, label, kind, port, awaits_parent_of)
+    local mailbox = { tag = new_local_tag(), label = label, kind = kind, port = port,
+                      awaits_parent_of = awaits_parent_of }
     local grown = {}
     for position, existing in ipairs(list) do grown[position] = existing end
     grown[#grown + 1] = mailbox
@@ -456,20 +487,19 @@ end
 -- without the room that gave it its label.
 local MADE_BY_MAKE_MAILBOX = {
     ["direct"]  = true,
-    ["waiting"] = true,
     ["tree"]    = false,
 }
 
 -- {{{ local function make_mailbox
--- Makes the direct-message mailbox or the waiting mailbox (at most one of
--- each per home) with its port.  Returns its tag; rings "mailbox" with "".
+-- Makes the direct-message mailbox (at most one per home) with its port.
+-- Returns its tag; rings "mailbox" with "".
 local function make_mailbox(home, spec)
     check_home(home)
     check_mailbox_spec(spec)
     mailbox_file.check_mailbox_kind(spec.kind)
     -- a tree mailbox: made by make_room with its top room, not here.
     if not MADE_BY_MAKE_MAILBOX[spec.kind] then
-        error("make_mailbox makes only 'direct' and 'waiting' mailboxes; a tree mailbox is made by "
+        error("make_mailbox makes only the 'direct' mailbox; a tree mailbox is made by "
             .. "make_room with its top room (spec.mailbox_port)", 2)
     end
     mailbox_file.check_port(spec.port, "make_mailbox: port")
@@ -479,7 +509,7 @@ local function make_mailbox(home, spec)
     if existing ~= "" then
         error("this home already has its '" .. spec.kind .. "' mailbox (" .. existing .. ")", 2)
     end
-    local tag = add_mailbox(home, list, spec.label, spec.kind, spec.port)
+    local tag = add_mailbox(home, list, spec.label, spec.kind, spec.port, "")
     bell.notify(home, "", "mailbox")
     return tag
 end
@@ -547,10 +577,10 @@ end
 -- }}}
 
 -- Which mailbox kinds each room kind may be in: a direct message only in
--- the direct mailbox; a group room in a tree mailbox, or waiting.
+-- the direct mailbox; a group room only in a tree mailbox.
 local FITTING_MAILBOX_KINDS = {
     ["direct"] = { ["direct"] = true },
-    ["group"]  = { ["tree"] = true, ["waiting"] = true },
+    ["group"]  = { ["tree"] = true },
 }
 
 -- {{{ local function check_fits
@@ -711,10 +741,12 @@ end
 
 -- {{{ local function new_tree_mailbox
 -- The room starts a mailbox of its own: its port must be given (there is
--- no default), and the mailbox takes the room's label.
-local function new_tree_mailbox(spec, why)
+-- no default), and the mailbox takes the room's label.  `awaits` is the
+-- new room's own tag when it is a child whose parent is not held here (so
+-- the mailbox can merge into the parent's later), else "".
+local function new_tree_mailbox(spec, why, awaits)
     mailbox_file.check_port(spec.mailbox_port, "make_room: spec.mailbox_port (" .. why .. ")")
-    return { new = { label = spec.label, kind = "tree", port = spec.mailbox_port } }
+    return { new = { label = spec.label, kind = "tree", port = spec.mailbox_port, awaits_parent_of = awaits } }
 end
 -- }}}
 
@@ -730,54 +762,32 @@ local function the_one_or_error(list, kind, how_to_make)
 end
 -- }}}
 
--- A child room whose declared parent is not held here (issue 102's open
--- question; 019-options "rooms-unheld-parent-mailbox").  Each variant
--- returns where the room goes: { new = {label, kind, port} } for a new
--- mailbox, { join = mailbox tag } for an existing one.
-local UNHELD_PARENT_VARIANTS = {
-    -- its own tree mailbox, as if it were a top room; it stays there when
-    -- the parent arrives later, so the port its members use never moves.
-    ["own-mailbox"] = function(spec, list)
-        return new_tree_mailbox(spec, "a child of a parent not held here starts its own mailbox "
-            .. "under " .. UNHELD_PARENT_KEY .. " = own-mailbox")
-    end,
-    -- the one waiting mailbox, until the parent arrives (settle_waiting).
-    ["waiting-mailbox"] = function(spec, list)
-        check_no_port(spec, "a child of a parent not held here waits in the waiting mailbox under "
-            .. UNHELD_PARENT_KEY .. " = waiting-mailbox")
-        return the_one_or_error(list, "waiting",
-            "make_mailbox(home, {label = ..., kind = \"waiting\", port = ...})")
-    end,
-}
-
 -- Where a new room goes, by what kind of room it is (see the "placement"
--- worked out in make_room).  Each returns { new = ... } or { join = tag }.
+-- worked out in make_room).  Each returns { new = ... } or { join = tag };
+-- `tag` is the new room's own local tag.
 local PLACEMENTS = {
     -- a direct message: the one direct mailbox.
-    ["direct"] = function(home, spec, list, index)
+    ["direct"] = function(home, spec, list, index, tag)
         check_no_port(spec, "a direct message joins the one direct mailbox")
         return the_one_or_error(list, "direct",
             "make_mailbox(home, {label = ..., kind = \"direct\", port = ...})")
     end,
     -- a top-level group room: a new tree mailbox with the port given.
-    ["top"] = function(home, spec, list, index)
-        return new_tree_mailbox(spec, "a top-level group room starts its own mailbox")
+    ["top"] = function(home, spec, list, index, tag)
+        return new_tree_mailbox(spec, "a top-level group room starts its own mailbox", "")
     end,
-    -- a child whose parent is held here: the parent's mailbox, whatever
-    -- kind it is (a parent still waiting takes its children with it).
-    ["held-parent"] = function(home, spec, list, index)
+    -- a child whose parent is held here: the parent's mailbox (a parent
+    -- whose own mailbox still awaits a merge takes its children with it
+    -- when it merges).
+    ["held-parent"] = function(home, spec, list, index, tag)
         check_no_port(spec, "a child room joins its parent's mailbox")
         return { join = read_entry(home, index[spec.parent].tag).mailbox }
     end,
-    -- a child whose parent is not held here: the owner's open choice.
-    ["unheld-parent"] = function(home, spec, list, index)
-        local choice = config_value(home, UNHELD_PARENT_KEY)
-        local variant = UNHELD_PARENT_VARIANTS[choice]
-        -- not a built variant: a typo in config, never guessed past.
-        if variant == nil then
-            error(UNHELD_PARENT_KEY .. " must be 'own-mailbox' or 'waiting-mailbox', got '" .. choice .. "'", 3)
-        end
-        return variant(spec, list)
+    -- a child whose parent is not held here: a tree mailbox of its own
+    -- (the owner's answer, round 4), remembering the room so it can merge
+    -- into the parent's mailbox once the parent arrives.
+    ["unheld-parent"] = function(home, spec, list, index, tag)
+        return new_tree_mailbox(spec, "a child room whose parent is not held here starts its own mailbox", tag)
     end,
 }
 
@@ -823,38 +833,124 @@ local function move_room_to_mailbox(home, entry, mailbox_tag)
 end
 -- }}}
 
--- {{{ local function settle_waiting
--- Under mailboxes.unheld-parent = waiting-mailbox, a child room made while
--- its parent was not held waits in the waiting mailbox.  After anything
--- that can bring a parent here (a room made, a token changed, a parent
--- written), every waiting room whose declared parent is now held — and is
--- not itself waiting — moves into the parent's mailbox.  Repeated until
--- nothing moves, so a waiting chain settles from the top down.  With no
--- waiting mailbox (the own-mailbox variant, or none made yet) nothing
--- waits, and nothing is read but the mailboxes file.
-local function settle_waiting(home)
-    local waiting = waiting_mailbox(home)
-    -- no waiting mailbox: nothing can be waiting.
-    if waiting == "" then
-        return
-    end
-    local moved = true
-    while moved do
-        moved = false
-        local index = fingerprint_index(home)
-        for _, tag in ipairs(list_rooms(home)) do
-            local entry = read_entry(home, tag)
+-- {{{ local function find_mergeable
+-- Every mailbox whose rooms can now merge into a parent's: list of
+-- { mailbox = its tag, room = the room it was made for, into = the
+-- parent's mailbox tag, rooms = sorted tags of the rooms that would move },
+-- sorted by mailbox tag.  A mailbox can merge when it remembers a room
+-- (awaits_parent_of), that room's declared parent is now held here, and
+-- the parent's mailbox is another one.  Reads no config.
+local function find_mergeable(home)
+    local found = {}
+    local list = read_mailboxes(home)
+    local index = nil
+    for _, mailbox in ipairs(list) do
+        -- remembers a room: see whether its parent has arrived.
+        if mailbox.awaits_parent_of ~= "" then
+            local room = mailbox.awaits_parent_of
+            -- the remembered room is gone: nothing in phase 1 removes a
+            -- room, so this is a hand edit, named rather than skipped.
+            if not room_exists(home, room) then
+                error("mailbox " .. mailbox.tag .. " awaits the parent of room " .. room
+                    .. ", which is not held here (a hand edit?)", 3)
+            end
+            local entry = read_entry(home, room)
+            -- the room is no longer in the mailbox made for it: write_mailbox
+            -- clears the mark when that happens, so this is a hand edit.
+            if entry.mailbox ~= mailbox.tag then
+                error("mailbox " .. mailbox.tag .. " awaits the parent of room " .. room
+                    .. ", but that room is in mailbox " .. entry.mailbox .. " (a hand edit?)", 3)
+            end
+            index = index or fingerprint_index(home)
             local holder = entry.parent ~= "" and index[entry.parent] or nil
-            -- waiting, with a parent now held: follow the parent unless the
-            -- parent is itself still waiting (it moves first, next pass).
-            if entry.mailbox == waiting and holder ~= nil then
-                local parent_mailbox = read_entry(home, holder.tag).mailbox
-                if parent_mailbox ~= waiting then
-                    move_room_to_mailbox(home, entry, parent_mailbox)
-                    moved = true
+            -- a declared parent, now held here: the merge is possible when
+            -- the parent listens elsewhere.  No parent (written away), or
+            -- not held yet: keep waiting.
+            if holder ~= nil then
+                local into = read_entry(home, holder.tag).mailbox
+                if into ~= mailbox.tag then
+                    found[#found + 1] = { mailbox = mailbox.tag, room = room, into = into,
+                                          rooms = list_rooms_by_mailbox(home, mailbox.tag) }
                 end
+                -- (the parent was put in this very mailbox by hand: nothing
+                -- would move; it stays listed nowhere.)
             end
         end
+    end
+    return found
+end
+-- }}}
+
+-- {{{ local function clear_awaiting
+-- The mailbox no longer waits to merge: its awaits_parent_of becomes "".
+-- The mailbox itself stays, with its port, even when empty: phase 2 keeps
+-- trying the old port for moved rooms until their members confirm the
+-- new one (issue 205/202).
+local function clear_awaiting(home, mailbox_tag)
+    local list = read_mailboxes(home)
+    find_mailbox(list, mailbox_tag).awaits_parent_of = ""
+    write_mailboxes(home, list)
+end
+-- }}}
+
+-- {{{ local function do_merge
+-- Moves every room of one mergeable mailbox (a row of find_mergeable)
+-- into the parent's mailbox — the room it was made for first, then the
+-- rooms made under it, by tag — each ringing "mailbox" with its tag, then
+-- clears the mark.  The same per-room move write_mailbox and round 3's
+-- waiting mailbox used.
+local function do_merge(home, row)
+    local order = { row.room }
+    for _, tag in ipairs(row.rooms) do
+        if tag ~= row.room then order[#order + 1] = tag end
+    end
+    for _, tag in ipairs(order) do
+        move_room_to_mailbox(home, read_entry(home, tag), row.into)
+    end
+    clear_awaiting(home, row.mailbox)
+end
+-- }}}
+
+-- What each value of mailboxes.merge-when-parent-arrives does with the
+-- merges that became possible.  Each returns true when it moved anything
+-- (so settle_merges looks again: a merge can make another possible down a
+-- chain).
+local MERGE_MODES = {
+    -- move them now (the owner: "I prefer automatic").
+    ["automatic"] = function(home, rows)
+        for _, row in ipairs(rows) do
+            do_merge(home, row)
+        end
+        return true
+    end,
+    -- move nothing: mergeable_mailboxes lists them until the person says
+    -- yes with merge_mailbox.
+    ["ask"] = function(home, rows)
+        return false
+    end,
+}
+
+-- {{{ local function settle_merges
+-- After anything that can bring a parent here (a room made, a token
+-- changed, a parent written): when some mailbox can now merge, the setting
+-- says whether it happens.  With nothing mergeable the setting is not read
+-- at all (a home need not set it until a merge is possible — but then it
+-- must: no default).  Repeated until nothing moves, one merge at a time,
+-- because merging one mailbox can make it the parent's mailbox of another.
+local function settle_merges(home)
+    local rows = find_mergeable(home)
+    while #rows > 0 do
+        local mode = config_value(home, MERGE_KEY)
+        local act = MERGE_MODES[mode]
+        -- not a known value: a typo in config, never guessed past.
+        if act == nil then
+            error(MERGE_KEY .. " must be 'automatic' or 'ask', got '" .. mode .. "'", 3)
+        end
+        -- moved nothing (ask): leave them listed.  Moved: look again.
+        if not act(home, { rows[1] }) then
+            return
+        end
+        rows = find_mergeable(home)
     end
 end
 -- }}}
@@ -868,7 +964,7 @@ end
 -- empty log — and
 -- renames it into place, so the room appears whole or not at all.  Rings
 -- "created" once (a new mailbox is covered by it), then settles any
--- waiting rooms this room is the parent of.  Returns the new local tag.
+-- merges this room's arrival makes possible.  Returns the new local tag.
 --
 -- Order: every check first (fields, token, parent, filing, mailbox), then
 -- the new mailbox (if any) into the mailboxes file, then the room.  A
@@ -885,7 +981,7 @@ local function make_room(home, spec)
     check_parent_placement(index, { [tokens.token_fingerprint(spec.token)] = true }, spec.parent)
     check_filing(home, tag, spec.filed_under)
     local list = read_mailboxes(home)
-    local place = PLACEMENTS[placement_of(spec, index)](home, spec, list, index)
+    local place = PLACEMENTS[placement_of(spec, index)](home, spec, list, index, tag)
     -- a placeholder tag lets the whole entry be checked before anything
     -- is written; the real mailbox tag replaces it below.
     local entry = {
@@ -897,7 +993,8 @@ local function make_room(home, spec)
     -- a new mailbox: write it now that everything else is known good.
     -- Joining one: the entry already names it.
     if place.new ~= nil then
-        entry.mailbox = add_mailbox(home, list, place.new.label, place.new.kind, place.new.port)
+        entry.mailbox = add_mailbox(home, list, place.new.label, place.new.kind, place.new.port,
+                                    place.new.awaits_parent_of)
         text = entries.entry_text(entry)
     end
 
@@ -912,7 +1009,7 @@ local function make_room(home, spec)
     disk.write_atomic(building .. "/log", "")
     disk.rename(building, room_dir(home, tag))
     bell.notify(home, tag, "created")
-    settle_waiting(home)
+    settle_merges(home)
     return tag
 end
 -- }}}
@@ -940,17 +1037,63 @@ end
 -- {{{ local function write_mailbox
 -- Moves a room into another mailbox by hand.  The room's kind must fit the
 -- mailbox's (a direct message only in the direct mailbox).  Rings
--- "mailbox" with the room's tag.
+-- "mailbox" with the room's tag.  Moving the room a mailbox was made for
+-- out of it ends that mailbox's wait to merge: the person placed it.
 local function write_mailbox(home, tag, mailbox_tag)
     local entry = existing_entry(home, tag)
     check_tag(mailbox_tag)
-    local mailbox = find_mailbox(read_mailboxes(home), mailbox_tag)
+    local list = read_mailboxes(home)
+    local mailbox = find_mailbox(list, mailbox_tag)
     -- absent: the room would listen nowhere.
     if mailbox == nil then
         error("write_mailbox: no such mailbox: " .. mailbox_tag, 2)
     end
     check_fits(entry.kind, mailbox)
+    local leaving = find_mailbox(list, entry.mailbox)
     move_room_to_mailbox(home, entry, mailbox_tag)
+    -- it left the mailbox that awaited its parent: that wait is over.
+    -- (Any other move: no mark to clear.)
+    if leaving ~= nil and leaving.awaits_parent_of == tag and mailbox_tag ~= leaving.tag then
+        clear_awaiting(home, leaving.tag)
+    end
+end
+-- }}}
+
+-- {{{ local function mergeable_mailboxes
+-- The merges waiting for the person's yes (under "ask"; under "automatic"
+-- they happen at once, so this is empty after every write): list of
+-- { mailbox, room, into, rooms } as find_mergeable gives, sorted by
+-- mailbox tag.  Reads no config.
+local function mergeable_mailboxes(home)
+    check_home(home)
+    return find_mergeable(home)
+end
+-- }}}
+
+-- {{{ local function merge_mailbox
+-- The person's yes: moves the rooms of one mergeable mailbox into its
+-- parent's mailbox (each ringing "mailbox" with its tag).  Works under
+-- either setting.  A mailbox that cannot merge (not waiting, or the parent
+-- not held yet) is an error saying why.  Then settles as after any write,
+-- since this merge may make another possible.
+local function merge_mailbox(home, mailbox_tag)
+    check_home(home)
+    check_tag(mailbox_tag)
+    local mailbox = read_mailbox(home, mailbox_tag)
+    for _, row in ipairs(find_mergeable(home)) do
+        -- the one asked for: merge it.
+        if row.mailbox == mailbox_tag then
+            do_merge(home, row)
+            settle_merges(home)
+            return
+        end
+    end
+    -- not waiting at all, or its parent not here yet: say which.
+    if mailbox.awaits_parent_of == "" then
+        error("merge_mailbox: mailbox " .. mailbox_tag .. " is not waiting to merge into a parent's", 2)
+    end
+    error("merge_mailbox: mailbox " .. mailbox_tag .. " cannot merge yet: the declared parent of room "
+        .. mailbox.awaits_parent_of .. " is not held here", 2)
 end
 -- }}}
 
@@ -1012,9 +1155,10 @@ local function write_parent(home, tag, parent)
     entry.parent = parent
     write_entry(home, entry)
     bell.notify(home, tag, "parent")
-    -- a waiting room given a held parent follows it (waiting variant only);
-    -- a room already in a mailbox keeps it (its port does not move).
-    settle_waiting(home)
+    -- a room in a mailbox made for it while its parent was not held, now
+    -- given a held parent: it can merge (by the setting).  Any other room
+    -- keeps its mailbox (its port does not move; open question 9).
+    settle_merges(home)
 end
 -- }}}
 
@@ -1064,8 +1208,8 @@ local function change_token(home, tag, token)
         end
     end
     bell.notify(home, tag, "token")
-    -- the new token may be a waiting room's parent's (waiting variant).
-    settle_waiting(home)
+    -- the new token may be the parent a waiting mailbox's room declares.
+    settle_merges(home)
 end
 -- }}}
 
@@ -1084,6 +1228,7 @@ return {
     read_config = read_config,
     set_config = set_config,
     config_value = config_value,
+    declared_settings = declared.declared_settings,
     new_local_tag = new_local_tag,
     is_local_tag = entries.is_local_tag,
     token_fingerprint = tokens.token_fingerprint,
@@ -1114,7 +1259,8 @@ return {
     read_mailboxes = read_mailboxes,
     read_mailbox = read_mailbox,
     direct_mailbox = direct_mailbox,
-    waiting_mailbox = waiting_mailbox,
+    mergeable_mailboxes = mergeable_mailboxes,
+    merge_mailbox = merge_mailbox,
     list_rooms_by_mailbox = list_rooms_by_mailbox,
     mailboxes_by_port = mailboxes_by_port,
     shared_ports = shared_ports,
@@ -1128,5 +1274,5 @@ return {
     KINDS = entries.KINDS,
     MAILBOX_KINDS = mailbox_file.MAILBOX_KINDS,
     SUGGESTED_WORD_COUNT = SUGGESTED_WORD_COUNT,
-    UNHELD_PARENT_KEY = UNHELD_PARENT_KEY,
+    MERGE_KEY = MERGE_KEY,
 }

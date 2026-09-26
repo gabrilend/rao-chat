@@ -54,14 +54,16 @@ end
 -- this is narrower so a key can always be written back unambiguously.
 local CONFIG_KEY_PATTERN = "^[%w_%.%-]+$"
 
--- {{{ local function parse_config
--- text → table of key (string) → value (string).  Values stay strings
--- ("true" is not turned into a boolean as rmail does), so every caller
--- compares against the same kind of thing.  An empty value ("key =") is
--- the empty string.  A key set twice is an error: which one wins would
--- otherwise depend on the reader.
-local function parse_config(text, where)
-    local config = {}
+-- {{{ local function parse_config_lines
+-- text → list of { key (string), value (string), number (the line number,
+-- counted from 1) } in file order.  Values stay strings ("true" is not
+-- turned into a boolean as rmail does), so every caller compares against
+-- the same kind of thing.  An empty value ("key =") is the empty string.
+-- A key set twice is an error: which one wins would otherwise depend on
+-- the reader.  The line numbers let a later check (017-declared-settings:
+-- a name no module reads) point at the exact line to fix.
+local function parse_config_lines(text, where)
+    local lines, seen = {}, {}
     for number, raw in ipairs(split_lines(text)) do
         local line = trim(raw)
         -- blank or "#" comment: carries no setting.  Otherwise it must be
@@ -73,13 +75,33 @@ local function parse_config(text, where)
                 error(where .. " line " .. number .. ": not a 'key = value' line: " .. raw, 0)
             end
             -- key already seen: two answers to one question.
-            if config[key] ~= nil then
+            if seen[key] then
                 error(where .. " line " .. number .. ": '" .. key .. "' is set twice", 0)
             end
-            config[key] = value
+            seen[key] = true
+            lines[#lines + 1] = { key = key, value = value, number = number }
         end
     end
+    return lines
+end
+-- }}}
+
+-- {{{ local function config_table
+-- The list from parse_config_lines → table of key → value.
+local function config_table(lines)
+    local config = {}
+    for _, line in ipairs(lines) do
+        config[line.key] = line.value
+    end
     return config
+end
+-- }}}
+
+-- {{{ local function parse_config
+-- text → table of key (string) → value (string); the same rules as
+-- parse_config_lines, without the line numbers.
+local function parse_config(text, where)
+    return config_table(parse_config_lines(text, where))
 end
 -- }}}
 
@@ -306,6 +328,7 @@ end
 
 return {
     parse_config = parse_config,
+    parse_config_lines = parse_config_lines,
     config_with = config_with,
     parse_contacts = parse_contacts,
     address_pairs = address_pairs,

@@ -39,7 +39,9 @@
 -- record shape is tsv (083-record-codecs.lua), so log.record-shape and
 -- log.shape-mixing are gone; anyone may edit (log.who-may-edit); and a
 -- repeat that differs only in the address it came from is a duplicate
--- (log.same-id-new-address).
+-- (log.same-id-new-address).  The one name read is declared to the
+-- config reader in 087-settings.lua (round 4); the retired four are not,
+-- so a home still holding one of them is refused when its config is read.
 
 local rooms = require("002-room-folders")
 local ids = require("082-message-ids")

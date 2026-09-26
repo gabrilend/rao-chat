@@ -8,104 +8,152 @@
 
 ## Current Behavior
 
-Rebuilt for "a room is a contact" (round 2) and given mailboxes and the
-flagged file (round 3, 2026-09-25).  125 checks in
-`src/room-folders/tests/018-run-tests`: 124 pass, 1 fails — the failure
-is the real people-links module (104, frozen this round) refusing the new
-bell kind `mailbox` (one line in its listener table fixes it).  14 of the
-checks run against the real room-tree, recipients, ignore list,
-people-links and message-log modules.  The shared parts of
-`docs/phase-1-module-contract.md` describe it.  Round 1 and 2's `-done`
-files are deleted (git history holds them).
+Rebuilt for "a room is a contact" (round 2), given mailboxes and the
+flagged file (round 3), and, in round 4 (2026-09-26), declared settings,
+the own mailbox fixed and merging into the parent's mailbox.  141 checks
+in `src/room-folders/tests/018-run-tests`, all passing; 16 of them run
+against the real room-tree, recipients, ignore list, people-links and
+message-log modules.  The shared parts of `docs/phase-1-module-contract.md`
+describe it (new section "Settings: every name is declared").
 
 What exists in `src/room-folders/` (each source file with a `.info.md`):
 
 - `001-load-path.lua` — adds `libs/` and every folder under `src/` to
   Lua's search path.
 - `002-room-folders.lua` — the front door.  `open_home` makes `config`,
-  an empty `mailboxes`, an empty `ignore`, `rooms/`, `people/`.  Rooms are
-  made from `{label, token, kind, parent, filed_under, members,
-  mailbox_port}` (every field required) in a hidden `rooms/.new-<tag>/`
-  with `entry`, an empty `withheld`, an empty `flagged` (103's private
-  review list) and an empty `log`, then renamed into place and announced
-  with `created`.  Reading an entry; writing the label, members, one
-  member's last-heard time, parent, filing, mailbox; changing a token by
-  hand (folder, label, members, withheld and log kept; child rooms held
-  here re-pointed); listing all rooms, by kind, by mailbox; finding a room
-  by token fingerprint; paths of every room file.  Refuses a token already
-  held by another room, a room placed inside itself, a filing that is
-  unheld, itself or a loop.  Errors never print a token.
+  an empty `mailboxes`, an empty `ignore`, `rooms/`, `people/`, then reads
+  `config` through the declared-settings check.  Rooms are made from
+  `{label, token, kind, parent, filed_under, members, mailbox_port}`
+  (every field required) in a hidden `rooms/.new-<tag>/` with `entry`, an
+  empty `withheld`, an empty `flagged` (103's private review list) and an
+  empty `log`, then renamed into place and announced with `created`.
+  Reading an entry; writing the label, members, one member's last-heard
+  time, parent, filing, mailbox; changing a token by hand (folder, label,
+  members, withheld and log kept; child rooms held here re-pointed);
+  listing all rooms, by kind, by mailbox; finding a room by token
+  fingerprint; paths of every room file.  Refuses a token already held by
+  another room, a room placed inside itself, a filing that is unheld,
+  itself or a loop.  Errors never print a token.
+- **Declared settings** (`016-settings.lua`, `017-declared-settings.lua`,
+  wired into `002`).  Every module keeps one file
+  `src/<module>/<3 digits>-settings.lua` returning a plain list of the
+  config names it reads (101's: `mailboxes.merge-when-parent-arrives`).
+  `017` finds them by listing every folder under the `src/` it was loaded
+  from, once per program — so the answer does not depend on which modules
+  a program loaded (the other design, each module registering its list
+  when `require`d, was set aside for that reason: a name would be
+  "unknown" whenever its module was not loaded).  A list that is not a
+  plain list of setting names, a name twice, a name declared by two
+  modules, or two lists in one folder is an error naming the file(s).
+  `open_home` and every `read_config` refuse a config line whose name no
+  module declares, naming the file, line number and line ("a retired
+  setting, a typo, or a setting from a newer version — remove or correct
+  the line"); `set_config` refuses an undeclared name before writing;
+  `config_value` refuses an undeclared name (a module reading a name it
+  forgot to list).  `declared_settings()` gives name → `{module, file}`.
+  `004-rmail-formats.parse_config_lines` keeps each line's number for the
+  message.  Tests and the demo build homes as before, setting only
+  declared names; by the end of the round every module that reads a
+  setting had its list (room-folders, room-tree, recipients with the
+  ignore list, people-links, message-log; the demo reads none).  This replaces 105's retired-keys choice (open question 10).
 - **Mailboxes** (in `002`, format in `014`).  Where a new room goes is a
   dispatch on its kind and parent: a top-level group room starts a new
   `tree` mailbox labelled with its label, on the port the maker gives
   (`mailbox_port`, no default); a child whose declared parent is held
   joins the parent's mailbox; every direct message goes in the one
   `direct` mailbox (made once with `make_mailbox`; a direct room before it
-  is refused, naming the call); a child whose declared parent is not held
-  goes by config `mailboxes.unheld-parent` — `own-mailbox` (a new tree
-  mailbox, stays there) or `waiting-mailbox` (the one `waiting` mailbox;
-  after every room made, token changed or parent written, waiting rooms
-  whose parent is now held — and not itself waiting — move into its
-  mailbox, pass after pass, ringing `mailbox` per room).  A port given
-  where the room joins a mailbox, or missing where it starts one, is an
-  error.  Two mailboxes on one port are allowed and reported every time
-  the file is read (to a warning sink: stderr, or a function a test or
-  the demo sets).  `mailboxes_by_port` gives what a frame arriving on a
-  port is tried against; `list_rooms_by_mailbox` the rooms in each;
-  `shared_ports`; `write_mailbox_port`; `write_mailbox` moves a room by
-  hand (a direct room only into the direct mailbox, a group room only into
-  a tree or waiting one).  A room already in a mailbox keeps it when its
+  is refused, naming the call); **a child whose declared parent is not
+  held always starts a `tree` mailbox of its own** on the port given
+  (answered; `mailboxes.unheld-parent`, the `waiting` mailbox kind,
+  `waiting_mailbox` and `UNHELD_PARENT_KEY` are gone), and that mailbox
+  records the room in its `awaits-parent-of` field.  A port given where
+  the room joins a mailbox, or missing where it starts one, is an error.
+  Two mailboxes on one port are allowed and reported every time the file
+  is read (to a warning sink: stderr, or a function a test or the demo
+  sets).  `mailboxes_by_port`, `list_rooms_by_mailbox`, `shared_ports`,
+  `write_mailbox_port`, `write_mailbox` (a direct room only into the
+  direct mailbox, a group room only into a tree one; moving an awaited
+  room out of its mailbox ends that mailbox's wait).
+- **Merging into the parent's mailbox.**  After `make_room`,
+  `change_token`, `write_parent` and `merge_mailbox`, a mailbox can merge
+  when the room it awaits the parent of has its declared parent held here,
+  in another mailbox.  Only then is `mailboxes.merge-when-parent-arrives`
+  read (no default): `automatic` (listed first; the owner's preference)
+  moves every room of that mailbox — the awaited room first, then by tag
+  — into the parent's mailbox with the move code the waiting mailbox used,
+  each ringing `mailbox` with its tag, clears the mark, and repeats until
+  nothing can merge (a chain arriving bottom-up merges step by step);
+  `ask` moves nothing, and `mergeable_mailboxes(home)` lists
+  `{mailbox, room, into, rooms}` until the person's yes,
+  `merge_mailbox(home, mailbox_tag)` (an error when the mailbox awaits
+  nothing or the parent is not held yet).  The emptied mailbox stays, with
+  its port, for phase 2 (issue 205/202) to keep trying until members
+  confirm the new port.  A room in a settled mailbox keeps it when its
   parent changes (open question 9).
 - `003-disk.lua` — write-to-temporary-then-rename, folder making.
-- `004-rmail-formats.lua` — rmail's config and contacts formats; every
-  address with its own port, no default port.
+- `004-rmail-formats.lua` — rmail's config and contacts formats (config
+  lines with their line numbers); every address with its own port, no
+  default port.
 - `005-change-bell.lua` — kinds `created`, `label`, `token`, `members`,
-  `heard`, `parent`, `filed`, `withheld` (now "withheld or flagged
-  changed: who you send to", rung by 103 for both), `log`, `ignore`,
-  `removed-room`, and `mailbox` (rung with `""` when `make_mailbox` makes
-  one or a port changes; with a room's tag when that room moves).  A new
-  tree mailbox made by `make_room` rings only `created`.
+  `heard`, `parent`, `filed`, `withheld` (103's, for withheld or flagged
+  changes), `log`, `ignore`, `removed-room`, and `mailbox` (rung with `""`
+  when `make_mailbox` makes one or a port changes; with a room's tag when
+  that room moves, by hand or by a merge).  A new tree mailbox made by
+  `make_room` rings only `created`.
 - `006-entry.lua` — the entry in rmail's contacts format, named by the
   local tag: quoted `label` and `token`, `kind`, `parent`, `mailbox` (a
   mailbox tag, never empty), `filed-under`, and `ip[N]`/`port[N]`/
-  `heard[N]` always together, numbered from 1.  An entry without
-  `mailbox` (from round 2) is an error on read; no conversion.
+  `heard[N]` always together, numbered from 1.
 - `007-tokens.lua` — the fingerprint `SHA-256(SHA-256(token))` through
   libcrypto; raw `sha256` for phase 2's key; readable suggestions from
-  `assets/eff-large-wordlist.txt`.  `suggest_token(home)` gives **six**
-  words (answered; the `rooms.suggested-token-words` switch and its 5/4
-  variants are gone); `suggest_token_of(n)` any count.
+  `assets/eff-large-wordlist.txt`; `suggest_token(home)` gives six words
+  (answered), `suggest_token_of(n)` any count.
 - `014-mailboxes.lua` — the `mailboxes` file (rmail's contacts format,
   one entry per mailbox named by its own local tag: quoted `label`,
-  `kind` tree|direct|waiting, `port`), sorted by tag, every field
-  checked; at most one direct and one waiting mailbox.
-- `019-options.lua` — eight choices (below).
+  `kind` tree|direct, `port`, `awaits-parent-of` a room tag or empty),
+  sorted by tag, every field checked; at most one direct mailbox; a
+  round-3 file (no `awaits-parent-of`, or a `waiting` mailbox) is refused.
+- `016-settings.lua` — 101's declared setting names.
+- `017-declared-settings.lua` — finding and checking every module's list.
+- `019-options.lua` — nine choices (below).
 
-Tests (`tests/`): `009` formats and the entry (18), `010` tokens (17),
-`011` home and rooms (30), `012` the bell (15), `013` with the real
-neighbours (14: flagged-then-approved member, child rooms in their top's
-mailbox, every neighbour accepting `mailbox` — fails on 104), `015`
-mailboxes (31: a top room and its child in one mailbox, a direct message
-in the direct mailbox, a shared port reported on every read, mailboxes by
-port, both unheld-parent variants, a bottom-up chain settling top-down,
-settling through a token change and a parent write).
-`008-kit-for-tests.lua` is the shared kit (`test_home` makes a home with
-its direct mailbox; `port_for` gives a top room a fresh port).
+Tests (`tests/`): `009` formats and the entry (18), `010` tokens (17:
+the round-2 token-words setting is now refused as undeclared), `011` home
+and rooms (42: a known config line accepted, an unknown one refused by
+`open_home` and every later read naming its line, a typo refused,
+`set_config` and `config_value` refusing undeclared names, and the
+gathering rules on scratch `src/` folders — one folder deep only, every
+broken list shape, two owners, two files), `012` the bell (15), `013`
+with the real neighbours (16: every options key declared, flagged-then-
+approved member, a stray child merging into its arriving parent's mailbox
+with every neighbour listening), `015` mailboxes (33: the file with
+`awaits-parent-of`, placement, shared ports, a child of an unheld parent
+in its own mailbox, the merge setting read only when needed and refused
+when unknown, `automatic` moving a child and grandchild / a bottom-up
+chain / through a token change / through `write_parent`, `ask` listing
+then merging on the yes, a yes refused before the parent arrives, a yes
+lower in a chain landing in the parent's current mailbox, a hand move
+ending the wait).  `008-kit-for-tests.lua` is the shared kit
+(`test_home(rooms, name, merge)` makes a home with its direct mailbox and
+optionally the merge setting; `port_for_home` gives a fresh port to a top
+room or a child of an unheld parent).
 
-Choices in `019-options.lua`: `rooms-unheld-parent-mailbox` (key
-`mailboxes.unheld-parent`: `own-mailbox`, `waiting-mailbox`; issue 102's
-question, agreed on the board to live here), and seven not switchable:
-mailbox after a parent change (`keep`, new), bell-failure
+Choices in `019-options.lua`: `rooms-merge-when-parent-arrives` (key
+`mailboxes.merge-when-parent-arrives`: `automatic`, `ask` — answered as a
+setting kept both ways; listed so the demo and tally know its values),
+and eight not switchable: a declined merge under `ask` (`stays-listed`,
+new), mailbox after a parent change (`keep`), bell-failure
 (`keep-and-raise`), write-durability (`rename-only`, waits on phase 6),
 rmail contacts (`own-folders`), token change and children
 (`repoint-held`), last-heard location (`in-entry`), one folder per token
-(`refuse-second`).  Removed as answered: `rooms-suggested-token-words`.
+(`refuse-second`).  Removed as answered: `rooms-unheld-parent-mailbox`
+(round 4), `rooms-suggested-token-words` (round 3).
 
-Effect on the people-links module (104, not changed this round): its
-tests make rooms without `mailbox_port` and its bell listener refuses
-`mailbox`; stand-in 244/0, real-101 53/5, real 53/6, every failure one
-of those two.  The fix on its side is one spec field in its test harness
-and one line (`["mailbox"] = changes_no_links`) in its listener table.
+Neighbours after this round's changes: people-links (104) 798/0
+(stand-in, real-101, real); phase-1 demo tests (106) 300/0, including the
+demo end to end through `run-phase-demo 1`; room-tree (102) 0 files
+failed; recipients (103/103a) 72/0 stand-in, 73/0 real-101 and real;
+message-log (105) all passing, stand-in and real.
 
 Not done here: nothing retires a room folder or a mailbox (`removed-room`
 has no ringer in phase 1; leaving is phase 2).
@@ -151,7 +199,8 @@ A home server keeps everything under one folder, `rao-home/`:
 - **Mailboxes.**  A mailbox is a group of rooms with its own listening
   port, listed in `rao-home/mailboxes` (rmail's format, one entry per
   mailbox named by its own local tag: `label`, `kind` tree | direct,
-  `port`, a whole number with no default).  A top-level group room is made
+  `port`, a whole number with no default; `awaits-parent-of` on a mailbox
+  made for a child whose parent is not held yet).  A top-level group room is made
   with a new tree mailbox, its port given by the maker; a child room joins
   its declared parent's mailbox; every direct message goes in the one
   direct mailbox.  Rooms stay stored flat; the mailbox is only named in
@@ -174,7 +223,16 @@ A home server keeps everything under one folder, `rao-home/`:
   it's manually modified").  The room keeps its folder, label, members and
   log; only `token` changes.
 - **Config** stays strict: an absent key is an error, never a silent
-  default.
+  default, and a line naming a setting no module reads is an error naming
+  the line (owner: "I think it should probably just give an error if it
+  doesn't recognize a value").  Every module declares the names it reads
+  in a plain list of its own.
+- **A child room whose parent is not held here** gets its own mailbox and
+  port; once the parent arrives its mailbox's rooms can merge into the
+  parent's (owner: "we should make it so that they can merge into the
+  parent rooms later on if possible"), by the setting
+  `mailboxes.merge-when-parent-arrives` = `automatic` (owner: "I prefer
+  automatic") or `ask`.
 - **The change bell.**  Writes ring a bell other modules listen on, so the
   derived files (`where`, `people/`) stay true without this module knowing
   about them.  Kinds: `created`, `label`, `token`, `members`, `heard`,
@@ -203,27 +261,6 @@ A home server keeps everything under one folder, `rao-home/`:
 9. Tests: an unpaired address refused; a direct message and a group read
    by the same code; changing a token keeps the log; the fingerprint is
    the same on two homes for the same token; every bell kind.
-
-### Round 4 (2026-09-25)
-
-1. **Unknown config lines are errors.**  Every module declares the setting
-   names it reads (a small list each module hands to the config reader, or
-   read from the options files — builder's call, recorded); opening a home
-   whose `config` holds a name nobody declared is an error naming the line.
-   Owner: "I think it should probably just give an error if it doesn't
-   recognize a value."  Replaces the log's retired-keys choice.
-2. **Own mailbox, fixed**: `mailboxes.unheld-parent` goes; a child whose
-   parent is not held always gets its own mailbox and port.
-3. **Merging into the parent's mailbox later.**  Once a room's declared
-   parent arrives, the room can be moved into the parent's mailbox (reuse
-   the waiting-mailbox move, which otherwise retires).  Built both ways,
-   switched: `mailboxes.merge-when-parent-arrives` = `ask` (listed as
-   waiting for the person's yes) or `automatic`.  The move rings `mailbox`;
-   phase 2 (issue 205/202) announces the new port and keeps trying the old
-   one for that room until members confirm.
-4. Tests: an unknown config line refused; a known one accepted; a child
-   made without its parent gets its own mailbox; after the parent arrives,
-   `ask` lists it as mergeable and `automatic` moves it.
 
 ## Blockers that are not the owner's
 
@@ -283,7 +320,10 @@ them one at a time.  An issue with any of them unanswered is in progress.
    invited twice to the same room would be told "already held here"
    rather than get a second folder.  Is that what the owner wants?
 
-8. **A child room whose declared parent is not held here: which mailbox?**
+8. *Answered (round 4): its own mailbox and port, fixed; it can merge
+   into the parent's later (`mailboxes.merge-when-parent-arrives`,
+   automatic or ask, a setting).  The waiting variant is gone.*
+   **A child room whose declared parent is not held here: which mailbox?**
    (issue 102's question, found in round 3; config
    `mailboxes.unheld-parent`, both built).  `own-mailbox`: its own port,
    never moves (one more router port; the tree then spans two mailboxes
@@ -293,11 +333,18 @@ them one at a time.  An issue with any of them unanswered is in progress.
    phase 2 announces the move.  Leaning: own-mailbox.
 9. **A room in a mailbox given another declared parent** (found in round
    3): keeps its mailbox (built), or moves with its subtree into the new
-   parent's?  Moving changes the port members send to, as in 8.
-10. **A retired config key left in a home's config** (raised by 105 in
-    round 3, its options entry `log-retired-keys-in-config`): is silently
-    ignored now.  Refusing it in 101's config reader would need a list of
-    retired keys somewhere (the options files do not keep one).
+   parent's?  Moving changes the port members send to, as in 8.  *Round
+   4:* a room whose own mailbox still awaits its parent is not covered by
+   this: given a held parent by `write_parent`, it merges by the merge
+   setting (built so, since the mailbox exists only to wait for a parent).
+10. *Answered (round 4): every config line nothing reads is an error
+    naming the line; built as declared settings (above).*  **A retired
+    config key left in a home's config** (raised by 105 in round 3, its
+    options entry `log-retired-keys-in-config`).
+11. **A merge the person declines under `ask`** (found in round 4, options
+    entry `rooms-merge-declined`): there is no "no" — it stays listed in
+    `mergeable_mailboxes` until a yes or a hand move (built), or should a
+    no be remembered and never offered again?
 
 ## Earlier designs
 

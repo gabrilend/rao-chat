@@ -17,10 +17,15 @@
 --   token_fingerprint  64 hex from eight rounds of a 32-bit FNV-1a mix, not
 --                      SHA-256 twice: same token, same fingerprint, which
 --                      is all the tests need
---   rao-home/mailboxes  a Lua table too; no shared-port warnings; no
---                      waiting mailbox (a parent not held here is always
---                      treated as mailboxes.unheld-parent = own-mailbox, but
---                      the key is still read then, as the real 101 does)
+--   rao-home/mailboxes  a Lua table too; no shared-port warnings; a room
+--                      whose parent is not held here gets its own mailbox
+--                      (the owner's round-4 answer, as in the real 101),
+--                      but is never merged into the parent's mailbox when
+--                      the parent arrives (the real 101 does that under
+--                      mailboxes.merge-when-parent-arrives; mailboxes move
+--                      no link, so people/ cannot tell the difference)
+--   config            any name may be set; the real 101 refuses a name no
+--                      module declares
 --   no refusals of loops, repeated tokens or bad addresses
 
 local bit = require("bit")
@@ -294,13 +299,8 @@ local function choose_mailbox(home, spec)
     -- a declared parent held here: its mailbox
     elseif M.find_by_fingerprint(home, spec.parent) ~= "" then
         wants_new = false
-    -- a parent not held here: read the key, as 101 does only then
+    -- a parent not held here: always a mailbox of its own (round 4)
     else
-        local choice = M.config_value(home, "mailboxes.unheld-parent")
-        -- the stand-in builds only own-mailbox
-        if choice ~= "own-mailbox" then
-            error("stand-in room-folders: only mailboxes.unheld-parent = own-mailbox is built here")
-        end
         wants_new = true
     end
     -- a new mailbox needs an integer port; the rest need ""

@@ -16,7 +16,9 @@
 -- reported with a NOTE line and its checks are skipped (counted neither
 -- as pass nor fail), so this file says plainly what could not be joined up.
 -- Every config key the options files list is set to its first variant,
--- as the phase 1 demo does.
+-- as the phase 1 demo does — those some module declares (round 4); a key
+-- an options file lists but no module declares is one plain failure,
+-- since no home could hold it.
 -- Run: luajit 013-test-with-neighbours.lua [project folder]
 
 local DIR = arg[1] or "/home/ritz/programs/rao-chat"
@@ -83,9 +85,22 @@ local function checked_with(needed, name, test)
 end
 -- }}}
 
+local declared_names = rooms.declared_settings()
+local undeclared_option_keys = {}
 for key, value in pairs(first_variants()) do
-    rooms.set_config(home, key, value)
+    -- declared: set it.  Not declared: collect it for the check below
+    -- (setting it would be refused).
+    if declared_names[key] ~= nil then
+        rooms.set_config(home, key, value)
+    else
+        undeclared_option_keys[#undeclared_option_keys + 1] = key
+    end
 end
+table.sort(undeclared_option_keys)
+
+check("every config key the options files list is declared by some module's <index>-settings.lua", function()
+    same(table.concat(undeclared_option_keys, ", "), "", "undeclared option keys")
+end)
 -- The two keys 102 reads only in their edge cases are set too, in case
 -- their options file does not list them yet.
 local config = rooms.read_config(home)
@@ -188,13 +203,22 @@ checked_with({ have_ignore }, "103a: the ignore file opened empty is readable by
     same(ignore.how_ignored(home, top, CODER.address, CODER.port), "none")
 end)
 
+local orphan
+
 checked_with({ have_tree, have_people }, "all: a new room under an unheld parent is a top room, and the bell ring does not fail", function()
-    -- the first variant of mailboxes.unheld-parent (own-mailbox) is set,
-    -- so the stray child starts a mailbox of its own and needs a port.
+    -- a child of a parent not held here starts a mailbox of its own, so
+    -- it needs a port.
     local stray_spec = spec("stray", "n-stray", "group", rooms.token_fingerprint("n-unheld"), { CODER })
     stray_spec.mailbox_port = kit.fresh_port()
-    local orphan = rooms.make_room(home, stray_spec)
+    orphan = rooms.make_room(home, stray_spec)
     same(tree.tree_parent_of(home, orphan), "")
+end)
+
+checked_with({ have_tree, have_people }, "all: when its parent arrives, the stray merges into the parent's mailbox (merge setting at its first value) with every neighbour listening", function()
+    same(rooms.read_config(home)[rooms.MERGE_KEY], "automatic", "the first-listed value")
+    local parent = rooms.make_room(home, spec("found", "n-unheld", "group", ""))
+    same(rooms.read_entry(home, orphan).mailbox, rooms.read_entry(home, parent).mailbox)
+    same(tree.tree_parent_of(home, orphan), parent)
 end)
 
 -- {{{ local function rings_mailbox_with

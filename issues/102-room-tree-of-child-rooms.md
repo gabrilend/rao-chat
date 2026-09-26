@@ -9,11 +9,12 @@
 ## Current Behavior
 
 Round 3 (2026-09-25) is built on top of round 2's "a room is a contact"
-tree.  The runner (`src/room-tree/tests/038-run-tests.sh`) gives 132
-checks passing against the stand-in room-folders module and 181
-against the real round-3 modules.  The contract's 102 section describes
-it.  Round 1's and round 2's `-done` files are deleted (git history holds
-them).
+tree; round 4 declared its setting name and followed 101's mailbox
+answer.  Every check the runner (`src/room-tree/tests/038-run-tests.sh`)
+makes passes, against the stand-in room-folders module and against the
+real round-4 modules; run it for the counts.  The contract's 102 section
+describes it.  Round 1's and round 2's `-done` files are deleted (git
+history holds them).
 
 What exists in `src/room-tree/` (each source file with a `.info.md`):
 
@@ -60,18 +61,34 @@ What exists in `src/room-tree/` (each source file with a `.info.md`):
   by `tree.filing-loop` (`unfile` / `refuse`); a ring of declared parents
   alone is always an error.
 - **Mailboxes** are 101's: a top group room starts a mailbox, a declared
-  child joins its parent's, a child made while its parent is not held
-  goes where `mailboxes.unheld-parent` says (`own-mailbox`: a mailbox and
-  port of its own, kept when the parent arrives; `waiting-mailbox`: the
-  one waiting mailbox, and moved into the parent's mailbox when the
-  parent arrives, repeated until nothing moves).  Agreed with 101 on the
-  board that the choice lives in 101's `make_room` and 101's options file,
-  since the code that picks a mailbox is 101's.  The tree's
-  `tests/028-test-mailboxes.lua` builds `home > ritz > programming`
-  bottom-up under both answers and checks mailboxes, tree and check agree
-  at each step: under `waiting-mailbox` the whole chain ends in home's
-  mailbox (programming, two levels down, moves too); under `own-mailbox`
-  one tree drawn is three mailboxes listening on three ports.
+  child joins its parent's, and a child made while its parent is not held
+  always gets a mailbox and port of its own (the owner's answer, round 4;
+  101's `mailboxes.unheld-parent` and waiting mailbox are gone).  When the
+  parent arrives, that mailbox's rooms can merge into the parent's; 101's
+  setting `mailboxes.merge-when-parent-arrives` says whether that happens
+  by itself (`automatic`, the owner's preference) or waits for the
+  person's yes (`ask`: listed by 101's `mergeable_mailboxes`, done by
+  `merge_mailbox`).  The choice lives in 101's `make_room` and options
+  file (`rooms-merge-when-parent-arrives`), since the code that picks a
+  mailbox is 101's.  The tree's `tests/028-test-mailboxes.lua` builds
+  `home > ritz > programming` bottom-up under both values and checks
+  mailboxes, tree and check agree at each step: under `automatic`
+  programming merges into ritz's mailbox when ritz arrives and both into
+  home's when home arrives (the emptied mailboxes stay, ports kept for
+  phase 2); under `ask` one tree drawn is three mailboxes on three ports
+  with two merges listed, and two yeses (ritz first, then programming,
+  whose merge then leads into home's mailbox) bring the whole tree into
+  home's.  The tree drawn is the same throughout: mailboxes place nothing.
+- `023-settings.lua` — the setting names this module reads, declared to
+  101's config reader (round 4; 101 refuses any config line no module
+  declares, and any read of an undeclared name): only
+  `tree.filing-loop`, still an open choice.  `035-test-rings.lua` checks
+  the list equals the options file's switchable keys, that 021 reads it
+  by name, and (real 101) that 101 lists it as room-tree's and refuses a
+  misspelt tree setting.  The test helpers set only declared names: the
+  retired `mailboxes.unheld-parent` and `recipients.flag-after-passing`
+  are no longer written; a fresh test home sets 101's
+  `mailboxes.merge-when-parent-arrives = automatic`.
 - `022-where-file.lua` — `where` as two lines, `folder = …` and
   `labels = …`; a `/` inside a label is written `\/`.
 - `024-forest-text.lua` — draws the forest as text with box-drawing
@@ -95,8 +112,8 @@ and a hostname `no`, filed and top rooms `yes`, a parent not held
 `cannot-check`, a held parent with an unheld grandparent `cannot-check`
 turning into `yes` when the grandparent arrives, and the re-check after
 someone is dropped from `home` (38); both `tree.filing-loop` answers
-(10); the forest and its drawing (11); mailboxes under both
-`mailboxes.unheld-parent` answers (25, real only); and with the real 103
+and the declared settings; the forest and its drawing; mailboxes under
+both `mailboxes.merge-when-parent-arrives` values (real only); and with the real 103
 and 104 (24: 103 adds and flags by the check, 103's own listener flags the sister in ritz and programming after she is dropped from `home`, and 104's tops agree with the tree — the friend, flagged in ritz rather than refused, now has ritz as a top too).  `029-measure-tree.lua` times it: at 200 rooms a
 snapshot takes about 0.014 s, one check about the same, a re-check down a
 nine-deep chain about 0.012 s, and making a room (every `where`
@@ -104,7 +121,8 @@ rewritten) about 0.04 s.
 
 Not done here: nothing in phase 1 removes a room, so the `removed-room`
 path is tested by removing a folder and ringing the bell by hand.
-104's own tests (not changed this round) fail against the real modules only where their test rooms are made without 101's new `mailbox_port` field; 102's snapshot, which 104 reads, did not change shape.
+104's tests pass against the real modules; 102's snapshot, which 104
+reads, did not change shape.
 
 ## Intended Behavior
 
@@ -153,7 +171,7 @@ view the contents in the tree. Very Microsoft Windows Explorer core."
    kind `mailbox` changes nothing in the tree.
 3a. A room's mailbox follows its declared parent — chosen and moved by
    101; this module's tests check the tree and the mailboxes agree when a
-   chain arrives bottom-up, under both answers to open question 3.
+   chain arrives bottom-up, under both values of 101's merge setting.
 4. Keep `024-forest-text.lua`, fed from the new tree.
 5. Retire `move_room`, parent disclosure, `what_contact_receives`, the
    reader's forest (`023`), and their choices.
@@ -165,11 +183,6 @@ view the contents in the tree. Very Microsoft Windows Explorer core."
    missing from the grandparent is `no`; an unheld ancestor further up is
    `cannot-check`; dropping someone from `home` shows them failing in
    `home`'s grandchildren.
-
-### Round 4 (2026-09-25)
-
-1. Declare this module's setting names to 101's config reader (101 round 4).
-2. Point the open mailbox question at 101's new merge choice.
 
 ## Blockers that are not the owner's
 
@@ -196,16 +209,15 @@ them one at a time.  An issue with any of them unanswered is in progress.
    the parent's child rooms (owner: "This is UI work"); the lookup "which
    child rooms hold this address?" built for it was removed in round 3.
 
-3. **A child room whose declared parent is not held here — which
-   mailbox?**  Found while writing round 3.  Its own new mailbox (needs a
-   port; stays there when the parent arrives, so one tree drawn can listen
-   on several ports), or the one waiting mailbox until the parent arrives
-   (then moved into the parent's mailbox, changing its listening port,
-   which phase 2 must announce)?  Both built in 101's `make_room`,
-   switched by `mailboxes.unheld-parent` (`own-mailbox` /
-   `waiting-mailbox`), listed in 101's options file as
-   `rooms-unheld-parent-mailbox`; tested here in
-   `tests/028-test-mailboxes.lua`.
+3. *(answered 2026-09-25, built in round 4)* **A child room whose
+   declared parent is not held here — which mailbox?**  Its own mailbox
+   and port, always (owner: "we should make it so that they can merge into
+   the parent rooms later on if possible").  Merging it into the parent's
+   mailbox once the parent arrives is 101's setting
+   `mailboxes.merge-when-parent-arrives` (`automatic` / `ask`; owner:
+   "config setting. Might be confusing though. I prefer automatic"),
+   listed in 101's options file as `rooms-merge-when-parent-arrives`;
+   tested here in `tests/028-test-mailboxes.lua` under both values.
 
 ## Earlier designs
 

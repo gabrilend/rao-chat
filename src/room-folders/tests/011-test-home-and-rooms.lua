@@ -16,10 +16,13 @@ local kit = dofile(DIR .. "/src/room-folders/tests/008-kit-for-tests.lua")
 local rooms = kit.setup(DIR)
 local check, same, same_list, fails = kit.check, kit.same, kit.same_list, kit.fails
 
+-- The home spec() works out ports against (set once it is made below).
+local spec_home = nil
+
 -- {{{ local function spec
 local function spec(label, token, kind, parent, members)
     return { label = label, token = token, kind = kind, parent = parent, filed_under = "", members = members or {},
-             mailbox_port = kit.port_for(kind, parent) }
+             mailbox_port = kit.port_for_home(rooms, spec_home, kind, parent) }
 end
 -- }}}
 
@@ -59,10 +62,10 @@ check("open_home: opening twice changes nothing (ignore contents kept)", functio
     local dir = kit.fresh_home_dir("twice")
     local home = rooms.open_home(dir)
     kit.write_file(dir .. "/ignore", "somebody\n")
-    rooms.set_config(home, "a.b", "c")
+    rooms.set_config(home, "mailboxes.merge-when-parent-arrives", "ask")
     rooms.open_home(dir)
     same(kit.read_file(dir .. "/ignore"), "somebody\n")
-    same(rooms.config_value(home, "a.b"), "c")
+    same(rooms.config_value(home, "mailboxes.merge-when-parent-arrives"), "ask")
 end)
 
 check("open_home: refusals", function()
@@ -70,14 +73,155 @@ check("open_home: refusals", function()
     fails(function() rooms.open_home(kit.scratch .. "/no-such-folder/home") end, "folder above the home does not exist")
 end)
 
-check("config_value: an absent key is an error naming the line to add", function()
+check("config_value: an absent (declared) key is an error naming the line to add", function()
     local home = rooms.open_home(kit.fresh_home_dir("config"))
-    fails(function() rooms.config_value(home, "tree.anything") end, "add a line: tree.anything = <value>")
+    fails(function() rooms.config_value(home, rooms.MERGE_KEY) end,
+          "add a line: " .. rooms.MERGE_KEY .. " = <value>")
 end)
 
--- The waiting variant here: the children of unheld parents below wait in
--- the waiting mailbox (015-test-mailboxes tests both variants).
-local home = kit.test_home(rooms, "rooms", "waiting-mailbox")
+---------------------------------------------------------------- declared settings
+
+check("declared settings: room-folders declares its one setting, from its own list", function()
+    local all = rooms.declared_settings()
+    same(all[rooms.MERGE_KEY].module, "room-folders", "owner")
+    same(all[rooms.MERGE_KEY].file, DIR .. "/src/room-folders/016-settings.lua", "file")
+    same(all["mailboxes.unheld-parent"], nil, "retired in round 4: not declared")
+    same(all["rooms.suggested-token-words"], nil, "retired in round 3: not declared")
+    -- a copy: writing into it declares nothing.
+    all["x.y"] = { module = "me", file = "nowhere" }
+    same(rooms.declared_settings()["x.y"], nil, "the copy is not the list")
+end)
+
+check("declared settings: a known config line is accepted by open_home and every read", function()
+    local dir = kit.fresh_home_dir("config-known")
+    local home = rooms.open_home(dir)
+    rooms.set_config(home, rooms.MERGE_KEY, "automatic")
+    rooms.open_home(dir)
+    same(rooms.read_config(home)[rooms.MERGE_KEY], "automatic")
+end)
+
+check("declared settings: an unknown config line stops open_home, naming the file, line and line text", function()
+    local dir = kit.fresh_home_dir("config-unknown")
+    local home = rooms.open_home(dir)
+    rooms.set_config(home, rooms.MERGE_KEY, "automatic")
+    local text = kit.read_file(dir .. "/config")
+    kit.write_file(dir .. "/config", text .. "mailboxes.unheld-parent = own-mailbox\n")
+    local line = select(2, text:gsub("\n", "\n")) + 1
+    fails(function() rooms.open_home(dir) end, dir .. "/config line " .. line .. ":")
+    fails(function() rooms.open_home(dir) end, "'mailboxes.unheld-parent' is not a setting any module reads")
+    fails(function() rooms.open_home(dir) end, "mailboxes.unheld-parent = own-mailbox")
+    -- every later read refuses it too, not only opening.
+    fails(function() rooms.read_config(home) end, "line " .. line)
+    fails(function() rooms.config_value(home, rooms.MERGE_KEY) end, "line " .. line)
+    fails(function() rooms.set_config(home, rooms.MERGE_KEY, "ask") end, "line " .. line)
+end)
+
+check("declared settings: a typo and a made-up name are refused the same way", function()
+    local dir = kit.fresh_home_dir("config-typo")
+    rooms.open_home(dir)
+    kit.write_file(dir .. "/config", "# a comment\n\nmailboxes.merge-when-parent-arives = ask\n")
+    fails(function() rooms.open_home(dir) end, "config line 3: 'mailboxes.merge-when-parent-arives'")
+end)
+
+check("declared settings: set_config refuses an undeclared name and writes nothing", function()
+    local dir = kit.fresh_home_dir("config-set")
+    local home = rooms.open_home(dir)
+    local before = kit.read_file(dir .. "/config")
+    fails(function() rooms.set_config(home, "a.b", "c") end, "set_config: 'a.b' is not a setting any module reads")
+    fails(function() rooms.set_config(home, "rooms.suggested-token-words", "4") end, "not a setting any module reads")
+    same(kit.read_file(dir .. "/config"), before, "config unchanged")
+end)
+
+check("declared settings: config_value refuses a name nobody declared (a module forgot its list)", function()
+    local home = rooms.open_home(kit.fresh_home_dir("config-lookup"))
+    fails(function() rooms.config_value(home, "tree.anything") end,
+          "config_value: 'tree.anything' is not a setting any module reads")
+end)
+
+-- A scratch src/ folder with declaration files of every shape, to test
+-- the gathering rules without touching the real modules.
+local declared = require("017-declared-settings")
+
+-- {{{ local function scratch_src
+-- files: table "module/filename" → text.  Returns the scratch src path.
+local function scratch_src(name, files)
+    local src = kit.fresh_home_dir(name)
+    os.execute("mkdir -p '" .. src .. "'")
+    for path, text in pairs(files) do
+        os.execute("mkdir -p '" .. src .. "/" .. path:match("^(.*)/[^/]+$") .. "'")
+        kit.write_file(src .. "/" .. path, text)
+    end
+    return src
+end
+-- }}}
+
+check("declarations: gathered from every module's <index>-settings.lua, one folder deep only", function()
+    local src = scratch_src("decl-good", {
+        ["alpha/016-settings.lua"] = 'return { "alpha.one", "alpha.two" }',
+        ["beta/036-settings.lua"] = "return {}",
+        ["beta/tests/037-settings.lua"] = 'return { "beta.test-only" }',
+        ["beta/036-settings.lua-old"] = 'return { "beta.old" }',
+        ["gamma/020-other.lua"] = 'return { "gamma.not-a-list-file" }',
+    })
+    kit.write_file(src .. "/README", "a plain file in src/")
+    local got = declared.gather_declarations(src)
+    same(got["alpha.one"].module, "alpha") same(got["alpha.two"].file, src .. "/alpha/016-settings.lua")
+    same(got["beta.test-only"], nil, "tests/ is not read")
+    same(got["beta.old"], nil, "only files named exactly <3 digits>-settings.lua")
+    same(got["gamma.not-a-list-file"], nil, "other files are not declarations")
+end)
+
+check("declarations: every broken shape is an error naming the file", function()
+    local cases = {
+        { 'return "alpha.one"', "must return a list" },
+        { 'return { a = "alpha.one" }', "must be a plain list" },
+        { 'return { [1] = "alpha.one", [3] = "alpha.three" }', "without gaps" },
+        { 'return { "alpha one" }', "is not a setting name" },
+        { 'return { 7 }', "is not a setting name" },
+        { 'return { "alpha.one", "alpha.one" }', "twice" },
+        { 'return {', "do not load" },
+    }
+    for number, case in ipairs(cases) do
+        local src = scratch_src("decl-bad-" .. number, { ["alpha/016-settings.lua"] = case[1] })
+        fails(function() declared.gather_declarations(src) end, case[2])
+        fails(function() declared.gather_declarations(src) end, src .. "/alpha/016-settings.lua")
+    end
+end)
+
+check("declarations: one name declared by two modules is an error naming both files", function()
+    local src = scratch_src("decl-two-owners", {
+        ["alpha/016-settings.lua"] = 'return { "shared.name" }',
+        ["beta/036-settings.lua"] = 'return { "shared.name" }',
+    })
+    fails(function() declared.gather_declarations(src) end, "declared by two modules")
+    fails(function() declared.gather_declarations(src) end, "alpha/016-settings.lua")
+    fails(function() declared.gather_declarations(src) end, "beta/036-settings.lua")
+end)
+
+check("declarations: two settings files in one module is an error", function()
+    local src = scratch_src("decl-two-files", {
+        ["alpha/016-settings.lua"] = 'return { "alpha.one" }',
+        ["alpha/017-settings.lua"] = 'return { "alpha.two" }',
+    })
+    fails(function() declared.gather_declarations(src) end, "two setting declaration files")
+end)
+
+check("declarations: check_config_lines names the first undeclared line", function()
+    local lines = { { key = "alpha.one", value = "x", number = 2 }, { key = "zeta", value = "y", number = 5 } }
+    declared.check_config_lines({ lines[1] }, "/h/config", { ["alpha.one"] = { module = "alpha", file = "f" } })
+    fails(function() declared.check_config_lines(lines, "/h/config", { ["alpha.one"] = {} }) end,
+          "/h/config line 5: 'zeta'")
+end)
+
+check("declarations: this program's src/ is the one room-folders was loaded from", function()
+    same(declared.this_src_dir(), DIR .. "/src")
+end)
+
+-- Children of unheld parents below start their own mailboxes and merge
+-- automatically if a parent arrives (015-test-mailboxes tests both values
+-- of the merge setting).
+local home = kit.test_home(rooms, "rooms", "automatic")
+spec_home = home
 local top, middle, bottom, girlfriend, coder
 local GIRLFRIEND_PHONE = member("203.0.113.20", 7777)
 local GIRLFRIEND_LAPTOP = member("gf.example.org", 7801)

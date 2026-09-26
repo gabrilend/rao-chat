@@ -22,6 +22,41 @@ for _, key in ipairs({ "people.link-collision", "people.direct-message-link", "p
     H.fails(function() people.rebuild_all(home) end, "unknown " .. key, "unknown value of " .. key .. " is an error")
 end
 
+-- the declared settings (round 4) ----------------------------------------------
+-- 101 refuses any config line no module declares, and any read of an
+-- undeclared name.  078-settings.lua must therefore list exactly the names
+-- this module reads: the same five the options file switches on, each
+-- read by name in 061's source (the CHOICES table).
+do
+    local declared = dofile(DIR .. "/src/people-links/078-settings.lua")
+    local options = dofile(DIR .. "/src/people-links/079-options.lua")
+    local source = assert(io.open(DIR .. "/src/people-links/061-people-links.lua", "rb")):read("*a")
+    local switched = {}
+    for _, choice in ipairs(options) do
+        -- a switchable choice: its key must be declared
+        if choice.config_key ~= "" then
+            switched[#switched + 1] = choice.config_key
+        end
+    end
+    H.same(H.sorted(declared), H.sorted(switched),
+           "078-settings declares exactly the options file's switchable keys")
+    for _, name in ipairs(declared) do
+        H.check(source:find('"' .. name .. '"', 1, true) ~= nil,
+                "declared " .. name .. " is read by name in 061-people-links.lua")
+    end
+    -- the real 101: its scan of src/ found them, owned by this folder
+    if H.mode ~= "stand-in" then
+        local owners = rooms.declared_settings()
+        for _, name in ipairs(declared) do
+            H.check(owners[name] ~= nil and owners[name].module == "people-links",
+                    "the real 101 lists " .. name .. " as people-links'")
+        end
+        local home = H.fresh_home("undeclared-line", {})
+        H.fails(function() rooms.set_config(home, "people.flagged-members", "count") end,
+                "people.flagged-members", "the real 101 refuses a people.* name nobody declares")
+    end
+end
+
 -- keys read only on their edge case are not needed without it ------------------
 do
     local home = H.fresh_home("edge-keys-unset", {})

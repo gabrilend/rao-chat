@@ -14,6 +14,13 @@
 > names its mailbox; `make_room` takes a `mailbox_port`; the bell has a
 > new kind, `mailbox`.  Answered choices are built as answered (their
 > switches are gone from the table below).
+>
+> **Round 4 (2026-09-26): declared settings.**  Every module lists the
+> config names it reads in its own `src/<module>/<index>-settings.lua`;
+> a `config` line naming something no module lists is an error naming the
+> line (see "Settings").  `mailboxes.unheld-parent` is retired (a child
+> of an unheld parent always starts its own mailbox);
+> `mailboxes.merge-when-parent-arrives` is new.
 
 Phase 1 ("Rooms on the home server") is built as five modules and one demo,
 each by its own builder, each in its own folder.  This document is the plug
@@ -28,7 +35,7 @@ not quietly change a neighbour's file.
 
 | issue | module folder | reading-order indexes | owns |
 |---|---|---|---|
-| 101 | `src/room-folders/` | 001–019 | the home folder, config, local tags, the `mailboxes` file and which mailbox each room is in, the room `entry` (rmail's contacts format), making rooms, tokens (fingerprint, readable suggestions, changing by hand), the empty `ignore`, `withheld` and `log` files at birth, the change bell |
+| 101 | `src/room-folders/` | 001–019 | the home folder, config (and the check that every config line names a declared setting), local tags, the `mailboxes` file and which mailbox each room is in, the room `entry` (rmail's contacts format), making rooms, tokens (fingerprint, readable suggestions, changing by hand), the empty `ignore`, `withheld` and `log` files at birth, the change bell |
 | 102 | `src/room-tree/` | 020–039 | the tree: parent by token fingerprint, children, ancestors, top rooms, `filed-under`, the parent-membership check, the `where` file, drawing the tree as text |
 | 103 | `src/recipients/` | 040–059 | members (the entry's address pairs) and when each was last heard from, the `withheld` list, the send list, leaving |
 | 103a | `src/recipients/` (shares 103's range) | 040–059 | the home's `ignore` list and its two levels |
@@ -94,6 +101,66 @@ parent, and how a home finds the room a token belongs to.
 
 "None" is always the empty string `""`, never nil (no parent, not filed).
 
+## Settings: every name is declared (owned by 101)
+
+`rao-home/config` holds `name = value` lines (rmail's config format).  Two
+rules make it strict:
+
+- **A setting a module asks for and does not find is an error**, never a
+  silent default (`config_value`, since round 1).
+- **A line naming a setting no module reads is an error** (round 4; the
+  owner: "I think it should probably just give an error if it doesn't
+  recognize a value").  A retired setting left behind, a typo, and a
+  setting from a newer version are all caught this way.
+
+**How a module declares its names.**  Each module folder holds exactly
+one file named `<three digits>-settings.lua` (one folder deep, never in
+`tests/`; the index is one of the module's own), returning a **plain
+list of strings** — every config name the module reads, switched choice
+or fixed setting alike:
+
+    -- src/room-tree/0NN-settings.lua
+    return {
+        "tree.filing-loop",
+    }
+
+Rules, each an error naming the file when broken: the file returns a
+list (keys 1..n, no gaps); every item is a setting name (letters, digits,
+`_`, `-`, `.`); no name twice in one list; **no name declared by two
+modules** (each setting has one owner, who says what its values mean —
+any module may still *read* another's setting with `config_value`); at
+most one such file per module folder.  A module that reads no settings
+may leave the file out (or return `{}`).
+
+**How the check finds them.**  101 (`017-declared-settings.lua`) lists
+every folder under the `src/` it was loaded from and reads each
+declaration file, once per running program.  It does **not** depend on
+which modules a program loaded: a test that loads only 101 and opens a
+home the demo filled with every module's settings sees the same
+declarations.  (The alternative — each module handing over its list when
+`require`d — was set aside because a name would be "unknown" whenever its
+module happened not to be loaded.)
+
+**Where the check runs** (all in 101's `002-room-folders`):
+
+| call | what is checked |
+|---|---|
+| `open_home(dir)` | every line of `config`; an undeclared name is an error `<path>/config line N: '<name>' is not a setting any module reads ... — remove or correct the line: <name> = <value>` |
+| `read_config(home)` | the same, every call (a line added by hand is caught on the next read) |
+| `set_config(home, key, value)` | `key` must be declared (else error, nothing written); the existing file is checked first |
+| `config_value(home, key)` | `key` must be declared (a module reading a name it forgot to list is an error), then present |
+
+**For tests and the demo.**  Homes are built as before — `open_home`, then
+`set_config` for each setting — as long as every name set is declared by
+some module under `src/`.  A test cannot set a made-up name (`"a.b"`); it
+uses a real one.  Stand-in room-folders modules inside a module's own
+`tests/` are not affected (they are not 101).  `declared_settings()`
+gives name → `{module, file}` for a demo or test that wants to show or
+walk the list.  The options files (`<index>-options.lua`) are unchanged
+and separate: they record *undecided choices*; the settings list records
+*every name read*.  A switchable choice's `config_key` must also be in its
+module's settings list, or its homes cannot be configured.
+
 ## The entry
 
 A room's `entry` file is **one entry in rmail's contacts format**, named by
@@ -157,16 +224,19 @@ never sent), entries sorted by tag, fields in this order:
     9c41d07a2be35f6e8810aa3c5d7e9f01.label = "programming"
     9c41d07a2be35f6e8810aa3c5d7e9f01.kind  = tree
     9c41d07a2be35f6e8810aa3c5d7e9f01.port  = 7777
+    9c41d07a2be35f6e8810aa3c5d7e9f01.awaits-parent-of =
     e27f...(32 hex)...............08.label = "direct messages"
     e27f...(32 hex)...............08.kind  = direct
     e27f...(32 hex)...............08.port  = 7700
+    e27f...(32 hex)...............08.awaits-parent-of =
 
 | field | on disk | in Lua | rule |
 |---|---|---|---|
 | (name) | the mailbox's local tag | `tag` (string) | unique in the file |
 | `label` | quoted text | `label` (string) | a name for people reading the file; non-empty, one line.  A tree mailbox takes its top room's label at making (not renamed with it) |
-| `kind` | `tree`, `direct` or `waiting` | `kind` (string) | `tree`: a top-level group room and everything under it.  `direct`: every direct message (**at most one** per home).  `waiting`: only under `mailboxes.unheld-parent = waiting-mailbox` (at most one per home) |
+| `kind` | `tree` or `direct` | `kind` (string) | `tree`: a top-level group room and everything under it (or a child room whose parent is not held here, until it merges).  `direct`: every direct message (**at most one** per home).  Round 3's `waiting` kind is retired (round 4) and refused |
 | `port` | whole number | `port` (integer) | 1–65535, **no default** |
+| `awaits-parent-of` | a room's local tag, or empty | `awaits_parent_of` (string) | round 4: set only on a `tree` mailbox made for a child room whose declared parent was not held here — that room's tag — so the mailbox can merge into the parent's later; `""` otherwise and after the merge.  A round-3 file without this field is an error (no conversion) |
 
 Which mailbox `make_room` puts a new room in (a dispatch on the room's
 kind and parent; the spec's `mailbox_port` is an integer exactly when a
@@ -177,7 +247,7 @@ new mailbox is made, `""` otherwise — anything else is an error):
 | `direct` | the one `direct` mailbox; **error** if none has been made (`make_mailbox`) | `""` |
 | `group`, `parent = ""` (a top room) | a **new `tree` mailbox**, labelled with the room's label | the port (integer) |
 | `group`, declared parent held here | the parent's mailbox | `""` |
-| `group`, declared parent **not** held here | config `mailboxes.unheld-parent` (read only then): `own-mailbox` → a new `tree` mailbox; `waiting-mailbox` → the one `waiting` mailbox (**error** if none made) | `own-mailbox`: the port; `waiting-mailbox`: `""` |
+| `group`, declared parent **not** held here | a **new `tree` mailbox** of its own (the owner's answer, round 4), labelled with the room's label, `awaits-parent-of` = the room's tag | the port (integer) |
 
 - **Two mailboxes may name the same port**: allowed (the owner: "we can
   accept from the same port and route to the right location if necessary.
@@ -185,17 +255,29 @@ new mailbox is made, `""` otherwise — anything else is an error):
   that finds a shared port reports it through 101's warning sink (stderr
   unless a test or the demo sets another with `set_warning_sink`), naming
   the port and the mailboxes.  It is a warning, not an error.
-- **A waiting room's parent arrives** (under `waiting-mailbox`): after
-  `make_room`, `change_token` and `write_parent`, every room in the
-  `waiting` mailbox whose declared parent is now held is moved into its
-  parent's mailbox (repeated until nothing moves, so a waiting chain
-  settles top-down); each move rings `mailbox` with the room's tag.
-  Under `own-mailbox` nothing moves: the room keeps its own tree mailbox.
+- **Merging when the parent arrives** (round 4).  After `make_room`,
+  `change_token`, `write_parent` and `merge_mailbox`, a mailbox **can
+  merge** when the room in its `awaits-parent-of` has its declared parent
+  held here, in another mailbox.  Only then is config
+  `mailboxes.merge-when-parent-arrives` read (101's setting; no default):
+  - `automatic` (listed first; the owner's preference): every room of that
+    mailbox — the awaited room first, then the others by tag — moves into
+    the parent's mailbox, each ringing `mailbox` with its tag; the mark is
+    cleared.  Repeated until nothing can merge, so a chain arriving
+    bottom-up merges step by step (a room can change port more than once).
+  - `ask`: nothing moves.  `mergeable_mailboxes(home)` lists each possible
+    merge until the person's yes, `merge_mailbox(home, mailbox_tag)`.
+  - Any other value is an error.
+  The emptied mailbox **stays**, with its port: phase 2 (issues 205/202)
+  announces the new port to members and keeps trying the old one for the
+  moved rooms until they confirm.
 - A room's mailbox does **not** follow later changes of its declared
-  parent (`write_parent`), except the waiting settling above.  Moving a
-  room by hand is `write_mailbox`.
+  parent (`write_parent`; open question 9), except a room whose own
+  mailbox still awaits its parent (the merge above).  Moving a room by
+  hand is `write_mailbox`; moving the awaited room out of its mailbox
+  clears that mailbox's `awaits-parent-of` (the person placed it).
 - A room's kind must fit its mailbox's: a `direct` room only in the
-  `direct` mailbox, a `group` room only in a `tree` or `waiting` one.
+  `direct` mailbox, a `group` room only in a `tree` one.
 - A mailbox is never removed in phase 1 (an empty one is allowed).
 
 ## The change bell (owned by 101)
@@ -215,7 +297,7 @@ changes instead of calling each other directly.
 | `what` | `tag` | rung by | means |
 |---|---|---|---|
 | `created` | the new room | 101 `make_room` | a room folder now exists with `entry`, empty `withheld`, empty `flagged`, empty `log`; if the room started a new mailbox, that mailbox is already in `mailboxes` (no separate `mailbox` ring) |
-| `mailbox` | `""` (the mailboxes file) or a room's tag (that room moved) | 101 `make_mailbox`, `write_mailbox_port` (`""`); `write_mailbox` and the waiting settling (the room's tag) | `""`: a mailbox was made by `make_mailbox` or its port changed.  A tag: that room's entry now names another mailbox.  Membership did **not** change |
+| `mailbox` | `""` (the mailboxes file) or a room's tag (that room moved) | 101 `make_mailbox`, `write_mailbox_port` (`""`); `write_mailbox` and every merge (the room's tag) | `""`: a mailbox was made by `make_mailbox` or its port changed.  A tag: that room's entry now names another mailbox.  Membership did **not** change |
 | `label` | the room | 101 `write_label` | the entry's label changed |
 | `token` | the room | 101 `change_token` | the entry's token (so its fingerprint) changed; held children were re-pointed first, each ringing `parent` |
 | `members` | the room | 101 `write_members` (called by 103) | the address pairs changed (added, removed, reordered) |
@@ -240,34 +322,37 @@ Types: `string`, `integer` (whole number), `list` (Lua array), `bool`.
 
 | function | takes | gives |
 |---|---|---|
-| `open_home(dir)` | string, absolute | home; makes `config`, `mailboxes` (empty), `ignore` (empty), `rooms/`, `people/` if absent; the folder above must exist |
-| `read_config(home)` | home | table string→string |
-| `set_config(home, key, value)` | home, string, string | — |
-| `config_value(home, key)` | home, string | string; **error** if the key is absent |
+| `open_home(dir)` | string, absolute | home; makes `config`, `mailboxes` (empty), `ignore` (empty), `rooms/`, `people/` if absent; the folder above must exist; **error** naming the line if `config` holds an undeclared name |
+| `read_config(home)` | home | table string→string; **error** naming the line if `config` holds a name no module declares (see "Settings") |
+| `set_config(home, key, value)` | home, string, string | — ; **error** if `key` is not declared by any module |
+| `config_value(home, key)` | home, string | string; **error** if the key is not declared, or absent |
+| `declared_settings()` | — | table name → `{module = folder name, file = path}`: every setting any module declares (a copy) |
 | `new_local_tag()` | — | local tag |
 | `is_local_tag(value)` | any | bool |
 | `token_fingerprint(token)` | string | fingerprint (64 hex) |
 | `is_fingerprint(value)` | any | bool |
 | `suggest_token(home)` | home (checked, not read) | string such as `"maple-orbit-velvet-tin-..."`: **six** random words from the word list joined by `-` (answered; no config) |
 | `suggest_token_of(word_count)` | integer ≥ 1 | the same, with another count |
-| `make_room(home, spec)` | spec `{label, token, kind, parent, filed_under, members, mailbox_port}` — every field required (`parent`/`filed_under` `""` for none, `members` a list, may be empty; `mailbox_port` an integer 1–65535 exactly when the room starts a new mailbox, else `""` — see "Mailboxes") | local tag; rings `created` once (then `mailbox` per waiting room that settles under it) |
+| `make_room(home, spec)` | spec `{label, token, kind, parent, filed_under, members, mailbox_port}` — every field required (`parent`/`filed_under` `""` for none, `members` a list, may be empty; `mailbox_port` an integer 1–65535 exactly when the room starts a new mailbox, else `""` — see "Mailboxes") | local tag; rings `created` once (then `mailbox` per room a merge moves, under `automatic`) |
 | `read_entry(home, tag)` | home, local tag | entry `{tag, label, token, kind, parent, mailbox, filed_under, members}` (shapes above); read fresh from disk every call |
-| `make_mailbox(home, spec)` | spec `{label, kind, port}`, kind `"direct"` or `"waiting"` (tree mailboxes are made only by `make_room`) | mailbox tag; rings `mailbox` with `""`; error if one of that kind exists |
-| `read_mailboxes(home)` | home | list of `{tag, label, kind, port}` sorted by tag; reports shared ports to the warning sink |
-| `read_mailbox(home, mailbox_tag)` | | one `{tag, label, kind, port}`; error if absent |
-| `direct_mailbox(home)` / `waiting_mailbox(home)` | | that mailbox's tag, or `""` if not made |
+| `make_mailbox(home, spec)` | spec `{label, kind, port}`, kind `"direct"` (tree mailboxes are made only by `make_room`; `waiting` is retired) | mailbox tag; rings `mailbox` with `""`; error if it exists |
+| `read_mailboxes(home)` | home | list of `{tag, label, kind, port, awaits_parent_of}` sorted by tag; reports shared ports to the warning sink |
+| `read_mailbox(home, mailbox_tag)` | | one `{tag, label, kind, port, awaits_parent_of}`; error if absent |
+| `direct_mailbox(home)` | | the direct mailbox's tag, or `""` if not made (`waiting_mailbox` is gone) |
+| `mergeable_mailboxes(home)` | home | list of `{mailbox, room, into, rooms}` (tags; `rooms` the sorted room tags that would move), sorted by mailbox — the merges now possible; reads no config |
+| `merge_mailbox(home, mailbox_tag)` | mailbox tag | — ; the person's yes: one merge (rings `mailbox` per room moved), then settles; error if the mailbox awaits nothing or its room's parent is not held yet |
 | `list_rooms_by_mailbox(home, mailbox_tag)` | | sorted list of room tags; error if the mailbox is absent |
 | `mailboxes_by_port(home, port)` | integer | sorted list of mailbox tags listening on that port (for phase 2's trial opening: try the keys of `list_rooms_by_mailbox` of each) |
 | `shared_ports(home)` | | list of `{port = integer, mailboxes = sorted list of tags}`, one per port named by two or more mailboxes, sorted by port (reports as `read_mailboxes` does) |
 | `write_mailbox_port(home, mailbox_tag, port)` | integer | — (rings `mailbox` with `""`) |
-| `write_mailbox(home, tag, mailbox_tag)` | room tag, mailbox tag | — (rings `mailbox` with the room's tag); the room's kind must fit the mailbox's |
+| `write_mailbox(home, tag, mailbox_tag)` | room tag, mailbox tag | — (rings `mailbox` with the room's tag); the room's kind must fit the mailbox's; moving an awaited room out of its mailbox clears the mark |
 | `set_warning_sink(fn)` | function(text) | — ; where shared-port reports go (default: a line on stderr) |
 | `mailboxes_path(home)` | | string |
 | `write_label(home, tag, label)` | | — (rings `label`) |
 | `change_token(home, tag, token)` | | — ; keeps folder, label, members, log; re-points every held room whose `parent` was the old fingerprint (each rings `parent`), then rings `token` |
 | `write_members(home, tag, members)` | list of `{address, port, heard}` | — (rings `members`); the list is written as given, in order |
 | `write_heard(home, tag, address, port, when)` | string, integer, integer | — (rings `heard`); error if the pair is not a member |
-| `write_parent(home, tag, fingerprint)` | fingerprint or `""` | — (rings `parent`) |
+| `write_parent(home, tag, fingerprint)` | fingerprint or `""` | — (rings `parent`, then settles merges) |
 | `write_filed_under(home, tag, other_tag)` | local tag or `""` | — (rings `filed`) |
 | `list_rooms(home)` | home | sorted list of local tags |
 | `list_rooms_by_kind(home, kind)` | `"group"` or `"direct"` | sorted list of local tags |
@@ -279,9 +364,9 @@ Types: `string`, `integer` (whole number), `list` (Lua array), `bool`.
 | `listener_count()` | — | integer (for tests and the demo) |
 | `BELL_KINDS` | — | table what → `{scope = "room" or "home-or-room", meaning = string}` (read-only; for the demo and tests) |
 | `KINDS` | — | table `"group"`/`"direct"` → meaning (read-only) |
-| `MAILBOX_KINDS` | — | table `"tree"`/`"direct"`/`"waiting"` → meaning (read-only) |
+| `MAILBOX_KINDS` | — | table `"tree"`/`"direct"` → meaning (read-only) |
 | `SUGGESTED_WORD_COUNT` | — | `6` (`SUGGESTED_WORDS_KEY` is gone with its switch) |
-| `UNHELD_PARENT_KEY` | — | `"mailboxes.unheld-parent"` |
+| `MERGE_KEY` | — | `"mailboxes.merge-when-parent-arrives"` (`UNHELD_PARENT_KEY` is gone with its setting) |
 
 101's rules the others can rely on:
 
@@ -358,8 +443,10 @@ filed under it, then the same; `members`, `heard`, `withheld`, `log`,
 `ignore`, `mailbox` → nothing (re-checking after `members` is 103's
 listener, through `failing_below`); any other kind → error.  Mailboxes
 place nothing in the tree: 101 chooses and moves them (a child follows its
-declared parent's mailbox; `mailboxes.unheld-parent` for a parent not
-held), and 102's `tests/028-test-mailboxes.lua` checks the two agree.  A ring can close without
+declared parent's mailbox; a child of a parent not held gets its own,
+merged into the parent's when it arrives as `mailboxes.merge-when-parent-arrives`
+says), and 102's `tests/028-test-mailboxes.lua` checks the two agree under
+both values.  102 declares `tree.filing-loop` in `023-settings.lua`.  A ring can close without
 anyone filing into it (a declared parent arrives above a room you filed);
 `tree.filing-loop` decides, read only then.  A ring of declared parents
 alone is always an error.  Every question errors on a tag not held here.
@@ -380,7 +467,7 @@ address with no spaces, a port 1–65535, no default).  A **member** is 101's
 | `flagged(home, tag)` | the flags awaiting review (`no` / `cannot-check`) — what a client highlights |
 | `approve(home, tag, address, port)` | `"approved"`: the line becomes `approved` (kept, so re-checks do not flag them again); rings `withheld`; error if not awaiting review |
 | `decline(home, tag, address, port)` | `"declined"`: withheld (if not already) and the line deleted; rings `withheld`; error if not awaiting review |
-| `recheck(home, tag, itself)` | number newly flagged, list of rooms the tree reported: flags the failing members of `tag`'s declared descendants (and of `tag` itself when `itself` is true) that have no line and are not withheld; then re-asks every awaiting flag in the home (a changed answer is rewritten; a pass goes to config `recipients.flag-after-passing`, read only then: `kept` / `cleared`).  Run from the bell; callable by hand |
+| `recheck(home, tag, itself)` | number newly flagged, list of rooms the tree reported: flags the failing members of `tag`'s declared descendants (and of `tag` itself when `itself` is true) that have no line and are not withheld; then re-asks every awaiting flag in the home (a changed answer is rewritten; a pass deletes the flag line: the flag clears by itself; approved lines are never re-flagged — an approval lasts until the leave).  Run from the bell; callable by hand |
 | `withheld(home, tag)` | list of pair (may hold former members) |
 | `withhold / unwithhold(home, tag, address, port)` | `"withheld"`/`"already"` / `"unwithheld"`; rings `withheld`; error on a non-member / a pair not withheld |
 | `send_list(home, tag)` | list of pair: members minus withheld minus those awaiting review, entry order — what phase 2 delivers to |
@@ -423,6 +510,10 @@ tag for a one-room entry.
 Reads only `ignore.scope` on use; an absent or unknown value is an error.
 `ignore.match` and `ignore.hide-files` were answered (round 3) and are no
 longer read.
+Both 103 and 103a declare their names in the recipients folder's one list,
+`043-settings.lua`: `ignore.scope` and `recipients.shared-address-label`.
+`recipients.flag-after-passing` was answered (round 4: cleared) and is no
+longer read, so a config line naming it is refused.
 
 ### 104 people-links — `require("061-people-links")`
 
@@ -456,13 +547,13 @@ or a room moved into another) moves no label, member or tree parent, so no
 link.  A **flagged** member (103's `added-flagged`: in the entry, held off
 the send list until approved or declined) is a member, so it counts toward
 that person's rooms like any other; flag changes ring `withheld`, which
-moves nothing (choice row "does a flagged member count", built `count`).
+moves nothing (the owner's answer, round 4: a flagged member counts).
 104 reads nothing of the `mailboxes` or `flagged` files.  Keys read on every rebuild (must be in config before the first room
 is made once 061 is loaded): `people.link-collision`,
 `people.direct-message-link`, `people.members-without-dm`.  Read only on
 their edge case: `people.slash-in-link-name` (a label with `/`, or exactly
 `.` or `..`), `people.person-folder-collision` (two people's folders would
-share a name).
+share a name).  All five are declared in `078-settings.lua`.
 
 ### 105 message-log — `require("081-message-log")`
 
@@ -500,7 +591,9 @@ Config key (absent is an error when read): `log.duplicate-check`, read by
 `append`, `correct`, `delete` and `has_message`; `read` and
 `read_ordered` read no config.  Retired in round 3 and no longer read:
 `log.record-shape` (tsv), `log.shape-mixing`, `log.who-may-edit`
-(anyone), `log.same-id-new-address` (duplicate).  Copying one log into
+(anyone), `log.same-id-new-address` (duplicate).  The log declares only
+`log.duplicate-check` (`087-settings.lua`), so since round 4 a home whose
+config still names a retired one is refused by 101.  Copying one log into
 another (`copy_log`) is retired: rooms never split or merge.
 
 ## Choices the owner has not made yet
@@ -512,8 +605,9 @@ absent: there is no silent default.
 
 | config key | question | variants | module |
 |---|---|---|---|
-| `mailboxes.unheld-parent` | new (issue 102 round 3: a child room whose declared parent is not held here — which mailbox?  Built in 101's `make_room`, read only then) | `own-mailbox`, `waiting-mailbox` | 101 (for 102) |
-| (not switchable) | new (issue 101 round 3: a room in a mailbox is given another declared parent — does it move?) | `keep` (built; only waiting rooms follow), `follow` (not built) | 101 |
+| `mailboxes.merge-when-parent-arrives` | answered as a setting kept both ways (round 4; the owner prefers automatic): a child room's own mailbox, once its parent arrives — read only when a merge is possible | `automatic`, `ask` | 101 |
+| (not switchable) | new (issue 101 round 4, open question 11): under `ask`, a merge the person declines | `stays-listed` (built), `remember-no` (not built) | 101 |
+| (not switchable) | new (issue 101 round 3: a room in a mailbox is given another declared parent — does it move?) | `keep` (built; only a room whose own mailbox awaits its parent merges), `follow` (not built) | 101 |
 | (not switchable) | issue 101 open question 1: a bell listener fails after a room was written | `keep-and-raise` (built), `undo-and-raise` (not built) | 101 |
 | (not switchable) | issue 101 open question 2, waits on state (phase 6 measurement): room files surviving a power cut | `rename-only` (built), `fsync-then-rename` (not built) | 101 |
 | (not switchable) | issue 101 open question 4 / planning questions 6–7: where rao-chat's entries meet rmail's contacts | `own-folders` (built), `read-rmail-contacts` (not built) | 101 |
@@ -524,8 +618,6 @@ absent: there is no silent default.
 | (not switchable) | new (issue 102: is "a member of the parent" the exact (address, port) pair, or the same machine?) | `exact-pair` (built), `resolved` (not built) | 102 |
 | (not switchable; waits on phase 2 leaving) | new (issue 102: rooms filed under a removed room) | `unfile` (built), `take-its-place` (not built) | 102 |
 | `ignore.scope` | issue 103a open question 2 (whole home only, or also one room?) | `home`, `home-and-room` | 103a |
-| `recipients.flag-after-passing` | new (round 3: a flagged member later passes the check; read only then) | `kept`, `cleared` | 103 |
-| (not switchable) | new (round 3): how long an approval of a flagged member lasts | `until-they-leave` (built), `until-the-answer-changes` (not built) | 103 |
 | `recipients.shared-address-label` | new (an address held by two direct-message rooms; read only in that case) | `all-labels`, `address` | 103 |
 | (not switchable) | issue 103 open question 2: a member who moves — old address kept or dropped | `keep` (built), `drop-old` (not built: nothing ties two addresses to one person) | 103 |
 | (not switchable) | new: a withheld member leaves and returns | `still-withheld` (built), `forgotten` (not built) | 103 |
@@ -537,11 +629,9 @@ absent: there is no silent default.
 | `people.person-folder-collision` | new (two direct messages with one label; read only in that case) | `suffix-id`, `numbered`, `merge` | 104 |
 | (not switchable; waits on pairing) | issue 104 open question 4 (own devices; the home keeps no device list now) | `none` (built), `all-tops` (not built) | 104 |
 | (not switchable; waits on a measurement) | issue 104 open question 5 (rebuild all of `people/` per ring) | `rebuild-all` (built), `rebuild-affected` (not built) | 104 |
-| (not switchable) | new (issue 104 round 3: does a flagged member — in the entry, held off the send list — count toward that person's rooms?) | `count` (built), `leave-out` (not built) | 104 |
 | `log.duplicate-check` | issue 105 q4 (waits on state: is the phase 2 server one long-running program) | `remembered`, `scan` | 105 |
 | (not switchable) | issue 105 q7 / planning q9 (pictures in chat) | `text-only` built | 105 |
 | (not switchable) | issue 105 q6 (an edit arriving before its message; waits on phase 2) | `refuse` built | 105 |
-| (not switchable) | issue 105 q9, new (a retired key such as `log.who-may-edit` still in config: ignored or refused) | `ignore` built, `refuse` not | 105 |
 | (not switchable; `input/phase-1-demo.config` overrides per key) | new (what the demo sets the choices a scene is not about to) | `first-listed` built, `builder-leaning` not (needs a machine-readable leaning field) | 106 |
 
 A builder who finds another undecided choice adds a row here.
@@ -572,24 +662,32 @@ may each be one string or a list of strings; every text field but
 `config_key` must be non-empty; `variants` must be a non-empty list; an `id`
 used twice anywhere is an error.
 
-The phase 1 demo reads these files too: for every choice with a
-`config_key`, the **first variant listed** is the value its homes start with
-(unless `input/phase-1-demo.config` names another built variant), and the
-scenes run every listed variant of the key they are about.  So the order of
-`variants` matters, and a key the modules read must appear in some options
-file or the demo cannot set it.
+The phase 1 demo reads these files too.  Since round 4 its homes set
+**exactly the declared setting names** (`declared_settings()`, see
+"Settings: every name is declared") — no other name can be set.  Each
+declared name starts at the **first variant listed** for it in an options
+file (unless `input/phase-1-demo.config` names another built variant), and
+the scenes run every listed variant of the key they are about.  So the
+order of `variants` matters; an options file's `config_key` that no module
+declares, or a declared name with no options entry and no value in
+`input/phase-1-demo.config`, stops the demo's baseline (every scene that
+makes a home is then reported could-not with that reason).
 
 A retired `<index>-options.lua-done` is never read (the name must end in
-`-options.lua`).  Round 3's demo has ten scenes (issue 106) and runs
-every listed variant of two keys: `mailboxes.unheld-parent` (mailboxes)
-and `people.link-collision` (people); answered choices are built fixed and
-not varied, and every other key sits at its baseline.  Every home the demo
+`-options.lua`).  Round 4's demo has ten scenes (issue 106) and runs
+every listed variant of two keys: `mailboxes.merge-when-parent-arrives`
+(mailboxes: a child made before its parent, in its own mailbox, then
+merged — `automatic` at once, `ask` after `merge_mailbox`) and
+`people.link-collision` (people); answered choices are built fixed and
+not varied, and every other key sits at its baseline.  The mailboxes scene
+also shows an undeclared name refused by `set_config`, and by `open_home`
+and `read_config` after a line is written into `config` by hand.  Every home the demo
 makes gets its direct mailbox at birth (port 7700); top rooms take ports
 from 7701 up.  The demo calls, and so relies on: 101 `open_home`,
-`set_config`, `config_value`, `make_room`, `make_mailbox`, `read_entry`,
+`read_config`, `set_config`, `declared_settings`, `make_room`, `make_mailbox`, `read_entry`,
 `list_rooms`, `list_rooms_by_kind`, `suggest_token`, `change_token`,
 `token_fingerprint`, `find_by_fingerprint`, `read_mailboxes`,
-`read_mailbox`, `waiting_mailbox`, `list_rooms_by_mailbox`,
+`read_mailbox`, `mergeable_mailboxes`, `merge_mailbox`, `list_rooms_by_mailbox`,
 `mailboxes_by_port`, `shared_ports`, `set_warning_sink`, the `*_path`
 functions (with `flagged_path`, `mailboxes_path`); 102 `forest`,
 `check_member`; 024 `lines`; 103 `add_member`, `is_member`, `withhold`,

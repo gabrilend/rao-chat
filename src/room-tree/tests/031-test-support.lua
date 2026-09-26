@@ -42,15 +42,20 @@ end
 
 -- {{{ function M.fresh_home
 -- An empty home folder under tmp/shared-memory/room-tree/<which>/<name>.
--- Its config says mailboxes.unheld-parent = own-mailbox: the tree does not
--- care which mailbox a room listens in, and own-mailbox needs no mailbox
--- made beforehand.  028-test-mailboxes sets the other variant itself.
+-- Its config says mailboxes.merge-when-parent-arrives = automatic (101's
+-- setting, round 4, read by make_room only when a room's declared parent
+-- arrives while the room listens in a mailbox of its own): the tree does
+-- not care which mailbox a room listens in, but 101 errors if a setting it
+-- reads is absent.  028-test-mailboxes sets the other value itself.
+-- Only declared names may be set (contract, "Settings: every name is
+-- declared"); round 3's mailboxes.unheld-parent is retired and would now
+-- be refused.
 function M.fresh_home(rooms, name)
     local path = M.scratch .. "/" .. name
     os.execute('rm -rf "' .. path .. '"')
     os.execute('mkdir -p "' .. M.scratch .. '"')
     local home = rooms.open_home(path)
-    rooms.set_config(home, "mailboxes.unheld-parent", "own-mailbox")
+    rooms.set_config(home, "mailboxes.merge-when-parent-arrives", "automatic")
     return home
 end
 -- }}}
@@ -66,8 +71,8 @@ M.next_port = 20000
 --   direct room                       joins the one direct mailbox: ""
 --   group room, no parent             a new tree mailbox: a port
 --   group room, parent held here      the parent's mailbox: ""
---   group room, parent not held here  the home's mailboxes.unheld-parent:
---                                     own-mailbox a port, waiting-mailbox ""
+--   group room, parent not held here  a mailbox of its own: a port
+--                                     (the owner's answer, round 4)
 local function port_for(rooms, home, spec)
     local fresh = function()
         M.next_port = M.next_port + 1
@@ -85,14 +90,8 @@ local function port_for(rooms, home, spec)
     if rooms.find_by_fingerprint(home, spec.parent) ~= "" then
         return ""
     end
-    local by_variant = { ["own-mailbox"] = fresh, ["waiting-mailbox"] = function() return "" end }
-    local mode = rooms.config_value(home, "mailboxes.unheld-parent")
-    local choose = by_variant[mode]
-    -- a value this helper does not know: the test's own mistake
-    if choose == nil then
-        error("tests: mailboxes.unheld-parent = " .. tostring(mode))
-    end
-    return choose()
+    -- the parent not held here: always a mailbox of its own
+    return fresh()
 end
 -- }}}
 

@@ -8,13 +8,35 @@
 
 ## Current Behavior
 
-Rebuilt for the room-is-a-contact model (round 2, 2026-09-25), then
-brought up to round 3's mailboxes and flags (a small fix after the other
-builders' round 3), and tested: 768 checks pass — 253 against stand-ins,
-253 against the real 101 with a stand-in 102, 262 against the real 101,
-102 and 103 together.  Run `luajit src/people-links/tests/073-run-tests.lua`.
-The phase 1 demo (`./run-phase-demo 1`) runs all 10 scenes, people
-included, on the real modules.
+Rebuilt for the room-is-a-contact model (round 2, 2026-09-25), brought
+up to round 3's mailboxes and flags, then round 4's declared settings and
+answered flag choice, and tested against stand-ins, against the real 101
+with a stand-in 102, and against the real 101, 102 and 103 together; every
+check passes.  Run `luajit src/people-links/tests/073-run-tests.lua` for
+the counts.
+
+Round 4 (declared settings, one answer fixed in place):
+
+- **The setting names are declared.**  101's config reader now refuses
+  any config line whose name no module declares, and any read of an
+  undeclared name.  `078-settings.lua` lists the five names this module
+  reads (`people.link-collision`, `people.slash-in-link-name`,
+  `people.direct-message-link`, `people.members-without-dm`,
+  `people.person-folder-collision`) — all still open choices; declaring
+  them decides nothing.  `071-test-choices.lua` checks the list equals the
+  options file's switchable keys, that 061 reads each by name, and (real
+  101) that 101 lists each as people-links' and refuses an undeclared
+  `people.*` line.
+- **A flagged member counts** toward the person's rooms — the owner's
+  answer; the code already did this, so only the choice entry
+  `people-flagged-members` went (options file, contract row, comments).
+- **Tests set only declared names.**  The retired
+  `mailboxes.unheld-parent` and `recipients.flag-after-passing` are no
+  longer written by the harness, the neighbour test or the flag test; the
+  harness sets 101's `mailboxes.merge-when-parent-arrives = automatic`
+  instead (read by 101 when a room's parent arrives after it).  The
+  stand-in 101 gives a room whose parent is not held its own mailbox
+  always and never merges it (mailboxes move no link).
 
 Round 3 (mailboxes and flags) as it touches people/:
 
@@ -29,8 +51,7 @@ Round 3 (mailboxes and flags) as it touches people/:
   send list until approved or declined.  104 reads membership from the
   entry, so a flagged member makes the room theirs (and can make it a top
   for them) at once; the `withheld` ring, which now also covers 103's
-  `flagged` file, still moves nothing.  Recorded as the owner's choice
-  `people-flagged-members` (built: `count`; not built: `leave-out`).
+  `flagged` file, still moves nothing (answered by the owner in round 4).
 - **Tests make rooms the round-3 way.**  The test harness makes every home's
   direct mailbox first (so every test also hears a `mailbox` ring) and
   passes 101's `mailbox_port` (a fresh port for a room starting a mailbox,
@@ -62,11 +83,11 @@ What exists in `src/people-links/` (each file with a `.info.md`):
 - `062-disk-links.lua` — unchanged from round 1.
 - `063-link-names.lua` — the three collision modes; now also names
   people's folders (ids may be longer than a tag).
-- `079-options.lua` — eight choices: five switchable
+- `078-settings.lua` — the five setting names above, declared to 101.
+- `079-options.lua` — seven choices: five switchable
   (`people.link-collision`, `people.slash-in-link-name`,
   `people.direct-message-link`, `people.members-without-dm`,
-  `people.person-folder-collision`), three not (own devices, rebuild scope,
-  and — round 3 — whether a flagged member counts).
+  `people.person-folder-collision`), two not (own devices, rebuild scope).
 - Tests: the owner's example on the new model (programming filed under
   ritz, since the girlfriend is not in ritz and so cannot be in a declared
   child of it) in all three collision modes, bell-only; a person in three
@@ -136,12 +157,6 @@ about 8 s of it 104's rebuilds.
    rooms both labelled `programming`; a label holding `/`; a person with two
    addresses counted once.
 
-### Round 4 (2026-09-25)
-
-1. **Fixed**: a flagged member counts toward a person's rooms (the
-   `people-flagged-members` choice entry goes; the code already does this).
-2. Declare this module's setting names to 101's config reader (101 round 4).
-
 ## Blockers that are not the owner's
 
 - Needs 101 (entries, bell kinds), 102 (the tree), 103 (members).
@@ -167,12 +182,9 @@ them one at a time.  An issue with any of them unanswered is in progress.
 5. **Rebuilding everything on each bell ring** (waits on a measurement of a
    real home): 400 rooms take 19 ms per rebuild; making 400 rooms one by
    one, 5 s in total, growing with the square of the room count.
-6. **A flagged member** (added, but held off the send list until you
-   approve or decline, because the room tree could not vouch for them):
-   does that room count as one you share with them?  Built: `count` (they
-   are a member; people/ shows membership, as with withholding).  Not
-   built: `leave-out` (104 would read 103's flagged file and rebuild on
-   every `withheld` ring).  Builder's leaning: `count`.
+6. *(answered 2026-09-25, fixed in round 4)* **A flagged member** (added,
+   but held off the send list until you approve or decline) counts toward
+   the person's rooms, as built.
 
 ## Earlier designs
 

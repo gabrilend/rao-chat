@@ -748,7 +748,8 @@ end
 --            Since round 3, withheld also rings when 103's flagged file
 --            changes: a flagged member (awaiting review, held off the send
 --            list) is still in the entry's members, so still counts toward
---            the person's rooms here (079-options: people-flagged-members).
+--            the person's rooms here (answered by the owner in round 4:
+--            a flagged member counts).
 --   mailbox  (round 3) a mailbox was made or its port changed ("" tag), or
 --            one room moved to another mailbox.  Mailboxes are listening
 --            ports; they change no label, member or tree parent, so no

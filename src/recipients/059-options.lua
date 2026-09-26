@@ -12,6 +12,10 @@
 -- Answered and fixed in place (round 3, 2026-09-25), so no longer listed:
 -- ignore-hide-files (a hidden address's messages are not filed) and
 -- ignore-match (an ignore entry covers every port at its address).
+-- Answered and fixed in place (round 4, 2026-09-25):
+-- recipients-flag-after-passing (cleared: a flag whose member later passes
+-- the check is deleted by the next re-check) and recipients-approval-lasts
+-- (until they leave: an approved line stays until the confirmed leave).
 
 return {
     {
@@ -45,64 +49,6 @@ return {
         },
         leaning = "home: nobody has asked for per-room ignoring, and a per-room 'hide' is close to what "
             .. "withholding plus not opening the room already gives.",
-    },
-    {
-        id = "recipients-flag-after-passing",
-        question = "A flagged member later passes the check (the room above arrives and holds them, or they join it). Does the flag stay until you review it, or clear by itself?",
-        waits_on = "owner",
-        detail = "found while building 103 round 3 (flagged members); read only when a flagged member passes a re-check",
-        config_key = "recipients.flag-after-passing",
-        variants = {
-            {
-                name = "kept",
-                summary = "The flag stays until you approve or decline; its word is not changed.",
-                built_in = "src/recipients/041-recipients.lua (AFTER_PASSING, recheck_flagged_in)",
-                tests = "tests/054-test-child-room.lua ('flag-after-passing = kept')",
-                findings = "Nothing disappears unseen: every flag is reviewed by a person, as the owner "
-                    .. "described ('manually reviewed by the user'). The cost: a member of a child room made "
-                    .. "before its parent arrived stays orange and unsent-to even after the parent shows "
-                    .. "they belong, until someone clicks approve.",
-            },
-            {
-                name = "cleared",
-                summary = "The flag line is deleted; they are an ordinary member again.",
-                built_in = "src/recipients/041-recipients.lua (AFTER_PASSING, recheck_flagged_in)",
-                tests = "tests/054-test-child-room.lua ('flag-after-passing = cleared')",
-                findings = "The common case (join a child first, its parent later) fixes itself when the "
-                    .. "parent arrives. A flag can then vanish without the person ever seeing it; messages "
-                    .. "they wrote while it was flagged were never sent to that member (phase 2's resending "
-                    .. "of gaps, issue 209, would fill them on the next cross-check).",
-            },
-        },
-        leaning = "cleared: a flag says 'this does not match the tree'; once it matches there is nothing to review.",
-    },
-    {
-        id = "recipients-approval-lasts",
-        question = "How long does approving a flagged member last?",
-        waits_on = "owner",
-        detail = "found while building 103 round 3: without remembering approvals, a member of a child whose parent is not held here would be flagged again on every members change",
-        config_key = "",
-        variants = {
-            {
-                name = "until-they-leave",
-                summary = "An 'approved' line is kept in the flagged file until the address's confirmed leave.",
-                built_in = "src/recipients/041-recipients.lua (approve, flag_rows, confirm_leave)",
-                tests = "tests/054-test-child-room.lua ('an approved member is not flagged again')",
-                findings = "Re-checks skip approved members, so approval is asked once. A member who "
-                    .. "later drops out of the parent too is NOT flagged again (you already said yes to "
-                    .. "them here); leaving and coming back starts over, since the leave deletes the line.",
-            },
-            {
-                name = "until-the-answer-changes",
-                summary = "The approval holds only for the answer it was given against (no or cannot-check). Not built.",
-                built_in = "not built",
-                tests = "none",
-                findings = "Would need the approved line to keep the answer it overrode; a cannot-check "
-                    .. "approval would come back as a flag when the parent arrives and says no. Cheap to "
-                    .. "build if wanted: the line would read '<address> <port> approved-<answer>'.",
-            },
-        },
-        leaning = "until-they-leave: approval is a statement about a person, not about the tree.",
     },
     {
         id = "recipients-shared-address-label",

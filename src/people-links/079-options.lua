@@ -13,6 +13,9 @@
 -- (there are no splits any more).  people-own-devices lost its switch:
 -- the home keeps no list of your own devices now (no contacts file), so
 -- there is nothing for all-tops to act on until pairing exists.
+-- Answered in round 4 and removed: people-flagged-members — a flagged
+-- member counts toward the person's rooms (as built: people/ reads
+-- membership from the entry, and a flagged member is in the entry).
 
 return {
     {
@@ -242,36 +245,5 @@ return {
             },
         },
         leaning = "keep rebuild-all; a bulk import can ring once at the end.",
-    },
-    {
-        id = "people-flagged-members",
-        question = "A member the room tree could not vouch for (flagged: added, but held off the send list until you approve or decline) - does that room count as one you share with them in people/?",
-        waits_on = "owner",
-        detail = "found in round 3 (issue 104): 103's add_member can answer added-flagged, and 101 widened the 'withheld' bell to cover the flagged file. A flagged member is in the room's entry (a member) but is not sent to.",
-        config_key = "",
-        variants = {
-            {
-                name = "count",
-                summary = "Built: a flagged member counts like any member - the room is theirs, and can be a top for them.",
-                built_in = "src/people-links/061-people-links.lua (members read from the entry; 'withheld' rings change nothing)",
-                tests = "tests/076-test-mailboxes-and-flags.lua (coder added-flagged to shopping, a child of home he is not in: shopping is coder's top; declining moves no link)",
-                findings = "Needs nothing new: people/ already reads membership from the entry, and 103 "
-                    .. "keeps a flagged member in the entry. Same reading as withholding (issue 104: "
-                    .. "'withholding and ignoring do not change membership, so they do not change the "
-                    .. "links'). In the owner's round-3 example (coder added to shopping, not in home) "
-                    .. "people/coder/shopping appears at once, before anyone has reviewed the flag.",
-            },
-            {
-                name = "leave-out",
-                summary = "Not built: a room counts only for members not awaiting review; approved flags count.",
-                built_in = "",
-                tests = "",
-                findings = "Would make 104 read 103's flagged file (a new neighbour: through 103's "
-                    .. "flagged(home, tag), or the file directly) and rebuild on every 'withheld' ring, "
-                    .. "which today changes nothing. It would also make people/ answer 'who I send to' "
-                    .. "rather than 'who is in the room', the line the issue drew for withholding.",
-            },
-        },
-        leaning = "count: people/ shows membership; the flag is shown where the room's members are shown.",
     },
 }

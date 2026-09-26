@@ -1,12 +1,15 @@
 -- 115-test-demo-scenes.lua — builds every demo scene on the REAL phase 1 modules
 -- and checks the figures the demo exists to show.
 --
--- The demo takes its settings from the options files.  So that the scenes
--- can be checked even while a module's options file does not yet list a key
--- its code reads, this test starts from the real options files and fills
--- in only the keys none of them lists, from a stand-in table below (the
--- same idea as the stand-in modules other builders keep).  Each key filled
--- in that way is reported, so a stand-in never hides silently.  Then, on
+-- The demo sets exactly the setting names the modules declare (their
+-- <index>-settings.lua lists, read through 101's declared_settings()),
+-- each at the first variant its options file lists.  So that the scenes
+-- can be checked even while a declared name has no options entry (a fixed
+-- setting, or one whose choice is not written down yet), this test fills
+-- in only those names, from a stand-in table below (the same idea as the
+-- stand-in modules other builders keep).  Each name filled in that way is
+-- reported, so a stand-in never hides silently; a stand-in is never used
+-- for a name nobody declares (101 would refuse the config line).  Then, on
 -- the real modules, it checks:
 --   entries    two folders; both entries read by one reader; unpaired refused
 --   tokens     suggestions have six words; typed token kept;
@@ -17,7 +20,10 @@
 --              declining withholds; a parent not held gives cannot-check
 --   mailboxes  a top room and its children share one mailbox, direct
 --              messages another; a shared port found and reported; a room
---              whose parent is not held, per mailboxes.unheld-parent variant
+--              whose parent is not held in its own mailbox, then merged into
+--              the parent's once it arrives, per
+--              mailboxes.merge-when-parent-arrives variant; an undeclared
+--              config line refused
 --   members    six members; withholding one leaves five to send to, six members
 --   leaving    unconfirmed leave changes nothing; confirmed removes; speaking re-adds
 --   ignoring   mark shows a trace, hide shows nothing and files nothing; an
@@ -27,11 +33,12 @@
 --   log        duplicate, conflict error, edit keeps the original, two homes agree
 -- Each scene and each view also has to draw without error.
 
--- Keys the modules announced on the board (2026-09-25 round 3) with their
--- variants, first = baseline.  Used only for a key no options file lists.
--- Keys whose choice the owner answered are not here: no module reads them.
+-- Keys the modules announced on the board (round 3 and 4) with their
+-- variants, first = baseline.  Used only for a declared name no options
+-- file lists.  Keys whose choice the owner answered are not here: no
+-- module reads them (mailboxes.unheld-parent went in round 4).
 local STAND_IN_VARIANTS = {
-    ["mailboxes.unheld-parent"]         = { "own-mailbox", "waiting-mailbox" },
+    ["mailboxes.merge-when-parent-arrives"] = { "automatic", "ask" },
     ["tree.filing-loop"]                = { "refuse", "unfile" },
     ["ignore.scope"]                    = { "home", "home-and-room" },
     ["recipients.shared-address-label"] = { "all-labels", "address" },
@@ -59,17 +66,21 @@ return function(DIR, harness)
     }
     -- every module is loaded before any scene, as the demo does, so every
     -- bell listener hears every home the scenes make
-    local baseline, variants_by_key = baseline_tool.from_options(gather.gather(DIR .. "/src"))
+    local baseline, variants_by_key = baseline_tool.from_options(gather.gather(DIR .. "/src"),
+                                                                 m.rooms.declared_settings())
     local stood_in = {}
-    for key, names in pairs(STAND_IN_VARIANTS) do
-        if variants_by_key[key] == nil then
-            -- no options file lists this key yet: use the stand-in, and say so
-            variants_by_key[key] = names
-            baseline[#baseline + 1] = { key = key, value = names[1] }
-            stood_in[#stood_in + 1] = key
+    for _, setting in ipairs(baseline) do
+        local names = STAND_IN_VARIANTS[setting.key]
+        if setting.value == nil and names then
+            -- declared, but no options file lists it yet: use the stand-in, and say so
+            variants_by_key[setting.key] = names
+            setting.value = names[1]
+            stood_in[#stood_in + 1] = setting.key
         end
-        -- (listed by its module: the real options file wins)
+        -- (listed by its module: the real options file wins; declared with
+        -- no options entry and no stand-in: apply_input below refuses it)
     end
+    baseline_tool.apply_input(baseline, variants_by_key, {})
     table.sort(stood_in)
     if #stood_in > 0 then
         -- visible in the test output, never silent
@@ -254,21 +265,60 @@ return function(DIR, harness)
               table.concat(mailboxes.shared.warnings, " / "))
         check("mailboxes: the shared port tries programming and games", #mailboxes.shared.tried == 2
               and has(mailboxes.shared.tried, "programming") and has(mailboxes.shared.tried, "games"))
-        check("mailboxes: one row per mailboxes.unheld-parent variant",
-              #mailboxes.unheld == #variants_by_key["mailboxes.unheld-parent"])
+        check("mailboxes: one row per mailboxes.merge-when-parent-arrives variant",
+              #mailboxes.merge == #variants_by_key["mailboxes.merge-when-parent-arrives"])
+        -- what each variant must show once loft (attic's declared parent) arrives
         local expect = {
-            ["own-mailbox"] = function(row)
-                return row.before.kind == "tree" and row.after.tag == row.before.tag and row.after.tag ~= row.loft.tag
+            ["automatic"] = function(row)
+                return #row.mergeable == 0 and not row.said_yes
+                       and row.after.tag == row.loft.tag and row.trunk_after.tag == row.loft.tag
             end,
-            ["waiting-mailbox"] = function(row)
-                return row.before.kind == "waiting" and row.after.tag == row.loft.tag
+            ["ask"] = function(row)
+                return #row.mergeable == 1 and row.mergeable[1].mailbox == row.before.tag
+                       and row.mergeable[1].into == row.loft.tag and row.mergeable[1].rooms == 2
+                       and row.after.tag == row.before.tag and row.trunk_after.tag == row.before.tag
+                       and row.said_yes and row.after_yes.tag == row.loft.tag
+                       and row.trunk_after_yes.tag == row.loft.tag
             end,
         }
-        for _, row in ipairs(mailboxes.unheld) do
-            check("mailboxes " .. row.variant .. ": attic before and after loft as the variant says",
+        for _, row in ipairs(mailboxes.merge) do
+            check("mailboxes " .. row.variant .. ": attic starts in a tree mailbox of its own",
+                  row.before.kind == "tree" and row.before.tag ~= row.loft.tag, row.before.kind)
+            check("mailboxes " .. row.variant .. ": trunk joins attic's mailbox, nothing mergeable yet",
+                  row.trunk_before.tag == row.before.tag and row.mergeable_before == 0)
+            check("mailboxes " .. row.variant .. ": after loft arrives, as the variant says",
                   expect[row.variant] ~= nil and expect[row.variant](row),
-                  row.before.kind .. " -> " .. row.after.kind)
+                  row.after.tag:sub(1, 8) .. " mergeable " .. #row.mergeable)
+            check("mailboxes " .. row.variant .. ": nothing left to merge at the end", row.mergeable_after_yes == 0)
+            local emptied = nil
+            for _, box in ipairs(row.mailboxes) do
+                if box.tag == row.before.tag then emptied = box end
+            end
+            check("mailboxes " .. row.variant .. ": attic's old mailbox stays, empty, with its port",
+                  emptied ~= nil and #emptied.rooms == 0 and emptied.port == row.before.port)
         end
+        local config = mailboxes.config
+        check("mailboxes: the declared names include the merge setting",
+              (function()
+                  for _, item in ipairs(config.declared) do
+                      if item.name == "mailboxes.merge-when-parent-arrives" and item.module == "room-folders" then
+                          return true
+                      end
+                  end
+                  return false
+              end)())
+        check("mailboxes: a home sets exactly the declared names", config.lines_before == #config.declared,
+              config.lines_before .. " vs " .. #config.declared)
+        check("mailboxes: set_config with an undeclared name is refused", not config.set_made_up.ok
+              and config.set_made_up.answer:find("not a setting any module reads", 1, true) ~= nil,
+              config.set_made_up.answer)
+        check("mailboxes: the refused set_config wrote nothing",
+              config.bytes_before_refused_set == config.bytes_after_refused_set)
+        check("mailboxes: an undeclared line added by hand stops the next open, naming the line",
+              not config.reopen.ok and config.reopen.answer:find("mailboxes.unheld-parent = own-mailbox", 1, true) ~= nil,
+              config.reopen.answer)
+        check("mailboxes: and every read of the config", not config.read.ok
+              and config.read.answer:find("line", 1, true) ~= nil, config.read.answer)
     end
 
     local members = scene("members")

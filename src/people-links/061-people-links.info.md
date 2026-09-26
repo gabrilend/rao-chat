@@ -63,8 +63,8 @@ Registers on 101's change bell at load: `created`, `label`, `token`,
   member or tree parent, so no link.
 - `withheld` also rings when 103's `flagged` file changes (round 3).  A
   flagged member is still in the entry's members, so it still counts
-  toward that person's rooms (choice `people-flagged-members`, built as
-  `count`).
+  toward that person's rooms (the owner's answer, round 4: a flagged
+  member counts).
 
 ## What it errors on
 

@@ -22,61 +22,94 @@
 -- second on one CPU core; six words about 700,000 years at an assumed
 -- 5 billion guesses a second) is in the planning document's "Answers from
 -- the tally, round 2".
+--
+-- Answered in round 4 and removed: rooms-unheld-parent-mailbox (the owner:
+-- a child room whose parent is not held here gets its own mailbox and
+-- port; the waiting-mailbox variant, its 'waiting' mailbox kind and the
+-- mailboxes.unheld-parent setting are gone, and its room-moving code now
+-- does the merge below).  Added: rooms-merge-when-parent-arrives (a
+-- setting kept both ways, the owner preferring automatic) and
+-- rooms-merge-declined (found while building 'ask').
 
 return {
     {
-        id = "rooms-unheld-parent-mailbox",
-        question = "A child room is made (or joined) while this home does not hold its declared parent. "
-            .. "Which mailbox (listening port) does it go in: a new one of its own, or a shared waiting "
-            .. "mailbox until the parent arrives?",
+        id = "rooms-merge-when-parent-arrives",
+        question = "A child room made while this home did not hold its declared parent sits in a mailbox "
+            .. "(listening port) of its own. When the parent arrives, should its mailbox's rooms move into "
+            .. "the parent's mailbox at once, or be listed until the person says yes?",
         waits_on = "owner",
-        detail = "issue 102 round 3 open question (found while writing); agreed on the board that 101's "
-            .. "make_room takes the choice and this file holds it (102's options point here)",
-        config_key = "mailboxes.unheld-parent",
+        detail = "answered as a setting (planning document section 15, 'Five more from the tally, round 3 "
+            .. "finds' and the merge-setting line): the owner: \"config setting. Might be confusing though. "
+            .. "I prefer automatic.\" Both built for good; each home's person picks. Listed here so the demo "
+            .. "and the tally know its values (automatic first)",
+        config_key = "mailboxes.merge-when-parent-arrives",
         variants = {
             {
-                name = "own-mailbox",
-                summary = "The child starts its own tree mailbox, with a port the maker gives, as if it were "
-                    .. "a top room; it stays there when the parent arrives.",
-                built_in = "src/room-folders/002-room-folders.lua (UNHELD_PARENT_VARIANTS, make_room)",
-                tests = "tests/015-test-mailboxes.lua ('own-mailbox: the child starts its own tree mailbox, "
-                    .. "and stays in it when the parent arrives')",
+                name = "automatic",
+                summary = "After a room is made, a token changed or a parent written, every mailbox that can "
+                    .. "merge does: its rooms (the room it was made for first) move into the parent's "
+                    .. "mailbox, one 'mailbox' ring each; repeated until nothing moves.",
+                built_in = "src/room-folders/002-room-folders.lua (settle_merges, MERGE_MODES automatic, "
+                    .. "do_merge)",
+                tests = "tests/015-test-mailboxes.lua ('automatic: when the parent arrives ...', 'a chain "
+                    .. "arriving bottom-up ...', 'a parent arriving by a token change ...', 'given a held "
+                    .. "parent by write_parent ...')",
                 findings = {
-                    "The port a room listens on never changes after it is made, so the addresses its members "
-                        .. "hold for this home stay right; nothing has to be announced in phase 2.",
-                    "Cost: one more forwarded router port for every such child, and once the parent arrives "
-                        .. "one tree lives in two mailboxes on this home (a frame for the child arrives on the "
-                        .. "child's port, a frame for the parent on the parent's). Rooms made under the child "
-                        .. "later join the child's mailbox, not the parent's.",
-                    "The maker must know, when making the room, that the parent is not held, to pass a port: "
-                        .. "a missing port is an error naming the rule, never a default.",
+                    "A tree ends up in one mailbox on this home as soon as its top arrives; a chain arriving "
+                        .. "bottom-up merges step by step (programming into ritz's mailbox when ritz arrives, "
+                        .. "both into home's when home arrives), so a room can change port more than once.",
+                    "Every move changes the port the room listens on. Phase 2 (issues 205/202) must tell "
+                        .. "members the new port and keep trying the old one for those rooms until they "
+                        .. "confirm; the old mailbox is kept, empty, with its port, for that.",
                 },
             },
             {
-                name = "waiting-mailbox",
-                summary = "The child goes in the home's one 'waiting' mailbox (made once with make_mailbox, "
-                    .. "with its port); when the parent arrives it moves into the parent's mailbox.",
-                built_in = "src/room-folders/002-room-folders.lua (UNHELD_PARENT_VARIANTS, settle_waiting, "
-                    .. "called after make_room, change_token and write_parent)",
-                tests = "tests/015-test-mailboxes.lua ('waiting-mailbox: the child waits ...', 'a chain whose "
-                    .. "rooms arrive bottom-up settles top-down', 'a parent arriving by a token change', "
-                    .. "'given a held parent by write_parent', 'without the waiting mailbox made')",
+                name = "ask",
+                summary = "Nothing moves by itself: mergeable_mailboxes lists each possible merge (mailbox, "
+                    .. "room, into, rooms) until the person says yes with merge_mailbox.",
+                built_in = "src/room-folders/002-room-folders.lua (MERGE_MODES ask, mergeable_mailboxes, "
+                    .. "merge_mailbox)",
+                tests = "tests/015-test-mailboxes.lua ('ask: the merge is listed ...', 'merge_mailbox before "
+                    .. "the parent arrives ...', 'in a chain, a yes lower down ...')",
                 findings = {
-                    "Every orphaned child shares one port, so no extra router port per child, and a tree ends "
-                        .. "up in one mailbox once its top arrives. A chain arriving bottom-up settles top-down "
-                        .. "in repeated passes (one 'mailbox' ring per room moved).",
-                    "Cost: when a waiting room moves, the port it listens on changes. Members who send to this "
-                        .. "home for that room still use the waiting port, which no longer tries that room's "
-                        .. "key, so their messages would be lost until phase 2 tells them the new port (or "
-                        .. "keeps trying moved rooms on the waiting port for a while). Nothing in phase 1 does.",
-                    "Needs one more one-per-home mailbox made before the first such child: without it the "
-                        .. "child is refused with the make_mailbox call to run.",
+                    "The port changes only when the person agrees, so they can time it (for example after "
+                        .. "telling the members). A yes merges into the parent's mailbox as it is at that "
+                        .. "moment, so saying yes top-down moves each room once.",
+                    "There is no 'no': a declined merge stays listed (open question 11 of issue 101).",
                 },
             },
         },
-        leaning = "own-mailbox: a port that never moves is correctness, while the waiting mailbox trades it "
-            .. "for one fewer router port and needs a phase 2 announcement to stay correct. Revisit if "
-            .. "orphaned children turn out to be common (many ports) rather than rare.",
+        leaning = "automatic (the owner's preference; listed first, so the demo starts with it).",
+    },
+    {
+        id = "rooms-merge-declined",
+        question = "Under mailboxes.merge-when-parent-arrives = ask, what happens when the person says no to "
+            .. "a merge: does it stay listed, or is the no remembered?",
+        waits_on = "owner",
+        detail = "issue 101 open question 11 (new, round 4, found while building the ask value)",
+        config_key = "",
+        variants = {
+            {
+                name = "stays-listed",
+                summary = "There is no 'no': the merge stays in mergeable_mailboxes until a yes, or until the "
+                    .. "room is moved by hand with write_mailbox (which ends the wait).",
+                built_in = "src/room-folders/002-room-folders.lua (find_mergeable, write_mailbox) — the only "
+                    .. "variant built",
+                tests = "tests/015-test-mailboxes.lua ('ask: the merge is listed ...', 'moving the awaited "
+                    .. "room by hand ends its mailbox's wait')",
+                findings = "Nothing new is stored. Moving the room by hand into the mailbox it already has is "
+                    .. "not a way to say no (the room did not leave it); moving it anywhere else is.",
+            },
+            {
+                name = "remember-no",
+                summary = "A decline clears the mailbox's awaits-parent-of mark, so it is never offered again.",
+                built_in = "not built",
+                tests = "none",
+                findings = "Not built: one more function (clearing the mark is already written, for "
+                    .. "write_mailbox); waits on whether the owner wants a 'no' at all.",
+            },
+        },
+        leaning = "stays-listed until the client shows the list and the owner sees whether a 'no' is missed.",
     },
     {
         id = "rooms-mailbox-after-parent-change",
@@ -89,9 +122,9 @@ return {
         variants = {
             {
                 name = "keep",
-                summary = "It keeps its mailbox (only a room in the waiting mailbox follows a held parent); "
-                    .. "moving by hand is write_mailbox.",
-                built_in = "src/room-folders/002-room-folders.lua (write_parent, settle_waiting) — the only "
+                summary = "It keeps its mailbox (only a room whose own mailbox still awaits its parent can "
+                    .. "merge, by mailboxes.merge-when-parent-arrives); moving by hand is write_mailbox.",
+                built_in = "src/room-folders/002-room-folders.lua (write_parent, settle_merges) — the only "
                     .. "variant built",
                 tests = "tests/015-test-mailboxes.lua ('a room already in a mailbox keeps it when its parent "
                     .. "is changed')",
@@ -106,8 +139,8 @@ return {
                 built_in = "not built",
                 tests = "none",
                 findings = "Not built: moves the listening port of a whole subtree on one parent change, with "
-                    .. "the same lost-message problem as the waiting variant above; cheap to add (the "
-                    .. "settling loop already moves rooms) once phase 2 can announce a new port.",
+                    .. "the same port-change problem as a merge; cheap to add (the merge already moves a "
+                    .. "mailbox's rooms) once phase 2 can announce a new port.",
             },
         },
         leaning = "keep, until phase 2 can tell members that a room's port moved.",

@@ -10,8 +10,9 @@ The toolkit room-folders' tests use.  Load with `dofile`; returns a table.
 | `same_list(got, want, what)` | list, list, string or nil | nothing | Errors unless the lists match item by item. |
 | `fails(action, text)` | function, string | nothing | Errors unless `action` raises an error containing `text` (plain substring). |
 | `fresh_home_dir(name)` | string | string | An absolute path in the scratch folder, emptied first. |
-| `test_home(rooms, name, unheld)` | the module, string, `""` or a variant of `mailboxes.unheld-parent` | home | A fresh home with its direct mailbox (port `DIRECT_PORT`, 7700) made; with a variant, the key set (and for `waiting-mailbox` the waiting mailbox made, port `WAITING_PORT`, 7701). |
+| `test_home(rooms, name, merge)` | the module, string, `""`, `"automatic"` or `"ask"` | home | A fresh home with its direct mailbox (port `DIRECT_PORT`, 7700) made; with a value, `mailboxes.merge-when-parent-arrives` set to it (`""` leaves it unset). |
 | `port_for(kind, parent)` | string, string | integer or `""` | What a make_room spec's `mailbox_port` must be: a fresh port for a top group room, `""` otherwise. |
+| `port_for_home(rooms, home, kind, parent)` | the module, home, string, string | integer or `""` | As `port_for`, and also a fresh port for a group room whose declared parent is not held in `home` (it starts its own mailbox). |
 | `fresh_port()` | — | integer | The next unused port from 7001 upward, so test mailboxes never share a port by accident. |
 | `read_file(path)` / `write_file(path, text)` | string (, string) | string / nothing | Plain file helpers for checking what is on disk. |
 | `finish()` | — | exits | Prints `counts <passed> <failed>` and exits 0 only if nothing failed. |

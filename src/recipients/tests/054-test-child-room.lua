@@ -146,7 +146,7 @@ local function run(h)
     end)
 
     h.check("child: a parent not held here gives 'cannot-check', flagged", function()
-        local home = h.new_home("child-unheld", { ["mailboxes.unheld-parent"] = "own-mailbox" })
+        local home = h.new_home("child-unheld", {})
         local tag = orphan(home, "orphan", {}, "somebody-elses-token")
         local word, answer = R.add_member(home, tag, C[1], C[2])
         h.equal(word, "added-flagged", "flagged")
@@ -155,7 +155,7 @@ local function run(h)
     end)
 
     h.check("child: an approved member is not flagged again on a later re-check", function()
-        local home = h.new_home("child-approved-stays", { ["mailboxes.unheld-parent"] = "own-mailbox" })
+        local home = h.new_home("child-approved-stays", {})
         local tag = orphan(home, "orphan", {}, "somebody-elses-token")
         R.add_member(home, tag, C[1], C[2])
         R.approve(home, tag, C[1], C[2])
@@ -164,30 +164,28 @@ local function run(h)
         h.equal(flag_text(home, tag), "203.0.113.3 7003 approved,203.0.113.2 7002 cannot-check", "C stays approved")
     end)
 
-    -- the parent arrives later: under both of 101's mailbox variants, and
-    -- both of this module's flag-after-passing variants
-    for _, mailbox_mode in ipairs({ "own-mailbox", "waiting-mailbox" }) do
-        for _, case in ipairs({ { "kept", "203.0.113.3 7003 cannot-check" }, { "cleared", "" } }) do
-            h.check("child: the parent arrives holding a flagged member, mailboxes " .. mailbox_mode
-                .. ", flag-after-passing = " .. case[1], function()
-                local home = h.new_home("child-arrives-" .. mailbox_mode .. "-" .. case[1], {
-                    ["mailboxes.unheld-parent"] = mailbox_mode,
-                    ["recipients.flag-after-passing"] = case[1],
-                })
-                local parent_token = "parent-token-" .. h.rooms.new_local_tag():sub(1, 8)
-                local tag = orphan(home, "orphan", {}, parent_token)
-                R.add_member(home, tag, C[1], C[2])
-                R.add_member(home, tag, B[1], B[2])
-                -- the parent arrives: C is in it, B is not
-                h.make(home, {
-                    label = "home", token = parent_token, kind = "group", parent = "", filed_under = "",
-                    members = { { address = A[1], port = A[2], heard = 0 }, { address = C[1], port = C[2], heard = 0 } },
-                })
-                local lines = flag_text(home, tag)
-                local want_b = "203.0.113.2 7002 no"
-                h.equal(lines, case[2] == "" and want_b or (case[2] .. "," .. want_b), "flags after the parent arrived")
-            end)
-        end
+    -- the parent arrives later, under both values of 101's merge setting
+    -- (the child's mailbox moves into the parent's, or waits to be asked):
+    -- a flagged member it holds is cleared by itself (owner, 2026-09-25), a
+    -- flagged member it does not hold turns from cannot-check to no
+    for _, merge_mode in ipairs({ "automatic", "ask" }) do
+        h.check("child: the parent arrives holding a flagged member, merge " .. merge_mode
+            .. ": that flag clears itself", function()
+            local home = h.new_home("child-arrives-" .. merge_mode, {
+                ["mailboxes.merge-when-parent-arrives"] = merge_mode,
+            })
+            local parent_token = "parent-token-" .. h.rooms.new_local_tag():sub(1, 8)
+            local tag = orphan(home, "orphan", {}, parent_token)
+            R.add_member(home, tag, C[1], C[2])
+            R.add_member(home, tag, B[1], B[2])
+            -- the parent arrives: C is in it, B is not
+            h.make(home, {
+                label = "home", token = parent_token, kind = "group", parent = "", filed_under = "",
+                members = { { address = A[1], port = A[2], heard = 0 }, { address = C[1], port = C[2], heard = 0 } },
+            })
+            h.equal(flag_text(home, tag), "203.0.113.2 7002 no", "flags after the parent arrived")
+            h.equal(#R.send_list(home, tag), 1, "C is sent to again")
+        end)
     end
 
     h.check("child: a confirmed leave deletes the flag; returning is checked afresh", function()
@@ -201,20 +199,19 @@ local function run(h)
         h.equal(R.heard_from(home, child, C[1], C[2], h.tick()), "added-flagged", "back, flagged again")
     end)
 
-    h.check("child: an unknown recipients.flag-after-passing value is refused when it is read", function()
-        local home = h.new_home("child-typo", {
-            ["mailboxes.unheld-parent"] = "own-mailbox",
-            ["recipients.flag-after-passing"] = "forgotten",
-        })
+    h.check("child: an approval lasts until they leave, even when the parent arrives and says no", function()
+        local home = h.new_home("child-approval-lasts", {})
         local parent_token = "parent-token-" .. h.rooms.new_local_tag():sub(1, 8)
         local tag = orphan(home, "orphan", {}, parent_token)
         R.add_member(home, tag, C[1], C[2])
-        h.expect_error("not a built variant", function()
-            h.make(home, {
-                label = "home", token = parent_token, kind = "group", parent = "", filed_under = "",
-                members = { { address = C[1], port = C[2], heard = 0 } },
-            })
-        end)
+        R.approve(home, tag, C[1], C[2])
+        -- the parent arrives without C: the tree now says no, the approval holds
+        h.make(home, {
+            label = "home", token = parent_token, kind = "group", parent = "", filed_under = "",
+            members = { { address = A[1], port = A[2], heard = 0 } },
+        })
+        h.equal(flag_text(home, tag), "203.0.113.3 7003 approved", "still approved")
+        h.equal(#R.send_list(home, tag), 1, "still sent to")
     end)
 
     h.check("child: a damaged flagged line is an error, not skipped", function()

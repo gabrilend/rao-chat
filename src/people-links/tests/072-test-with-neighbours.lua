@@ -26,13 +26,14 @@ local GF, FRIEND, HOUSE = "gf.example 7000", "friend.example 7001", "house.examp
 -- (their first-listed variants), so their code never stops on a missing
 -- one.  Which keys they are was read from their options files (round 3:
 -- ignore.hide-files, ignore.match and tree.unheld-parent-join were
--- answered and are no longer read, so they are no longer set here).
+-- answered and are no longer read, so they are no longer set here; round
+-- 4: recipients.flag-after-passing likewise, and 101 now refuses any name
+-- no module declares).
 local function neighbour_home(name)
     local home = H.fresh_home(name, {})
     local keys = {
         { "ignore.scope", "home" },
         { "recipients.shared-address-label", "all-labels" },
-        { "recipients.flag-after-passing", "kept" },
         { "tree.filing-loop", "unfile" },
     }
     for _, pair in ipairs(keys) do

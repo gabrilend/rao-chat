@@ -7,11 +7,14 @@
 --   1. reads the project's input/ folder (the owner's rule: a program's first
 --      act is to read what it was given there) and shows what it found;
 --   2. loads each phase 1 module, noting any that are not there yet;
---   3. reads every module's options file and sets each undecided choice to
---      the first variant its builder listed — the baseline — unless
---      input/phase-1-demo.config names another built variant for it
+--   3. settles the baseline: exactly the setting names the modules declare
+--      (101's declared_settings — a home's config may hold no other name),
+--      each at the first variant listed for it in an options file unless
+--      input/phase-1-demo.config names another built variant
 --      (105-demo-baseline.lua), printing them all, so nothing about the
---      setup is hidden;
+--      setup is hidden.  If that cannot be done (an options file records a
+--      key nobody declares, a declared name has no value), every scene
+--      that makes a home is reported could-not with the reason;
 --   4. builds and shows each scene (103 builds, 104 draws), each variant of
 --      the choice a scene is about in a home of its own;
 --   5. says which scenes ran and which could not, and why;
@@ -124,8 +127,17 @@ end
 -- }}}
 
 -- {{{ local function missing_modules
-local function missing_modules(key, loaded)
+-- (the modules and baseline a scene cannot run without)
+-- The short names a scene needs and lacks: modules that did not load, and
+-- "baseline" when the settings could not be settled (problems.baseline)
+-- and the scene makes homes.
+local function missing_modules(key, loaded, problems)
     local missing = {}
+    if #NEEDS[key] > 0 and problems.baseline ~= nil then
+        -- a scene that makes homes, and no baseline to configure them with
+        missing[#missing + 1] = "baseline"
+    end
+    -- (a baseline, or a scene that makes no homes: only modules matter)
     for _, short in ipairs(NEEDS[key]) do
         if loaded[short] == nil then
             -- this scene needs a module that did not load
@@ -143,14 +155,14 @@ end
 local function run_scene(number, entry, ctx, problems)
     heading(number, entry.title)
     local outcome = { key = entry.key, title = entry.title, ran = false, seconds = 0, reason = "" }
-    local missing = missing_modules(entry.key, ctx.m)
+    local missing = missing_modules(entry.key, ctx.m, problems)
     if #missing > 0 then
         -- a needed module is absent: say which and why, and do not try
         local reasons = {}
         for _, short in ipairs(missing) do
             reasons[#reasons + 1] = short .. " (" .. ctx.problems[short] .. ")"
         end
-        outcome.reason = "not loaded: " .. table.concat(reasons, "; ")
+        outcome.reason = "missing: " .. table.concat(reasons, "; ")
         say("COULD NOT RUN: " .. outcome.reason)
         return outcome
     end
@@ -208,6 +220,27 @@ local function write_goodbye(outcomes)
 end
 -- }}}
 
+-- {{{ local function settle_baseline
+-- The settings every demo home starts with: exactly the names the modules
+-- declare (101's declared_settings), valued from the options files and
+-- input/phase-1-demo.config (105-demo-baseline).  Gives baseline,
+-- variants_by_key, and how many came from input/.  Raises when 101 did
+-- not load (no declared names to read) or any name is left without a
+-- value, or an options file records a key nobody declares.
+local function settle_baseline(options, loaded, problems, wanted)
+    if loaded.rooms == nil then
+        -- without 101 there is no list of declared setting names
+        error("room-folders (101) did not load, so the declared setting names cannot be read: "
+              .. problems.rooms, 0)
+    end
+    -- (101 loaded: its list of every name any module declares is the
+    -- whole of what a demo home may set)
+    local baseline, variants_by_key = baseline_tool.from_options(options, loaded.rooms.declared_settings())
+    local replaced = baseline_tool.apply_input(baseline, variants_by_key, wanted)
+    return baseline, variants_by_key, replaced
+end
+-- }}}
+
 -- {{{ local function main
 local function main()
     heading(0, "What input/ holds (read first)")
@@ -230,15 +263,25 @@ local function main()
     end
 
     local options = gather.gather(DIR .. "/src")
-    local baseline, variants_by_key = baseline_tool.from_options(options)
-    local replaced = baseline_tool.apply_input(baseline, variants_by_key, wanted)
+    local set_up, baseline, variants_by_key, replaced = pcall(settle_baseline, options, loaded, problems, wanted)
     say("")
-    say("baseline config: " .. #baseline .. " keys, " .. replaced
-        .. " taken from input/phase-1-demo.config, the rest the first variant listed.")
-    say("each scene overrides the key it is about.")
-    for _, setting in ipairs(baseline) do
-        say(string.format("  %-32s = %-12s (%s; %s)", setting.key, setting.value, setting.module,
-                          setting.source))
+    if set_up then
+        -- every declared name has a value: show them all
+        say("baseline config: " .. #baseline .. " settings, exactly the names the modules declare in their "
+            .. "<index>-settings.lua files;")
+        say("  " .. replaced .. " taken from input/phase-1-demo.config, the rest the first variant listed in "
+            .. "an options file.")
+        say("each scene overrides the key it is about.")
+        for _, setting in ipairs(baseline) do
+            say(string.format("  %-36s = %-12s (%s; %s)", setting.key, setting.value, setting.module,
+                              setting.source))
+        end
+    else
+        -- no baseline: no home can be configured, so every scene that makes
+        -- one is reported as could-not with this reason; the tally still runs
+        say("COULD NOT SET THE BASELINE: " .. tostring(baseline))
+        problems.baseline = tostring(baseline)
+        baseline, variants_by_key = {}, {}
     end
 
     local scratch = DIR .. "/tmp/shared-memory/phase-1-demo"

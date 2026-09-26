@@ -9,9 +9,11 @@
 ## Current Behavior
 
 Round 3 (2026-09-25): the owner's answered choices are fixed in place and
-their switches removed.  Every test passes, both against a stand-in of the
-room-folders module and against the real round-3 one (with mailboxes).
-Run `src/message-log/tests/098-run-tests` for current counts.
+their switches removed.  Round 4: the log's one setting name is declared
+to 101's config reader, which answered the retired-settings question.
+Every test passes, both against a stand-in of the room-folders module and
+against the real round-4 one (with mailboxes and declared settings).  Run
+`src/message-log/tests/098-run-tests` for current counts.
 
 What exists in `src/message-log/`:
 
@@ -57,16 +59,25 @@ What exists in `src/message-log/`:
   applied.  A deleted message stays in the view, empty and marked
   `deleted`; showing it as a gap or hiding it is the person's setting in
   the client (owner: "This is a UI concern").  Its text stays in the file.
-- `099-options.lua` — four choices still open: `log-duplicate-check`
+- `087-settings.lua` — the setting names this module reads, declared to
+  101's config reader (round 4): only `log.duplicate-check`.  The four
+  retired names (`log.record-shape`, `log.shape-mixing`,
+  `log.who-may-edit`, `log.same-id-new-address`) are deliberately absent,
+  so a home whose config still holds one is refused by 101 when its
+  config is read, with the line quoted — the owner's answer to "a retired
+  key still in config" (it used to stop applying silently).
+- `099-options.lua` — three choices still open: `log-duplicate-check`
   (switchable, waits on phase 2), `log-pictures`, `log-early-edits`
-  (waits on phase 2), and `log-retired-keys-in-config` (new).  Its header
-  lists the choices removed as answered.
+  (waits on phase 2).  Its header lists the choices removed as answered
+  (round 4: `log-retired-keys-in-config`).
 - `tests/` — codecs (tsv round trips, retired-shape lines refused), log
   (both duplicate checks; the conflict error; a repeat from another
   address answered duplicate with no key set; the exact line on disk; the
   address shapes; two homes with different tags showing one order), edits
-  (anyone may edit; a leftover `log.who-may-edit` is ignored; deleted
-  messages stay marked), memory (the remembered check against outside
+  (anyone may edit; a leftover `log.who-may-edit` line is refused by the
+  real 101 and never read by the log under the stand-in; the settings list
+  holds exactly `log.duplicate-check` and the real 101 names this module
+  as its owner; deleted messages stay marked), memory (the remembered check against outside
   appends and replaced files; a retired-shape line under both checks),
   measure, runner.  The test harness makes each room a top-level room in
   its own mailbox (make_room's round-3 `mailbox_port`); the stand-in
@@ -138,11 +149,6 @@ From room-folders, the log uses only `config_value`, `log_path`,
    identical on two homes whose local tags differ; lines in retired
    shapes refused.
 
-### Round 4 (2026-09-25)
-
-1. The `log-retired-keys-in-config` choice goes: 101's config reader now
-   refuses any line no module declares.  Declare `log.duplicate-check`.
-
 ## Blockers that are not the owner's
 
 - Needs 101's room folders and bell.
@@ -161,19 +167,14 @@ them one at a time.  An issue with any of them unanswered is in progress.
    phase 2 will need to hold it until the message arrives.  Reading
    already applies such an edit once its message is filed.
 7. **Pictures** (planning question 9): text only for now.
-9. **A retired key still in a home's config** (found in round 3).  A home
-   set up before round 3 may still say `log.who-may-edit = same-address`
-   or `log.record-shape = block`.  The log now never reads those lines, so
-   the first silently stops applying.  (The second cannot pass unnoticed:
-   its old logs are refused when read.)  Should a retired key in config be
-   an error the person sees once?  If so, 101's config reader is the one
-   place to check every module's retired keys.  Builder's leaning: yes,
-   refuse, in 101.
 
 Answered (2026-09-25) and built as answered: record shape (1: tsv), who
 may edit (2: anyone), mixing shapes (3: gone with the other shapes), a
 deleted message (5: kept marked; the client chooses how to show it), the
-same message from another address (8: duplicate).
+same message from another address (8: duplicate).  Answered later and
+built in round 4: a retired key still in config (9: an error — 101's
+config reader refuses any line no module declares; the log declares only
+`log.duplicate-check`).
 
 ## Earlier design (first model, built 2026-09-25)
 

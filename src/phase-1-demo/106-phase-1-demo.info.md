@@ -14,12 +14,16 @@ What it does, in order:
    for step 3.
 2. Loads the seven phase 1 module files (002, 021, 024, 041, 042, 061,
    081), reporting any that fail to load.
-3. Gathers every options file; sets each config key to the first variant
-   its builder listed, replaced by any value from
-   `input/phase-1-demo.config` (see `105-demo-baseline.info.md`), and prints
-   every key with where its value came from.
+3. Settles the baseline: one setting per name the modules declare
+   (`rooms.declared_settings()`, from each module's
+   `<index>-settings.lua`), valued at the first variant its options file
+   lists, replaced by any value from `input/phase-1-demo.config` (see
+   `105-demo-baseline.info.md`), and prints every setting with where its
+   value came from.  When that fails ("COULD NOT SET THE BASELINE"), the
+   reason is kept as the problem `baseline`.
 4. Runs each scene in `103-demo-sections.ORDER`: skipped with the reason if
-   a needed module did not load; otherwise built, drawn and timed.  A scene
+   a needed module did not load, or (for every scene that makes a home)
+   the baseline could not be settled; otherwise built, drawn and timed.  A scene
    that fails prints "COULD NOT RUN" with the error, and the rest go on.
 5. Prints which scenes ran (with milliseconds) and which could not (why).
 6. Writes `output/phase-1-demo.goodbye` (rewritten each run): run time, one

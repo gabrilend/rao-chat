@@ -22,7 +22,9 @@ Config key read (absent is an error): `log.duplicate-check`
 `read` and `read_ordered` read no config.  The record shape is tsv, fixed
 (083); anyone may edit; a repeat differing only in `from` is a duplicate.
 The retired keys `log.record-shape`, `log.shape-mixing`,
-`log.who-may-edit`, `log.same-id-new-address` are not read.
+`log.who-may-edit`, `log.same-id-new-address` are not read, and are not
+in the module's declared settings (`087-settings.lua`), so since round 4
+the real room-folders module refuses a config file that still holds one.
 
 | function | takes | gives |
 |---|---|---|

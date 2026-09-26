@@ -42,6 +42,13 @@ return {
                         .. "and the baseline dropped them with no change to its code; the one new key "
                         .. "(mailboxes.unheld-parent) arrived the same way. Answered choices need no baseline at "
                         .. "all, so the question covers fewer keys each round.",
+                    "Round 4: a home's config may hold only names some module declares "
+                        .. "(src/<module>/<index>-settings.lua), so the baseline is now one setting per "
+                        .. "declared name (10 on 2026-09-26), valued from the options files; an options "
+                        .. "config_key nobody declares, or a declared name with no options entry and no "
+                        .. "input/ value, stops the baseline (seen at 12:56, before 101 took the retired "
+                        .. "mailboxes.unheld-parent out of its options file: 1 of 10 scenes, the tally). "
+                        .. "The question itself is unchanged: which variant the undecided names start at.",
                 },
             },
             {

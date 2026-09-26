@@ -1611,3 +1611,8 @@ What follows:
    config reader knows every setting name any module uses; any line it does
    not recognise is an error** — catching retired settings, typos and
    settings from a newer version alike.  Unknown values were already errors.
+- **Merging a child into its parent's mailbox when the parent arrives**
+  (`mailboxes.merge-when-parent-arrives`): **a config setting**, `automatic`
+  or `ask`.  Owner: "config setting. Might be confusing though. I prefer
+  automatic."  `automatic` is listed first (the demo's starting value); as
+  with every setting, it must be written in config — no silent default.

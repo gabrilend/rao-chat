@@ -55,6 +55,11 @@
 --                 KEPT so the next re-check does not flag them again — a
 --                 member of a child whose parent is not held here would
 --                 otherwise come back flagged on every members change.
+--                 An approval lasts until the address leaves (owner,
+--                 2026-09-25): approval is about a person, not about the
+--                 tree, so a later "no" does not flag them again here.
+-- A flag awaiting review whose member later passes the check is deleted
+-- by the next re-check (owner, 2026-09-25: the flag clears by itself).
 -- Declining withholds the address and deletes its line; a confirmed leave
 -- deletes its line too, so a returning address is checked afresh.
 -- Changes to it ring the bell "withheld": both files only change who you
@@ -306,35 +311,21 @@ function M.decline(home, tag, address, port)
 end
 -- }}}
 
--- What happens to a flag whose member now passes the check (a cannot-check
--- whose parent arrived and holds them, or a "no" who joined the room
--- above).  Undecided, read only when it happens, config
--- recipients.flag-after-passing:
---   kept     the flag stays until the person reviews it (the owner spoke
---            of manual review; a flag never disappears unseen)
---   cleared  the flag is removed: there is nothing left to review
-local AFTER_PASSING = {
-    ["kept"] = function(home, tag, fl) return false end,
-    ["cleared"] = function(home, tag, fl) return drop_flag(home, tag, fl.address, fl.port) end,
-}
-
 -- {{{ local function recheck_flagged_in
 -- For each member of `tag` awaiting review: ask the tree again.  A
--- changed failing answer (no <-> cannot-check) is written; a pass is
--- handed to the recipients.flag-after-passing setting.
+-- member who now passes (a cannot-check whose parent arrived and holds
+-- them, or a "no" who joined the room above) has the flag line deleted:
+-- a flag says "this does not match the tree", and once it matches there
+-- is nothing left to review (owner, 2026-09-25: "cleared").  A member
+-- still failing, maybe for the other reason, keeps its flag with the
+-- word brought up to date.
 local function recheck_flagged_in(home, tag)
     for _, fl in ipairs(M.flagged(home, tag)) do
         local answer = tree.check_member(home, tag, fl.address, fl.port)
-        -- passes now: the owner's setting decides
+        -- passes now: the flag clears itself
         if answer == "yes" then
-            local mode = rooms.config_value(home, "recipients.flag-after-passing")
-            local act = AFTER_PASSING[mode]
-            -- a value this module did not build: stop at the typo
-            if act == nil then
-                error("recipients: config recipients.flag-after-passing = '" .. mode .. "' is not a built variant")
-            end
-            act(home, tag, fl)
-        -- still failing, maybe for the other reason: keep the word current
+            drop_flag(home, tag, fl.address, fl.port)
+        -- still failing: keep the word current
         else
             set_flag(home, tag, fl.address, fl.port, answer)
         end

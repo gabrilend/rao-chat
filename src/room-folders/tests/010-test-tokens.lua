@@ -159,9 +159,10 @@ check("suggest_token: six words, no setting read (an empty config is enough)", f
     same(rooms.room_exists(home, tag), true)
 end)
 
-check("suggest_token: the round-2 setting is gone (not read even when present)", function()
+check("suggest_token: the round-2 setting is gone (and, undeclared, refused in config)", function()
     local home = rooms.open_home(kit.fresh_home_dir("tokens-old-key"))
-    rooms.set_config(home, "rooms.suggested-token-words", "4")
+    fails(function() rooms.set_config(home, "rooms.suggested-token-words", "4") end,
+          "not a setting any module reads")
     same(select(2, rooms.suggest_token(home):gsub("-", "-")) + 1, 6)
     same(rooms.SUGGESTED_WORDS_KEY, nil, "no exported key")
 end)

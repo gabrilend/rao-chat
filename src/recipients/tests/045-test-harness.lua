@@ -140,8 +140,7 @@ local function make_harness(dir, neighbours)
     -- {{{ function h.new_home
     -- A fresh home with every module's first variant set, then `config`
     -- (key -> value) on top, and the one direct-message mailbox made (101
-    -- refuses a direct room without it) — plus the waiting mailbox when the
-    -- home puts unheld-parent rooms there.
+    -- refuses a direct room without it).
     function h.new_home(label, config)
         h.home_count = h.home_count + 1
         local home = h.rooms.open_home(h.scratch .. "/" .. h.home_count .. "-" .. label)
@@ -152,29 +151,20 @@ local function make_harness(dir, neighbours)
             h.rooms.set_config(home, key, value)
         end
         h.rooms.make_mailbox(home, { label = "direct messages", kind = "direct", port = h.port() })
-        -- waiting-mailbox homes need their waiting mailbox; others do not have one
-        if h.rooms.read_config(home)["mailboxes.unheld-parent"] == "waiting-mailbox" then
-            h.rooms.make_mailbox(home, { label = "waiting", kind = "waiting", port = h.port() })
-        end
         return home
     end
     -- }}}
 
     -- The mailbox_port make_room wants (contract, "Mailboxes"): a port when
     -- the room starts a new mailbox, "" when it joins one.  Keyed by what
-    -- the new room is; an unheld parent follows 101's own setting.
+    -- the new room is.  A child whose parent is not held here always starts
+    -- its own mailbox (owner, round 4; the old mailboxes.unheld-parent
+    -- setting is retired), so it gets a port like a top room.
     local MAILBOX_PORT = {
         ["direct"] = function(home) return "" end,
         ["top"] = function(home) return h.port() end,
         ["held-parent"] = function(home) return "" end,
-        ["unheld-parent"] = function(home)
-            local mode = h.rooms.config_value(home, "mailboxes.unheld-parent")
-            -- own mailbox: a port; the waiting mailbox: none
-            if mode == "own-mailbox" then
-                return h.port()
-            end
-            return ""
-        end,
+        ["unheld-parent"] = function(home) return h.port() end,
     }
 
     -- {{{ function h.make

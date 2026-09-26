@@ -96,10 +96,10 @@ end
 -- direct-message mailbox on DIRECT_PORT at birth (101 refuses a direct room
 -- until it exists); each top group room then starts a tree mailbox on the
 -- next free port from FIRST_TREE_PORT, counted per home, so no two
--- mailboxes share a port unless a scene asks for it on purpose.  A waiting
--- mailbox (only under mailboxes.unheld-parent = waiting-mailbox) is made on
--- WAITING_PORT the first time a room needs it.
-local DIRECT_PORT, FIRST_TREE_PORT, WAITING_PORT = 7700, 7701, 7799
+-- mailboxes share a port unless a scene asks for it on purpose.  (Round 3's
+-- waiting mailbox on port 7799 is gone with mailboxes.unheld-parent: a
+-- child whose parent is not held always starts a tree mailbox of its own.)
+local DIRECT_PORT, FIRST_TREE_PORT = 7700, 7701
 
 -- {{{ local function new_home
 -- A fresh home for one scene.  Every undecided choice is set before anything
@@ -123,8 +123,7 @@ end
 
 -- {{{ local function next_tree_port
 -- The next unused tree-mailbox port of this home: one more than the
--- highest port any of its mailboxes names, never below FIRST_TREE_PORT,
--- never WAITING_PORT's neighbourhood (the demo makes far fewer than 98).
+-- highest port any of its mailboxes names, never below FIRST_TREE_PORT.
 local function next_tree_port(ctx, home)
     local highest = FIRST_TREE_PORT - 1
     for _, mailbox in ipairs(ctx.m.rooms.read_mailboxes(home)) do
@@ -132,36 +131,18 @@ local function next_tree_port(ctx, home)
             -- a tree mailbox already on a higher port: go past it
             highest = mailbox.port
         end
-        -- (direct, waiting, or a lower tree port: not counted)
+        -- (direct, or a lower tree port: not counted)
     end
     return highest + 1
 end
 -- }}}
 
--- What a new group room with a declared parent this home does not hold
--- needs from its maker, by `mailboxes.unheld-parent` (101's switch):
--- its own new tree mailbox needs a port; the waiting mailbox needs to exist.
-local UNHELD_PARENT_PORT = {
-    ["own-mailbox"] = function(ctx, home)
-        return next_tree_port(ctx, home)
-    end,
-    ["waiting-mailbox"] = function(ctx, home)
-        if ctx.m.rooms.waiting_mailbox(home) == "" then
-            -- the first room to wait in this home: make the waiting mailbox
-            ctx.m.rooms.make_mailbox(home, { label = "waiting for a parent", kind = "waiting",
-                                             port = WAITING_PORT })
-        end
-        -- (already made: the room just joins it)
-        return ""
-    end,
-}
-
 -- {{{ local function mailbox_port_for
 -- The `mailbox_port` field of 101's make_room spec: an integer exactly when
 -- the room starts a new mailbox (a top group room, or a group room whose
--- parent is not held under own-mailbox), "" when it joins one (every direct
--- message; a child of a held room; a waiting room).  Mirrors 101's table in
--- the contract's "Mailboxes" section.
+-- parent is not held here), "" when it joins one (every direct message; a
+-- child of a held room).  Mirrors 101's table in the contract's
+-- "Mailboxes" section.
 local function mailbox_port_for(ctx, home, kind, parent)
     if kind == "direct" then
         -- the one direct mailbox, made by new_home
@@ -177,15 +158,9 @@ local function mailbox_port_for(ctx, home, kind, parent)
         -- its parent is held here: it joins the parent's mailbox
         return ""
     end
-    -- (the parent is not held here: 101's switch decides)
-    local variant = ctx.m.rooms.config_value(home, "mailboxes.unheld-parent")
-    local choose = UNHELD_PARENT_PORT[variant]
-    if choose == nil then
-        -- a variant the demo does not know: stop rather than guess
-        error("demo: unknown mailboxes.unheld-parent variant '" .. variant .. "'")
-    end
-    -- (known: its port, or "" after making the waiting mailbox)
-    return choose(ctx, home)
+    -- (the parent is not held here: a tree mailbox of its own, which can
+    -- merge into the parent's once the parent arrives)
+    return next_tree_port(ctx, home)
 end
 -- }}}
 
@@ -523,21 +498,87 @@ local function keys_tried_on(ctx, home, port)
 end
 -- }}}
 
--- {{{ local function unheld_parent_once
--- One home under one `mailboxes.unheld-parent` variant: a room "attic"
--- whose declared parent ("loft") this home does not hold yet, then the
--- parent arriving.  Gives where attic's mailbox was before and after.
-local function unheld_parent_once(ctx, variant)
-    local home = new_home(ctx, "mailboxes-unheld-" .. variant, { ["mailboxes.unheld-parent"] = variant })
+-- {{{ local function merge_once
+-- One home under one `mailboxes.merge-when-parent-arrives` variant: a room
+-- "attic" whose declared parent ("loft") this home does not hold yet — so
+-- attic starts a tree mailbox of its own — and a child "trunk" made under
+-- attic, which joins attic's mailbox.  Then loft arrives.  Under
+-- `automatic` attic's whole mailbox (attic and trunk) moves into loft's at
+-- once; under `ask` nothing moves, 101 lists the mailbox as mergeable, and
+-- the person's yes (merge_mailbox) moves it.  Gives the mailbox of attic
+-- and trunk at each step, the mergeable list, and the mailboxes afterwards
+-- (the emptied mailbox keeps its port: phase 2 keeps trying it for the
+-- moved rooms until their members confirm the new one).
+local function merge_once(ctx, variant)
+    local rooms = ctx.m.rooms
+    local home = new_home(ctx, "mailboxes-merge-" .. variant,
+                          { ["mailboxes.merge-when-parent-arrives"] = variant })
     local loft_token = "loft-rafters-cedar-owl"
-    local attic = make_room(ctx, home, "attic", "attic-dust-lantern-moth", "group",
-                            ctx.m.rooms.token_fingerprint(loft_token), joined_members({ "housemate" }))
-    local row = { variant = variant, before = mailbox_of(ctx, home, attic) }
+    local attic_token = "attic-dust-lantern-moth"
+    local attic = make_room(ctx, home, "attic", attic_token, "group",
+                            rooms.token_fingerprint(loft_token), joined_members({ "housemate" }))
+    local trunk = make_room(ctx, home, "trunk", "trunk-hinge-velvet-map", "group",
+                            rooms.token_fingerprint(attic_token), joined_members({ "housemate" }))
+    local row = { variant = variant, before = mailbox_of(ctx, home, attic),
+                  trunk_before = mailbox_of(ctx, home, trunk) }
+    row.mergeable_before = #rooms.mergeable_mailboxes(home)
     local loft = make_room(ctx, home, "loft", loft_token, "group", "", joined_members({ "housemate" }))
-    row.after = mailbox_of(ctx, home, attic)
     row.loft = mailbox_of(ctx, home, loft)
+    row.after = mailbox_of(ctx, home, attic)
+    row.trunk_after = mailbox_of(ctx, home, trunk)
+    row.mergeable = {}
+    for _, found in ipairs(rooms.mergeable_mailboxes(home)) do
+        row.mergeable[#row.mergeable + 1] = { mailbox = found.mailbox, into = found.into, rooms = #found.rooms }
+    end
+    if #row.mergeable > 0 then
+        -- waiting for the person's yes (ask): say yes to the first
+        rooms.merge_mailbox(home, row.mergeable[1].mailbox)
+        row.said_yes = true
+    else
+        -- nothing waiting (automatic moved it already): no yes to give
+        row.said_yes = false
+    end
+    row.after_yes = mailbox_of(ctx, home, attic)
+    row.trunk_after_yes = mailbox_of(ctx, home, trunk)
+    row.mergeable_after_yes = #rooms.mergeable_mailboxes(home)
     row.mailboxes = mailbox_table(ctx, home)
     return row
+end
+-- }}}
+
+-- {{{ local function unknown_config_line
+-- A config line naming a setting no module declares is refused (round 4).
+-- Three ways in: a line written into config by hand (the retired
+-- round-3 setting mailboxes.unheld-parent, as an old home might still
+-- hold) refused on the next open and on every read; set_config with a
+-- made-up name refused before anything is written; and the declared list
+-- itself, by module.  Gives what each attempt answered.
+local function unknown_config_line(ctx)
+    local rooms = ctx.m.rooms
+    local home = new_home(ctx, "mailboxes-config", {})
+    local path = home.dir .. "/config"
+    local record = { lines_before = 0, declared = {} }
+    for line in ctx.probes.read_text(path):gmatch("[^\n]+") do
+        if not line:match("^%s*#") then
+            -- a setting line (comments not counted)
+            record.lines_before = record.lines_before + 1
+        end
+        -- (a comment line: not a setting)
+    end
+    for name, where in pairs(rooms.declared_settings()) do
+        record.declared[#record.declared + 1] = { name = name, module = where.module }
+    end
+    table.sort(record.declared, function(x, y) return x.name < y.name end)
+    record.bytes_before_refused_set = #ctx.probes.read_text(path)
+    record.set_made_up = attempt(function() rooms.set_config(home, "mailboxes.merge-when-parents-arrive", "ask") end)
+    record.bytes_after_refused_set = #ctx.probes.read_text(path)
+    local handle = io.open(path, "a")
+    handle:write("mailboxes.unheld-parent = own-mailbox\n")
+    handle:close()
+    record.hand_line = "mailboxes.unheld-parent = own-mailbox"
+    record.reopen = attempt(function() return rooms.open_home(home.dir) end)
+    record.read = attempt(function() return rooms.read_config(home) end)
+    return record
 end
 -- }}}
 
@@ -584,10 +625,11 @@ local function mailboxes_body(ctx, warnings)
     for position = before_read + 1, after_read do
         record.shared.warnings[#record.shared.warnings + 1] = warnings[position]
     end
-    record.unheld = {}
-    for _, variant in ipairs(variants_of(ctx, "mailboxes.unheld-parent")) do
-        record.unheld[#record.unheld + 1] = unheld_parent_once(ctx, variant)
+    record.merge = {}
+    for _, variant in ipairs(variants_of(ctx, "mailboxes.merge-when-parent-arrives")) do
+        record.merge[#record.merge + 1] = merge_once(ctx, variant)
     end
+    record.config = unknown_config_line(ctx)
     return record
 end
 -- }}}
@@ -604,8 +646,10 @@ end
 -- A top room and its children in one mailbox, every direct message in the
 -- one direct mailbox, the mailboxes file as written, which rooms' keys a
 -- frame on each port is tried against; two mailboxes on one port, allowed
--- and reported; and a room whose parent is not held, under each
--- `mailboxes.unheld-parent` variant, before and after the parent arrives.
+-- and reported; a room whose parent is not held, in its own mailbox, then
+-- merged into the parent's once the parent arrives, under each
+-- `mailboxes.merge-when-parent-arrives` variant; and a config line naming a
+-- setting no module declares, refused.
 -- 101's warning sink is pointed at this scene's list while it runs, then
 -- back at stderr whether or not the scene built.
 function sections.mailboxes(ctx)
@@ -965,7 +1009,7 @@ sections.ORDER = {
     { key = "entries",   title = "Rooms are entries: a direct message and a group room, one reader" },
     { key = "tokens",    title = "Tokens: suggested (six words), typed, changed by hand" },
     { key = "tree",      title = "The tree: child rooms by fingerprint; flagged, not refused" },
-    { key = "mailboxes", title = "Mailboxes: one per top room, one for direct messages (mailboxes.unheld-parent)" },
+    { key = "mailboxes", title = "Mailboxes: one per top room, one for direct messages (mailboxes.merge-when-parent-arrives)" },
     { key = "members",   title = "Members and withheld: a room of six" },
     { key = "leaving",   title = "Leaving: forged, confirmed, and speaking again" },
     { key = "ignoring",  title = "Ignoring: mark and hide, every port, and the member filter" },

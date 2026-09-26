@@ -12,8 +12,10 @@ contract says), `list_rooms`, `find_by_fingerprint`, `room_exists`,
 `direct_mailbox`, `write_mailbox_port` (rings `mailbox` with `""`),
 `write_mailbox` (rings `mailbox` with the room's tag), and `make_room`'s
 `mailbox_port` rule (integer exactly when the room starts a new mailbox;
-a parent not held here reads `mailboxes.unheld-parent`, and only
-`own-mailbox` is built).  Entries carry `mailbox`; `make_room` also makes
+a parent not held here always gets a mailbox of its own (round 4), and is
+never merged into the parent's when it arrives (the real 101 does, under
+`mailboxes.merge-when-parent-arrives`; mailboxes move no link).  Config
+accepts any name here; the real 101 refuses names no module declares).  Entries carry `mailbox`; `make_room` also makes
 an empty `flagged`.  Entries are stored as Lua tables, not
 rmail's format; nothing is refused (no loop, repeated-token or address
 checks).

@@ -65,11 +65,14 @@ end
 -- }}}
 
 -- The settings every test home starts with unless a test says otherwise.
--- mailboxes.unheld-parent is 101's key (round 3), read by make_room only
--- for a room whose declared parent is not held here; own-mailbox gives
--- such a room its own tree mailbox, so H.group passes it a port.
+-- Only names some module declares may be set (contract, "Settings: every
+-- name is declared"; 101 refuses the rest).  A room whose declared parent
+-- is not held here always gets a tree mailbox of its own (the owner's
+-- round-4 answer), so H.group passes it a port.  When that parent later
+-- arrives, 101 reads mailboxes.merge-when-parent-arrives (its setting,
+-- round 4); automatic is its first-listed value.  Mailboxes move no link.
 local BASE_CONFIG = {
-    ["mailboxes.unheld-parent"]    = "own-mailbox",
+    ["mailboxes.merge-when-parent-arrives"] = "automatic",
     ["people.link-collision"]      = "suffix-id",
     ["people.direct-message-link"] = "leave-out",
     ["people.members-without-dm"]  = "leave-out",
@@ -153,9 +156,9 @@ end
 
 -- {{{ local function mailbox_port_for
 -- make_room's mailbox_port (contract, "Mailboxes"): an integer when the
--- room starts a new mailbox — a top room, or (under own-mailbox) a room
--- whose declared parent is not held here — and "" when it joins its held
--- parent's mailbox.
+-- room starts a new mailbox — a top room, or a room whose declared parent
+-- is not held here (always its own mailbox, round 4) — and "" when it
+-- joins its held parent's mailbox.
 local function mailbox_port_for(home, parent_fingerprint)
     -- no declared parent: a top room, a new tree mailbox
     if parent_fingerprint == "" then
@@ -165,7 +168,7 @@ local function mailbox_port_for(home, parent_fingerprint)
     if H.rooms.find_by_fingerprint(home, parent_fingerprint) ~= "" then
         return ""
     end
-    -- the parent is not held here: own-mailbox, a new one
+    -- the parent is not held here: a mailbox of its own, a new one
     return next_port()
 end
 -- }}}

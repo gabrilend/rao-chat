@@ -9,8 +9,9 @@
 
 ## Current Behavior
 
-Rebuilt for "a room is a contact" (round 2) and extended for flagged
-members (round 3, 2026-09-25).  Tests: see the end of this section.  103a's
+Rebuilt for "a room is a contact" (round 2), extended for flagged
+members (round 3, 2026-09-25), and with two answered flag choices fixed in
+place (round 4).  Tests: see the end of this section.  103a's
 ignore list shares the folder and the test run (its own issue says what it
 covers).
 
@@ -35,7 +36,10 @@ What exists in `src/recipients/` (each source file with a `.info.md`):
     them again); declining withholds the address and deletes the line;
     a confirmed leave deletes it too (a return is checked afresh).  Flag
     changes ring the bell `withheld` — both files only change who you send
-    to, and a new kind would break listeners that refuse unknown kinds;
+    to, and a new kind would break listeners that refuse unknown kinds.
+    An approval lasts until the address leaves (owner, 2026-09-25): a
+    later re-check never flags an approved member again, even if the tree
+    now says `no`;
   - **re-checking**: the module listens on 101's bell.  When a room's
     members change (or its token), every room declared below it is checked
     again (102's `failing_below`) and newly failing members — no line yet,
@@ -45,8 +49,9 @@ What exists in `src/recipients/` (each source file with a `.info.md`):
     own members are checked too (a room arrives with its members already
     in it, and a parent arriving turns cannot-check into yes or no).  Each
     re-check also asks again about every flag awaiting review in the home:
-    a changed answer is rewritten; a pass is handled by the open choice
-    `recipients.flag-after-passing` (kept or cleared);
+    a changed answer is rewritten; a member who now passes has the flag
+    line deleted — the flag clears by itself (owner, 2026-09-25), and they
+    are sent to again with no setting read;
   - withholding and un-withholding write the room's `withheld` file and
     ring `withheld`; the send list is the members minus the withheld minus
     those awaiting review, in the entry's order;
@@ -60,37 +65,43 @@ What exists in `src/recipients/` (each source file with a `.info.md`):
   - `shown_as` shows a member by the label of the one direct-message room
     holding its address, else by the address.
   Own devices are never members by construction.
-- `059-options.lua` — seven choices, three switchable (one shared with
-  103a).
+- `043-settings.lua` — the folder's one list of the config names it reads,
+  for 101's config reader (which refuses any config line no module
+  declares): `ignore.scope` (103a) and `recipients.shared-address-label`.
+  The retired `recipients.flag-after-passing` is not listed, so a config
+  line naming it is now an error.
+- `059-options.lua` — five choices, two switchable (one of them 103a's
+  `ignore.scope`).
 - `tests/` — stand-ins for 101 (`044`, with the `flagged` file and
   mailboxes) and 102 (`046`, the three-way check and the re-check lists),
   the harness (`045`: every home starts with every module's first-listed
   variant and the direct mailbox; `h.make` fills in make_room's
-  `mailbox_port`), seven test files, and the runner `050-run-tests.lua`
+  `mailbox_port` — a port for a top room and for a child whose parent is
+  not held here, which always starts its own mailbox), seven test files
+  (`051` also checks that the declared names are exactly the names the
+  source reads, and, against the real 101, that the retired name is
+  refused), and the runner `050-run-tests.lua`
   with three wirings: `stand-in`, `real-101` and `real`.
 
-The round-2 `-done` files (the first model's recipients, its tests and
-stand-ins, and copies of the rewritten harness, runner, options test and
-options file) are still on disk: deleting them was refused by the
-permission system in this session.  They are all in git (commit 99a2c77),
-so the coordinator can remove them.
+The round-2 `-done` files are gone from the folder (all are in git, commit
+99a2c77).
 
-Choices: removed this round — none of 103's own (103a's `ignore-hide-files`
-and `ignore-match` went, fixed in place).  Added — `recipients.flag-after-
-passing` (switchable: `kept` / `cleared`) and "how long an approval lasts"
-(built as until-they-leave).  Still open from before: an address held by two
+Choices: removed in round 4, fixed in place — `recipients.flag-after-
+passing` (answered `cleared`: the switch and the `kept` variant went) and
+"how long an approval lasts" (answered until-they-leave: the entry went,
+the built behaviour stays).  Still open: an address held by two
 direct-message rooms (`recipients.shared-address-label`); a withheld member
 who leaves and returns (built: still withheld); what records last-heard
 (built: the arrival path calls `heard_from`; waits on phase 2); open
 question 2 below (built as kept).
 
-Tests: 73 checks, all passing in each wiring — against the stand-ins,
-against the real room folders (101) with the stand-in tree, and against the
-real 101 and 102 together.  People-links (104, which reads members) was not
-changed: its stand-in run passes (244); its real runs crash inside its own
-test files before reaching this module, because 101's `make_room` now
-requires `mailbox_port` (and 104's bell listener refuses the new `mailbox`
-kind) — not caused by this module.
+Tests (round 4): stand-in 72/72; real-101 73/73; real (101 and 102)
+73/73 — the one extra check, the real config reader refusing the retired
+name, runs only where 101 is real.  The child-room tests run the parent's
+late arrival under both values of 101's `mailboxes.merge-when-parent-
+arrives` (automatic, ask).  Neighbours run afterwards: people-links (104)
+798/0 across its three wirings; the phase 1 demo's tests (106) 300 passed,
+0 failed.
 
 Not integrated: nothing calls `heard_from` or `confirm_leave` yet (phase
 2's arrival path and leave check); the message log (105) does not yet ask
@@ -120,7 +131,9 @@ Not integrated: nothing calls `heard_from` or `confirm_leave` yet (phase
   highlighted (owner: "The UI might flag them and highlight them in orange
   or something, to be manually reviewed by the user before sending
   messages to them").  When a parent's members change, its children's
-  members are checked again and newly failing ones flagged.
+  members are checked again and newly failing ones flagged.  A flag whose
+  member later passes clears by itself; an approval lasts until the
+  address leaves.
 - **An address is removed only by its own say-so** (a confirmed leave,
   phase 2).  Speaking again adds it back.  This is what stops a forged
   leave notice from cutting anyone off.
@@ -147,22 +160,6 @@ Not integrated: nothing calls `heard_from` or `confirm_leave` yet (phase
    off the send list until approved; dropping someone from a parent flags
    them in its children.
 
-### Round 3 (2026-09-25)
-
-Items 1, 2 and 4 are done and described in Current Behavior.  Left:
-
-3. **Delete this module's `-done` files.**  Refused by the permission
-   system in the builder's session; every file is in commit 99a2c77, so
-   removing them loses nothing.
-
-### Round 4 (2026-09-25)
-
-1. **Fixed in place**: `recipients.flag-after-passing` = cleared (the
-   switch and the `kept` variant go); an approval lasts until the member
-   leaves (the choice entry goes).
-2. Declare this module's setting names to 101's config reader (101 round 4).
-3. Tests updated for both.
-
 ## Blockers that are not the owner's
 
 - Needs 101's entry and bell kinds, and 102's parent-membership check.
@@ -184,13 +181,11 @@ them one at a time.  An issue with any of them unanswered is in progress.
 2. **Two addresses, one person.**  When a member moves, is the old address
    kept until it leaves (as rmail keeps several per contact), or dropped?
    The address rule says kept.
-3. **A flag whose member later passes** (found in round 3): the room above
-   arrives and holds them, or they join it.  Does the flag stay until you
-   review it, or clear by itself?  Built both
-   (`recipients.flag-after-passing`: `kept`, `cleared`).
-4. **How long an approval lasts** (found in round 3): until the address
-   leaves (built), or only until the tree's answer changes (e.g. an
-   approved `cannot-check` whose parent arrives and says `no`)?
+3. *(answered 2026-09-25)* **A flag whose member later passes** (the room
+   above arrives and holds them, or they join it): **cleared** — the flag
+   disappears by itself.  Fixed in place; the setting is gone.
+4. *(answered 2026-09-25)* **How long an approval lasts**: **until they
+   leave**, even if the tree's answer later changes.
 
 ## Earlier designs
 

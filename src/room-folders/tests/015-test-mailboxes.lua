@@ -6,9 +6,10 @@
 -- message in the one direct mailbox); that ports are never defaulted;
 -- that two mailboxes on one port are allowed but reported every time the
 -- file is read; that mailboxes are found by port, and rooms by mailbox,
--- as phase 2's trial opening needs; and both variants of the open choice
--- mailboxes.unheld-parent (a child whose declared parent is not held
--- here: its own mailbox, or the waiting mailbox until the parent arrives).
+-- as phase 2's trial opening needs; that a child whose declared parent is
+-- not held here starts its own mailbox, remembering it awaits the parent;
+-- and both values of mailboxes.merge-when-parent-arrives once the parent
+-- arrives (automatic: the rooms move; ask: listed until merge_mailbox).
 -- Run: luajit 015-test-mailboxes.lua [project folder]
 
 local DIR = arg[1] or "/home/ritz/programs/rao-chat"
@@ -73,14 +74,15 @@ end
 
 check("file: a list turns into text and back unchanged, sorted by tag", function()
     local list = {
-        { tag = B, label = "programming \"odd\" / name", kind = "tree", port = 7777 },
-        { tag = A, label = "direct messages", kind = "direct", port = 7700 },
-        { tag = C, label = "waiting", kind = "waiting", port = 7701 },
+        { tag = B, label = "programming \"odd\" / name", kind = "tree", port = 7777, awaits_parent_of = "" },
+        { tag = A, label = "direct messages", kind = "direct", port = 7700, awaits_parent_of = "" },
+        { tag = C, label = "stray", kind = "tree", port = 7701, awaits_parent_of = A },
     }
     local text = mailbox_file.mailboxes_text(list)
     same(text:sub(1, #mailbox_file.HEADER), mailbox_file.HEADER, "header first")
     local back = mailbox_file.parse_mailboxes(text, "test")
     same_list({ back[1].tag, back[2].tag, back[3].tag }, { A, C, B }, "sorted")
+    same(back[2].awaits_parent_of, A, "awaits a room's parent") same(back[1].awaits_parent_of, "", "empty kept empty")
     same(back[3].label, "programming \"odd\" / name") same(back[3].port, 7777) same(back[3].kind, "tree")
     same(back[1].kind, "direct") same(type(back[1].port), "number")
 end)
@@ -90,41 +92,49 @@ check("file: no mailboxes is just the header, and reads back empty", function()
 end)
 
 check("file: rmail's contacts format — each line is <tag>.<field> = <value>", function()
-    local text = mailbox_file.mailboxes_text({ { tag = A, label = "x", kind = "tree", port = 9 } })
-    same(text:find(A .. '.label = "x"\n' .. A .. ".kind = tree\n" .. A .. ".port = 9\n", 1, true) ~= nil, true)
+    local text = mailbox_file.mailboxes_text({ { tag = A, label = "x", kind = "tree", port = 9, awaits_parent_of = "" } })
+    same(text:find(A .. '.label = "x"\n' .. A .. ".kind = tree\n" .. A .. ".port = 9\n"
+        .. A .. ".awaits-parent-of = \n", 1, true) ~= nil, true)
 end)
 
-check("file: writer refusals (no default port, known kinds, one direct, one waiting)", function()
+check("file: writer refusals (no default port, known kinds, one direct, awaits_parent_of shape)", function()
     local cases = {
         { { tag = A, label = "x", kind = "tree" }, "no default port" },
-        { { tag = A, label = "x", kind = "tree", port = 0 }, "1-65535" },
-        { { tag = A, label = "x", kind = "tree", port = 70000 }, "1-65535" },
-        { { tag = A, label = "x", kind = "tree", port = 80.5 }, "1-65535" },
-        { { tag = A, label = "x", kind = "tree", port = "80" }, "1-65535" },
-        { { tag = A, label = "x", kind = "room", port = 80 }, "mailbox kind must be" },
-        { { tag = A, label = "", kind = "tree", port = 80 }, "label must be" },
-        { { tag = A, label = "a\nb", kind = "tree", port = 80 }, "label must be" },
-        { { tag = "ROOM", label = "x", kind = "tree", port = 80 }, "mailbox.tag" },
-        { { tag = A, label = "x", kind = "tree", port = 80, colour = "red" }, "unknown field 'colour'" },
+        { { tag = A, label = "x", kind = "tree", port = 0, awaits_parent_of = "" }, "1-65535" },
+        { { tag = A, label = "x", kind = "tree", port = 70000, awaits_parent_of = "" }, "1-65535" },
+        { { tag = A, label = "x", kind = "tree", port = 80.5, awaits_parent_of = "" }, "1-65535" },
+        { { tag = A, label = "x", kind = "tree", port = "80", awaits_parent_of = "" }, "1-65535" },
+        { { tag = A, label = "x", kind = "room", port = 80, awaits_parent_of = "" }, "mailbox kind must be" },
+        { { tag = A, label = "", kind = "tree", port = 80, awaits_parent_of = "" }, "label must be" },
+        { { tag = A, label = "a\nb", kind = "tree", port = 80, awaits_parent_of = "" }, "label must be" },
+        { { tag = "ROOM", label = "x", kind = "tree", port = 80, awaits_parent_of = "" }, "mailbox.tag" },
+        { { tag = A, label = "x", kind = "tree", port = 80, awaits_parent_of = "", colour = "red" }, "unknown field 'colour'" },
     }
     for _, case in ipairs(cases) do
         fails(function() mailbox_file.mailboxes_text({ case[1] }) end, case[2])
     end
     fails(function() mailbox_file.mailboxes_text({
-        { tag = A, label = "d1", kind = "direct", port = 1 }, { tag = B, label = "d2", kind = "direct", port = 2 } }) end,
+        { tag = A, label = "d1", kind = "direct", port = 1, awaits_parent_of = "" }, { tag = B, label = "d2", kind = "direct", port = 2, awaits_parent_of = "" } }) end,
         "at most one 'direct'")
+    fails(function() mailbox_file.mailboxes_text({ { tag = A, label = "w", kind = "waiting", port = 1,
+        awaits_parent_of = "" } }) end, "must be 'tree' or 'direct'")
+    fails(function() mailbox_file.mailboxes_text({ { tag = A, label = "x", kind = "tree", port = 1 } }) end,
+        "awaits_parent_of must be")
+    fails(function() mailbox_file.mailboxes_text({ { tag = A, label = "x", kind = "tree", port = 1,
+        awaits_parent_of = "room" } }) end, "awaits_parent_of must be")
+    fails(function() mailbox_file.mailboxes_text({ { tag = A, label = "x", kind = "direct", port = 1,
+        awaits_parent_of = B } }) end, "only a tree mailbox can await")
     fails(function() mailbox_file.mailboxes_text({
-        { tag = A, label = "w1", kind = "waiting", port = 1 }, { tag = B, label = "w2", kind = "waiting", port = 2 } }) end,
-        "at most one 'waiting'")
-    fails(function() mailbox_file.mailboxes_text({
-        { tag = A, label = "t", kind = "tree", port = 1 }, { tag = A, label = "t", kind = "tree", port = 2 } }) end,
+        { tag = A, label = "t", kind = "tree", port = 1, awaits_parent_of = "" }, { tag = A, label = "t", kind = "tree", port = 2, awaits_parent_of = "" } }) end,
         "listed twice")
 end)
 
 check("file: reader refusals for hand edits, naming the file", function()
-    local good = mailbox_file.mailboxes_text({ { tag = A, label = "x", kind = "tree", port = 80 } })
+    local good = mailbox_file.mailboxes_text({ { tag = A, label = "x", kind = "tree", port = 80, awaits_parent_of = "" } })
     local cases = {
         { good:gsub(A .. "%.port = 80\n", ""), "has no 'port'" },
+        { good:gsub(A .. "%.awaits%-parent%-of = \n", ""), "has no 'awaits-parent-of'" },
+        { good:gsub("awaits%-parent%-of = ", "awaits-parent-of = x"), "awaits_parent_of must be" },
         { good:gsub("port = 80", "port = 080"), "port must be" },
         { good:gsub("port = 80", "port = http"), "port must be" },
         { good:gsub("kind = tree", "kind = room"), "mailbox kind must be" },
@@ -139,9 +149,9 @@ end)
 
 check("file: shared_ports_of finds ports named twice or more, and only those", function()
     local list = {
-        { tag = A, label = "a", kind = "tree", port = 7777 },
-        { tag = B, label = "b", kind = "direct", port = 7777 },
-        { tag = C, label = "c", kind = "tree", port = 7778 },
+        { tag = A, label = "a", kind = "tree", port = 7777, awaits_parent_of = "" },
+        { tag = B, label = "b", kind = "direct", port = 7777, awaits_parent_of = "" },
+        { tag = C, label = "c", kind = "tree", port = 7778, awaits_parent_of = "" },
     }
     local shared = mailbox_file.shared_ports_of(list)
     same(#shared, 1) same(shared[1].port, 7777) same_list(shared[1].mailboxes, { A, B })
@@ -201,14 +211,16 @@ check("a direct message on a home with no direct mailbox is refused, naming the 
     same(#rooms.list_rooms(bare), 0)
 end)
 
-check("make_mailbox: one direct per home; tree mailboxes only through make_room; ports checked", function()
+check("make_mailbox: one direct per home; tree mailboxes only through make_room; no waiting kind; ports checked", function()
     fails(function() rooms.make_mailbox(home, { label = "again", kind = "direct", port = 7800 }) end,
           "already has its 'direct' mailbox")
     fails(function() rooms.make_mailbox(home, { label = "t", kind = "tree", port = 7800 }) end, "made by make_room")
-    fails(function() rooms.make_mailbox(home, { label = "w", kind = "waiting" }) end, "spec.port is missing")
-    fails(function() rooms.make_mailbox(home, { label = "w", kind = "waiting", port = 0 }) end, "1-65535")
-    fails(function() rooms.make_mailbox(home, { label = "w", kind = "waiting", port = 1, colour = 2 }) end,
+    fails(function() rooms.make_mailbox(home, { label = "w", kind = "direct" }) end, "spec.port is missing")
+    fails(function() rooms.make_mailbox(home, { label = "w", kind = "direct", port = 0 }) end, "1-65535")
+    fails(function() rooms.make_mailbox(home, { label = "w", kind = "direct", port = 1, colour = 2 }) end,
           "unknown spec field")
+    fails(function() rooms.make_mailbox(home, { label = "w", kind = "waiting", port = 1 }) end,
+          "must be 'tree' or 'direct'")
     fails(function() rooms.make_mailbox(home, { label = "w", kind = "box", port = 1 }) end, "mailbox kind must be")
 end)
 
@@ -281,109 +293,155 @@ end)
 
 ---------------------------------------------------------------- a parent not held here
 
-check("a child of an unheld parent, key unset: an error naming the key", function()
-    fails(function() rooms.make_room(home, room("stray", "m-stray", "m-unheld")) end,
-          "config key '" .. rooms.UNHELD_PARENT_KEY .. "' is not set")
-end)
-
-check("an unknown value of the key is refused, not guessed past", function()
-    local odd = kit.test_home(rooms, "mailboxes-odd", "somewhere")
-    fails(function() rooms.make_room(odd, room("stray", "m-odd", "m-unheld")) end, "must be 'own-mailbox' or")
-end)
-
-check("the key is read only in that case (a top room, a held child, a direct message need no key)", function()
-    same(rooms.read_config(home)[rooms.UNHELD_PARENT_KEY], nil, "the home above never set it")
-end)
-
-check("own-mailbox: the child starts its own tree mailbox, and stays in it when the parent arrives", function()
-    local own = kit.test_home(rooms, "mailboxes-own", "own-mailbox")
+check("a child of an unheld parent starts its own tree mailbox, remembering it awaits the parent", function()
+    local own = kit.test_home(rooms, "mailboxes-own", "")
     fails(function() rooms.make_room(own, room("stray", "o-child", "o-parent", "group", "")) end, "no default port")
     local port = kit.fresh_port()
     local stray = rooms.make_room(own, room("stray", "o-child", "o-parent", "group", port))
     local box = rooms.read_mailbox(own, mailbox_of(own, stray))
     same(box.kind, "tree") same(box.port, port) same(box.label, "stray")
-    take_rings()
-    local parent = rooms.make_room(own, room("parent", "o-parent", ""))
-    same(mailbox_of(own, stray), box.tag, "the child keeps its mailbox (its port never moves)")
-    same(mailbox_of(own, parent) ~= box.tag, true, "the parent has its own")
-    same(#take_rings(), 0, "nothing moved, nothing rung")
+    same(box.awaits_parent_of, stray, "remembers the room")
+    same(#rooms.mergeable_mailboxes(own), 0, "parent not here: nothing to merge")
     -- a grandchild made now follows its held parent: the stray's mailbox.
     local grand = rooms.make_room(own, room("grand", "o-grand", "o-child"))
     same(mailbox_of(own, grand), box.tag)
+    -- a top room's mailbox awaits nothing.
+    local top_room = rooms.make_room(own, room("other", "o-other", ""))
+    same(rooms.read_mailbox(own, mailbox_of(own, top_room)).awaits_parent_of, "")
 end)
 
-check("waiting-mailbox: the child waits; when the parent is made it moves into the parent's mailbox", function()
-    local wait = kit.test_home(rooms, "mailboxes-wait", "waiting-mailbox")
-    local waiting = rooms.waiting_mailbox(wait)
-    same(rooms.read_mailbox(wait, waiting).port, kit.WAITING_PORT)
-    fails(function() rooms.make_room(wait, room("k", "w-child", "w-parent", "group", 9999)) end,
-          "mailbox_port must be \"\" here")
-    local kid = rooms.make_room(wait, room("kid", "w-child", "w-parent"))
-    same(mailbox_of(wait, kid), waiting, "waiting")
-    -- a grandchild under the waiting child waits with it (its parent's mailbox).
-    local grand = rooms.make_room(wait, room("grand", "w-grand", "w-child"))
-    same(mailbox_of(wait, grand), waiting, "grandchild waits too")
-    same(#rooms.list_rooms_by_mailbox(wait, waiting), 2)
-    take_rings()
-    local parent = rooms.make_room(wait, room("parent", "w-parent", ""))
-    same(mailbox_of(wait, kid), mailbox_of(wait, parent), "the child settled")
-    same(mailbox_of(wait, grand), mailbox_of(wait, parent), "the grandchild settled after it")
-    same_list(take_rings(), { kid .. " mailbox", grand .. " mailbox" }, "top-down, one ring each")
-    same(#rooms.list_rooms_by_mailbox(wait, waiting), 0, "nobody waiting")
+check("the merge setting is read only once a merge is possible (none set above), then required", function()
+    local bare = kit.test_home(rooms, "mailboxes-unset", "")
+    rooms.make_room(bare, room("kid", "u-child", "u-parent", "group", kit.fresh_port()))
+    same(rooms.read_config(bare)[rooms.MERGE_KEY], nil, "never needed so far")
+    fails(function() rooms.make_room(bare, room("parent", "u-parent", "")) end,
+          "config key '" .. rooms.MERGE_KEY .. "' is not set")
 end)
 
-check("waiting-mailbox: a chain whose rooms arrive bottom-up settles top-down (102's case)", function()
-    local wait = kit.test_home(rooms, "mailboxes-wait-chain", "waiting-mailbox")
-    local waiting = rooms.waiting_mailbox(wait)
-    local programming = rooms.make_room(wait, room("programming", "c-prog", "c-ritz"))
-    local ritz = rooms.make_room(wait, room("ritz", "c-ritz", "c-home"))
-    same(mailbox_of(wait, ritz), waiting, "ritz waits (home not held)")
-    same(mailbox_of(wait, programming), waiting, "programming follows ritz: still waiting")
+check("an unknown value of the merge setting is refused, not guessed past", function()
+    local odd = kit.test_home(rooms, "mailboxes-odd", "sometimes")
+    rooms.make_room(odd, room("kid", "d-child", "d-parent", "group", kit.fresh_port()))
+    fails(function() rooms.make_room(odd, room("parent", "d-parent", "")) end, "must be 'automatic' or 'ask'")
+end)
+
+check("automatic: when the parent arrives, the child's mailbox rooms move into the parent's", function()
+    local auto = kit.test_home(rooms, "mailboxes-auto", "automatic")
+    local kid = rooms.make_room(auto, room("kid", "a-child", "a-parent", "group", kit.fresh_port()))
+    local own_box = mailbox_of(auto, kid)
+    local grand = rooms.make_room(auto, room("grand", "a-grand", "a-child"))
     take_rings()
-    local home_room = rooms.make_room(wait, room("home", "c-home", ""))
-    local box = mailbox_of(wait, home_room)
-    same(mailbox_of(wait, ritz), box, "ritz moved")
-    same(mailbox_of(wait, programming), box, "programming moved with it")
+    local parent = rooms.make_room(auto, room("parent", "a-parent", ""))
+    same(mailbox_of(auto, kid), mailbox_of(auto, parent), "the child moved")
+    same(mailbox_of(auto, grand), mailbox_of(auto, parent), "the grandchild moved with it")
+    same_list(take_rings(), { kid .. " mailbox", grand .. " mailbox" }, "the room made for first, one ring each")
+    same(rooms.read_mailbox(auto, own_box).awaits_parent_of, "", "no longer waiting")
+    same(#rooms.list_rooms_by_mailbox(auto, own_box), 0, "the old mailbox stays, empty (phase 2 keeps its port)")
+    same(#rooms.mergeable_mailboxes(auto), 0, "nothing left to ask about")
+end)
+
+check("automatic: a chain arriving bottom-up merges step by step into the top's mailbox", function()
+    local auto = kit.test_home(rooms, "mailboxes-auto-chain", "automatic")
+    local programming = rooms.make_room(auto, room("programming", "c-prog", "c-ritz", "group", kit.fresh_port()))
+    local ritz = rooms.make_room(auto, room("ritz", "c-ritz", "c-home", "group", kit.fresh_port()))
+    same(mailbox_of(auto, programming), mailbox_of(auto, ritz), "programming merged into ritz's own mailbox")
+    take_rings()
+    local home_room = rooms.make_room(auto, room("home", "c-home", ""))
+    local box = mailbox_of(auto, home_room)
+    same(mailbox_of(auto, ritz), box, "ritz moved")
+    same(mailbox_of(auto, programming), box, "programming moved with it")
     same_list(take_rings(), { ritz .. " mailbox", programming .. " mailbox" }, "ritz first, then programming")
 end)
 
-check("waiting-mailbox: a parent arriving by a token change settles its children too", function()
-    local wait = kit.test_home(rooms, "mailboxes-wait-token", "waiting-mailbox")
-    local kid = rooms.make_room(wait, room("kid", "t-child", "t-parent"))
-    local holder = rooms.make_room(wait, room("holder", "t-old", ""))
-    same(mailbox_of(wait, kid), rooms.waiting_mailbox(wait))
+check("automatic: a parent arriving by a token change merges too", function()
+    local auto = kit.test_home(rooms, "mailboxes-auto-token", "automatic")
+    local kid = rooms.make_room(auto, room("kid", "t-child", "t-parent", "group", kit.fresh_port()))
+    local holder = rooms.make_room(auto, room("holder", "t-old", ""))
     take_rings()
-    rooms.change_token(wait, holder, "t-parent")
-    same(mailbox_of(wait, kid), mailbox_of(wait, holder))
+    rooms.change_token(auto, holder, "t-parent")
+    same(mailbox_of(auto, kid), mailbox_of(auto, holder))
     same_list(take_rings(), { kid .. " mailbox" })
 end)
 
-check("waiting-mailbox: a waiting room given a held parent by write_parent follows it", function()
-    local wait = kit.test_home(rooms, "mailboxes-wait-parent", "waiting-mailbox")
-    local kid = rooms.make_room(wait, room("kid", "p-child", "p-nowhere"))
-    local held = rooms.make_room(wait, room("held", "p-held", ""))
-    rooms.write_parent(wait, kid, rooms.token_fingerprint("p-held"))
-    same(mailbox_of(wait, kid), mailbox_of(wait, held))
+check("automatic: a waiting child given a held parent by write_parent merges into it", function()
+    local auto = kit.test_home(rooms, "mailboxes-auto-parent", "automatic")
+    local kid = rooms.make_room(auto, room("kid", "p-child", "p-nowhere", "group", kit.fresh_port()))
+    local held = rooms.make_room(auto, room("held", "p-held", ""))
+    rooms.write_parent(auto, kid, rooms.token_fingerprint("p-held"))
+    same(mailbox_of(auto, kid), mailbox_of(auto, held))
 end)
 
-check("waiting-mailbox without the waiting mailbox made: refused, naming the fix", function()
-    local wait = kit.test_home(rooms, "mailboxes-wait-none", "")
-    rooms.set_config(wait, rooms.UNHELD_PARENT_KEY, "waiting-mailbox")
-    fails(function() rooms.make_room(wait, room("kid", "n-child", "n-parent")) end, "no 'waiting' mailbox yet")
-    same(#rooms.list_rooms(wait), 0)
+check("ask: the merge is listed, nothing moves, until the person says yes", function()
+    local ask = kit.test_home(rooms, "mailboxes-ask", "ask")
+    local kid = rooms.make_room(ask, room("kid", "k-child", "k-parent", "group", kit.fresh_port()))
+    local own_box = mailbox_of(ask, kid)
+    local grand = rooms.make_room(ask, room("grand", "k-grand", "k-child"))
+    take_rings()
+    local parent = rooms.make_room(ask, room("parent", "k-parent", ""))
+    same(mailbox_of(ask, kid), own_box, "not moved")
+    same(#take_rings(), 0, "nothing rung")
+    local listed = rooms.mergeable_mailboxes(ask)
+    same(#listed, 1)
+    same(listed[1].mailbox, own_box) same(listed[1].room, kid) same(listed[1].into, mailbox_of(ask, parent))
+    local both = { kid, grand }
+    table.sort(both)
+    same_list(listed[1].rooms, both, "the rooms that would move")
+    -- another write does not move it either.
+    rooms.make_room(ask, room("other", "k-other", ""))
+    same(mailbox_of(ask, kid), own_box, "still waiting for the yes")
+    rooms.merge_mailbox(ask, own_box)
+    same(mailbox_of(ask, kid), mailbox_of(ask, parent), "the yes moved it")
+    same(mailbox_of(ask, grand), mailbox_of(ask, parent), "and the grandchild")
+    same_list(take_rings(), { kid .. " mailbox", grand .. " mailbox" })
+    same(#rooms.mergeable_mailboxes(ask), 0, "no longer listed")
+    fails(function() rooms.merge_mailbox(ask, own_box) end, "is not waiting to merge")
 end)
 
-check("a room already in a mailbox keeps it when its parent is changed (only waiting rooms follow)", function()
+check("ask: merge_mailbox before the parent arrives is refused, saying why", function()
+    local ask = kit.test_home(rooms, "mailboxes-ask-early", "ask")
+    local kid = rooms.make_room(ask, room("kid", "e-child", "e-parent", "group", kit.fresh_port()))
+    fails(function() rooms.merge_mailbox(ask, mailbox_of(ask, kid)) end, "cannot merge yet")
+    fails(function() rooms.merge_mailbox(ask, A) end, "no such mailbox")
+    fails(function() rooms.merge_mailbox(ask, rooms.direct_mailbox(ask)) end, "is not waiting to merge")
+end)
+
+check("ask: in a chain, a yes lower down lands in the parent's mailbox as it is now", function()
+    local ask = kit.test_home(rooms, "mailboxes-ask-chain", "ask")
+    local programming = rooms.make_room(ask, room("programming", "q-prog", "q-ritz", "group", kit.fresh_port()))
+    local ritz = rooms.make_room(ask, room("ritz", "q-ritz", "q-home", "group", kit.fresh_port()))
+    local home_room = rooms.make_room(ask, room("home", "q-home", ""))
+    same(#rooms.mergeable_mailboxes(ask), 2, "both listed")
+    rooms.merge_mailbox(ask, mailbox_of(ask, ritz))
+    same(mailbox_of(ask, ritz), mailbox_of(ask, home_room))
+    local listed = rooms.mergeable_mailboxes(ask)
+    same(#listed, 1) same(listed[1].into, mailbox_of(ask, home_room), "programming would now go to home's")
+    rooms.merge_mailbox(ask, listed[1].mailbox)
+    same(mailbox_of(ask, programming), mailbox_of(ask, home_room))
+end)
+
+check("moving the awaited room by hand ends its mailbox's wait", function()
+    local ask = kit.test_home(rooms, "mailboxes-hand", "ask")
+    local kid = rooms.make_room(ask, room("kid", "h-child", "h-parent", "group", kit.fresh_port()))
+    local own_box = mailbox_of(ask, kid)
+    local other = rooms.make_room(ask, room("other", "h-other", ""))
+    rooms.write_mailbox(ask, kid, mailbox_of(ask, other))
+    same(rooms.read_mailbox(ask, own_box).awaits_parent_of, "", "wait over")
+    rooms.make_room(ask, room("parent", "h-parent", ""))
+    same(#rooms.mergeable_mailboxes(ask), 0, "nothing to merge: the person placed it")
+end)
+
+check("a room already in a settled mailbox keeps it when its parent is changed", function()
     local tree_box = mailbox_of(home, grandchild)
     rooms.write_parent(home, grandchild, rooms.token_fingerprint("m-work"))
     same(mailbox_of(home, grandchild), tree_box)
     rooms.write_parent(home, grandchild, rooms.token_fingerprint("m-ritz"))
 end)
 
-check("MAILBOX_KINDS lists tree, direct and waiting", function()
+check("MAILBOX_KINDS lists tree and direct (waiting retired)", function()
     same(rooms.MAILBOX_KINDS.tree.how_many, "many")
     same(rooms.MAILBOX_KINDS.direct.how_many, "one")
-    same(rooms.MAILBOX_KINDS.waiting.how_many, "one")
+    same(rooms.MAILBOX_KINDS.waiting, nil)
+    same(rooms.waiting_mailbox, nil, "no waiting_mailbox function")
+    same(rooms.UNHELD_PARENT_KEY, nil, "no mailboxes.unheld-parent")
 end)
 
 kit.finish()
