@@ -1,0 +1,221 @@
+-- 065-test-harness.lua — shared helpers for the people-links tests.
+--
+-- Each test file is run as its own program (so every test starts with a
+-- fresh copy of the modules and one bell listener).  It calls setup() with
+-- the project folder and a mode:
+--   stand-in  the room-folders module is the stand-in in this tests/ folder
+--   real      the real room-folders module (issue 101) is used
+-- then makes scratch homes under tmp/shared-memory/people-links/ (RAM),
+-- builds rooms, and checks what appears in people/.  Every check is
+-- counted; finish() prints one RESULT line the runner reads and exits
+-- non-zero when anything failed.
+
+local H = { passed = 0, failed = 0 }
+
+-- {{{ local function file_exists
+local function file_exists(path)
+    local file = io.open(path, "r")
+    -- opened: there
+    if file then
+        file:close()
+        return true
+    end
+    return false
+end
+-- }}}
+
+-- {{{ local function use_stand_in
+local function use_stand_in(dir)
+    package.preload["002-room-folders"] = function()
+        return dofile(dir .. "/src/people-links/tests/064-stand-in-room-folders.lua")
+    end
+end
+-- }}}
+
+-- {{{ local function use_real
+local function use_real(dir)
+    -- the real module is not written yet: this mode cannot run
+    if not file_exists(dir .. "/src/room-folders/002-room-folders.lua") then
+        error("harness: real mode asked for, but src/room-folders/002-room-folders.lua does not exist")
+    end
+end
+-- }}}
+
+local modes = {
+    ["stand-in"] = use_stand_in,
+    ["real"]     = use_real,
+}
+
+-- {{{ function H.setup
+-- dir: project folder; mode: "stand-in" or "real".  Loads the modules and
+-- keeps them on H (H.rooms, H.people, H.disk, H.names).
+function H.setup(dir, mode)
+    local choose = modes[mode]
+    -- no such mode: say which exist
+    if choose == nil then
+        error("harness: mode must be stand-in or real, got " .. tostring(mode))
+    end
+    H.dir, H.mode = dir, mode
+    dofile(dir .. "/src/room-folders/001-load-path.lua")(dir)
+    choose(dir)
+    H.rooms  = require("002-room-folders")
+    H.people = require("061-people-links")
+    H.disk   = require("062-disk-links")
+    H.names  = require("063-link-names")
+end
+-- }}}
+
+-- {{{ function H.module_present
+-- Whether another builder's module file exists yet (for neighbour tests).
+function H.module_present(relative)
+    return file_exists(H.dir .. "/" .. relative)
+end
+-- }}}
+
+-- The contacts every test home starts with, in rmail's contacts format.
+local CONTACTS = table.concat({
+    "girlfriend.token = t1",
+    "girlfriend.address = gf.example:7000",
+    "friend.token = t2",
+    "friend.address = friend.example:7000",
+    "housemate.token = t3",
+    "housemate.address = house.example:7000",
+    "phone.token = t4",
+    "phone.own = true",
+    "",
+}, "\n")
+
+-- {{{ function H.fresh_home
+-- A new empty rao-home in RAM, named after the test, with the three
+-- people.* choices set (collision given, the other two as given or the
+-- plain "none"/"show").
+function H.fresh_home(name, collision, own_devices, split_records)
+    local base = H.dir .. "/tmp/shared-memory/people-links"
+    local path = base .. "/" .. H.mode .. "-" .. name
+    os.execute('rm -rf "' .. path .. '"')
+    os.execute('mkdir -p "' .. base .. '"')
+    local home = H.rooms.open_home(path)
+    H.rooms.set_config(home, "people.link-collision", collision)
+    H.rooms.set_config(home, "people.own-devices", own_devices or "none")
+    H.rooms.set_config(home, "people.split-records", split_records or "show")
+    local file = assert(io.open(path .. "/contacts", "w"))
+    file:write(CONTACTS)
+    file:close()
+    return home
+end
+-- }}}
+
+-- {{{ function H.room
+function H.room(home, name, parent_id, recipients)
+    return H.rooms.create_room(home, { name = name, parent_id = parent_id, recipients = recipients })
+end
+-- }}}
+
+-- {{{ local function walk
+local function walk(path, relative, out)
+    for _, entry in ipairs(H.disk.list_dir(path)) do
+        local full = path .. "/" .. entry
+        local rel = (relative == "") and entry or (relative .. "/" .. entry)
+        -- a link: record where it points
+        if H.disk.is_link(full) then
+            out[#out + 1] = rel .. " -> " .. H.disk.read_link(full)
+        -- a folder: go in
+        elseif H.disk.is_dir(full) then
+            out[#out + 1] = rel .. "/"
+            walk(full, rel, out)
+        -- anything else: note it as a file
+        else
+            out[#out + 1] = rel .. " (file)"
+        end
+    end
+end
+-- }}}
+
+-- {{{ function H.view
+-- Everything under people/ (or people/<contact>/ when contact given), one
+-- line per entry, sorted: "girlfriend/home -> ../../rooms/<id>".
+function H.view(home, contact)
+    local root = home.dir .. "/people"
+    local prefix = ""
+    -- one person only
+    if contact then
+        root = root .. "/" .. contact
+        prefix = ""
+    end
+    local out = {}
+    -- nothing there: an empty view
+    if not H.disk.is_dir(root) then
+        return out
+    end
+    walk(root, prefix, out)
+    table.sort(out)
+    return out
+end
+-- }}}
+
+-- {{{ function H.check
+function H.check(ok, label)
+    -- passed: count it quietly; failed: say which
+    if ok then
+        H.passed = H.passed + 1
+    else
+        H.failed = H.failed + 1
+        print("FAIL [" .. H.mode .. "] " .. label)
+    end
+end
+-- }}}
+
+-- {{{ function H.same
+-- Compares two lists of strings; on a mismatch prints both.
+function H.same(got, want, label)
+    local ok = table.concat(got, "\n") == table.concat(want, "\n")
+    H.check(ok, label)
+    -- mismatch: show both so the failure explains itself
+    if not ok then
+        print("   got:  " .. table.concat(got, " | "))
+        print("   want: " .. table.concat(want, " | "))
+    end
+end
+-- }}}
+
+-- {{{ function H.fails
+-- Checks that fn() raises an error whose text contains `fragment`.
+function H.fails(fn, fragment, label)
+    local ok, message = pcall(fn)
+    local right = (not ok) and tostring(message):find(fragment, 1, true) ~= nil
+    H.check(right, label)
+    -- wrong outcome: show what happened instead
+    if not right then
+        print("   expected an error containing: " .. fragment)
+        print("   got: " .. (ok and "no error" or tostring(message)))
+    end
+end
+-- }}}
+
+-- {{{ function H.list_has
+function H.list_has(list, wanted)
+    for _, item in ipairs(list) do
+        -- found
+        if item == wanted then
+            return true
+        end
+    end
+    return false
+end
+-- }}}
+
+-- {{{ function H.link_to
+-- The expected view line for a link at depth 1.
+function H.link_to(contact, name, room_id)
+    return contact .. "/" .. name .. " -> ../../rooms/" .. room_id
+end
+-- }}}
+
+-- {{{ function H.finish
+function H.finish()
+    print(string.format("RESULT %s pass=%d fail=%d", H.mode, H.passed, H.failed))
+    os.exit(H.failed == 0 and 0 or 1)
+end
+-- }}}
+
+return H

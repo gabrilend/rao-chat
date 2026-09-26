@@ -1,0 +1,35 @@
+# 081-message-log.lua — the message log's front door
+
+`require("081-message-log")` (after `001-load-path.lua` has set the search
+path).  Needs `002-room-folders` (issue 101) for config, log paths and the
+change bell.
+
+A **home** is `{ dir = string }`.  A **room id** is a string (32 hex).
+A **record** (what `read` gives) has every field, never nil:
+
+| field | type | meaning |
+|---|---|---|
+| `id` | string | the message's own id; letters, digits, `-`, `_` |
+| `author` | string | `"me"` or a contact name |
+| `written` | integer | seconds since 1970 when written |
+| `arrived` | integer | seconds since 1970 when it reached this home |
+| `kind` | string | `"message"`, `"correction"` or `"deletion"` |
+| `target` | string | id an edit changes; `""` for a message |
+| `text` | string | any bytes |
+
+Config keys read (all required; absent is an error): `log.record-shape`
+(tsv/block/jsonl), `log.shape-mixing` (fixed/per-record),
+`log.duplicate-check` (scan/remembered), `log.edits`
+(never/corrections/window), `log.edit-window-seconds` (window only).
+
+| function | takes | gives |
+|---|---|---|
+| `new_message_id()` | — | string, 32 hex characters from /dev/urandom |
+| `append(home, room_id, message)` | message `{id, author, written, arrived, text}` (a `kind`, if present, must be `"message"`) | `"filed"` or `"duplicate"`; rings `"log"` when filed; errors on a bad field or a missing room |
+| `correct(home, room_id, correction)` | `{id (new), author, written, arrived, target, text}` | `"filed"` / `"duplicate"`; errors when `log.edits` refuses |
+| `delete(home, room_id, deletion)` | `{id (new), author, written, arrived, target}` | as `correct` |
+| `has_message(home, room_id, id)` | string id | bool — any record (message or edit) with that id |
+| `read(home, room_id)` | — | list of records, file order |
+| `read_ordered(home, room_id)` | — | list of views `{id, author, written, arrived, text, edited=bool, deleted=bool, room_id}`, messages only, edits applied, sorted by written, room id, id |
+| `copy_log(home, from_id, to_id)` | two room ids | integer, records newly filed; re-files through the duplicate check in the current shape; edits copied as history; rings `"log"` once on `to_id` if anything was filed |
+| `forget_remembered_ids(path)` | log path or `"all"` | — ; clears the remembered duplicate check's memory |

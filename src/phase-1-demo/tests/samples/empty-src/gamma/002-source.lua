@@ -1,0 +1,1 @@
+-- Sample: a module with no options file at all.

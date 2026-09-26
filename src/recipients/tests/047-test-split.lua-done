@@ -1,0 +1,213 @@
+-- 047-test-split.lua — tests for a room splitting when you are removed.
+--
+-- Every test here runs once per split shape (fork, rekey), and the parent
+-- tests once per parent setting (keep, top).  They check that the room you
+-- now talk in has everyone but the remover, keeps its name and every message
+-- you had, sits where the setting says in your tree, takes its child rooms
+-- with it, and that the old room is either a read-only record (fork) or gone
+-- (rekey).  They also cover the room-of-two case both ways.
+
+-- {{{ local function run
+local function run(h)
+    local r = h.recipients
+
+    -- {{{ local function setup
+    local function setup(shape, parent_mode, alone_mode)
+        local home = h.new_home("split-" .. shape, { "ana", "bo", "cy" }, { "myphone" }, {
+            ["recipients.split-shape"] = shape,
+            ["recipients.arrival-list"] = "adder-only",
+            ["recipients.split-parent"] = parent_mode,
+            ["recipients.split-alone"] = alone_mode,
+        })
+        local top = h.rooms.create_room(home, { name = "house", parent_id = "", recipients = { "ana" } })
+        local id = h.rooms.create_room(home, { name = "garden", parent_id = top, recipients = { "ana", "bo", "cy" } })
+        local child = h.rooms.create_room(home, { name = "seeds", parent_id = id, recipients = { "bo" } })
+        h.log.append(home, id, h.message("ana", "first"))
+        h.log.append(home, id, h.message("me", "second"))
+        h.log.append(home, id, h.message("bo", "third"))
+        return home, id, top, child
+    end
+    -- }}}
+
+    for _, shape in ipairs({ "fork", "rekey" }) do
+        local tag = "split " .. shape .. ": "
+
+        h.check(tag .. "new room id, everyone but the remover", function()
+            local home, id = setup(shape, "keep", "record-only")
+            local new_id = r.split_on_removal(home, id, "ana", shape)
+            -- a new id either way: the room you talk in is not the shared one
+            if new_id == id or #new_id ~= 32 then error("bad new id " .. tostring(new_id)) end
+            h.same_set(h.rooms.read_room(home, new_id).recipients, { "bo", "cy" })
+            h.equal(h.rooms.read_room(home, new_id).name, "garden", "name")
+        end)
+
+        h.check(tag .. "every message you had is kept", function()
+            local home, id = setup(shape, "keep", "record-only")
+            local new_id = r.split_on_removal(home, id, "ana", shape)
+            local texts = {}
+            for _, m in ipairs(h.log.read(home, new_id)) do texts[#texts + 1] = m.text end
+            h.equal(table.concat(texts, ","), "first,second,third", "log")
+        end)
+
+        h.check(tag .. "parent keep: same parent as before", function()
+            local home, id, top = setup(shape, "keep", "record-only")
+            local new_id = r.split_on_removal(home, id, "ana", shape)
+            h.equal(h.rooms.read_room(home, new_id).parent_id, top, "parent")
+        end)
+
+        h.check(tag .. "parent top: becomes a top room", function()
+            local home, id = setup(shape, "top", "record-only")
+            local new_id = r.split_on_removal(home, id, "ana", shape)
+            h.equal(h.rooms.read_room(home, new_id).parent_id, "", "parent")
+        end)
+
+        h.check(tag .. "child rooms move under the room you talk in", function()
+            local home, id, _, child = setup(shape, "keep", "record-only")
+            local new_id = r.split_on_removal(home, id, "ana", shape)
+            h.equal(h.rooms.read_room(home, child).parent_id, new_id, "child's parent")
+            h.same_set(h.rooms.read_room(home, child).recipients, { "bo" }, "child's list untouched")
+        end)
+
+        h.check(tag .. "remover already off your list: still splits", function()
+            local home, id = setup(shape, "keep", "record-only")
+            r.remove(home, id, "ana")
+            local new_id = r.split_on_removal(home, id, "ana", shape)
+            h.same_set(h.rooms.read_room(home, new_id).recipients, { "bo", "cy" })
+        end)
+
+        h.check(tag .. "a stranger or own device cannot be the remover", function()
+            local home, id = setup(shape, "keep", "record-only")
+            h.expect_error("is not a contact", function() r.split_on_removal(home, id, "zed", shape) end)
+            h.expect_error("own devices", function() r.split_on_removal(home, id, "myphone", shape) end)
+        end)
+
+        h.check(tag .. "missing split-parent setting is refused, nothing changed", function()
+            local home = h.new_home("noparentkey", { "ana", "bo" }, {}, {})
+            local id = h.rooms.create_room(home, { name = "g", parent_id = "", recipients = { "ana", "bo" } })
+            h.expect_error("recipients.split-parent", function() r.split_on_removal(home, id, "ana", shape) end)
+            h.equal(#h.rooms.list_rooms(home), 1, "room count")
+        end)
+
+        h.check(tag .. "room of two, keep-empty: a new room with nobody on it", function()
+            local home, id = setup(shape, "keep", "keep-empty")
+            r.remove(home, id, "bo")
+            r.remove(home, id, "cy")
+            local new_id = r.split_on_removal(home, id, "ana", shape)
+            h.equal(#h.rooms.read_room(home, new_id).recipients, 0, "list size")
+            h.equal(#h.log.read(home, new_id), 3, "messages kept")
+            -- and it can be refilled
+            r.add(home, new_id, "bo")
+            h.same_set(h.rooms.read_room(home, new_id).recipients, { "bo" })
+        end)
+
+        h.check(tag .. "room of two, record-only: no new room, old is read-only", function()
+            local home, id = setup(shape, "keep", "record-only")
+            r.remove(home, id, "bo")
+            r.remove(home, id, "cy")
+            local count = #h.rooms.list_rooms(home)
+            local new_id = r.split_on_removal(home, id, "ana", shape)
+            h.equal(new_id, "", "room you talk in")
+            h.equal(#h.rooms.list_rooms(home), count, "room count")
+            h.equal(r.live_room_for(home, id), "", "live room")
+            h.expect_error("read-only", function() r.add(home, id, "bo") end)
+        end)
+
+        h.check(tag .. "the new room is an ordinary room: add and remove work", function()
+            local home, id = setup(shape, "keep", "record-only")
+            local new_id = r.split_on_removal(home, id, "ana", shape)
+            r.remove(home, new_id, "cy")
+            r.add(home, new_id, "ana")
+            h.same_set(h.rooms.read_room(home, new_id).recipients, { "bo", "ana" })
+        end)
+    end
+
+    h.check("split fork: old room kept as a read-only record", function()
+        local home, id = setup("fork", "keep", "record-only")
+        local new_id = r.split_on_removal(home, id, "ana", "fork")
+        h.equal(h.rooms.room_exists(home, id), true, "old room exists")
+        h.same_set(h.rooms.read_room(home, id).recipients, { "ana", "bo", "cy" }, "record's list")
+        h.expect_error("read-only", function() r.add(home, id, "ana") end)
+        h.expect_error("read-only", function() r.remove(home, id, "bo") end)
+        h.expect_error("read-only", function() r.split_on_removal(home, id, "bo", "fork") end)
+        h.equal(r.live_room_for(home, id), new_id, "old id leads to new room")
+        h.equal(r.live_room_for(home, new_id), new_id, "new id is live")
+    end)
+
+    h.check("split fork twice: records chain to the latest room", function()
+        local home, id = setup("fork", "keep", "record-only")
+        local second = r.split_on_removal(home, id, "ana", "fork")
+        local third = r.split_on_removal(home, second, "bo", "fork")
+        h.equal(r.live_room_for(home, id), third, "first id leads to third room")
+        h.same_set(h.rooms.read_room(home, third).recipients, { "cy" })
+    end)
+
+    h.check("split rekey: the old id is gone from this server", function()
+        local home, id = setup("rekey", "keep", "record-only")
+        local new_id = r.split_on_removal(home, id, "ana", "rekey")
+        h.equal(h.rooms.room_exists(home, id), false, "old room exists")
+        h.equal(r.live_room_for(home, id), "", "old id leads nowhere")
+        h.equal(h.file_exists(h.rooms.room_dir(home, new_id) .. "/split"), false, "no record marker")
+    end)
+
+    h.check("split rekey: bell says removed-room then created", function()
+        local home, id = setup("rekey", "keep", "record-only")
+        local heard = {}
+        local listening = true
+        h.rooms.on_change(function(_, room_id, what)
+            -- only rings during this one split are recorded
+            if listening then
+                heard[#heard + 1] = what .. ":" .. (room_id == id and "old" or "other")
+            end
+        end)
+        r.split_on_removal(home, id, "ana", "rekey")
+        listening = false
+        -- the child's parent is rewritten first, before any removal is heard
+        h.equal(heard[1], "parent:other", "first ring")
+        h.equal(heard[2], "removed-room:old", "second ring")
+        h.equal(heard[3], "created:other", "third ring")
+    end)
+
+    h.check("split fork: rings split on the old id, after children moved", function()
+        local home, id, _, child = setup("fork", "keep", "record-only")
+        local heard = {}
+        local listening = true
+        h.rooms.on_change(function(_, room_id, what)
+            -- only rings during this one split are recorded
+            if listening then
+                heard[#heard + 1] = what .. ":" .. (room_id == id and "old" or (room_id == child and "child" or "new"))
+            end
+        end)
+        r.split_on_removal(home, id, "ana", "fork")
+        listening = false
+        h.equal(heard[#heard], "split:old", "last ring")
+        h.equal(heard[#heard - 1], "parent:child", "ring before it")
+    end)
+
+    h.check("split record-only: rings split on the old id", function()
+        local home, id = setup("rekey", "keep", "record-only")
+        r.remove(home, id, "bo")
+        r.remove(home, id, "cy")
+        local heard = {}
+        local listening = true
+        h.rooms.on_change(function(_, room_id, what)
+            -- only rings during this one split are recorded
+            if listening and room_id == id then heard[#heard + 1] = what end
+        end)
+        r.split_on_removal(home, id, "ana", "rekey")
+        listening = false
+        h.equal(table.concat(heard, ","), "split", "rings on old id")
+    end)
+
+    h.check("split: an unbuilt shape is refused", function()
+        local home, id = setup("fork", "keep", "record-only")
+        h.expect_error("unknown split shape", function() r.split_on_removal(home, id, "ana", "merge") end)
+    end)
+
+    h.check("live_room_for: an unknown id gives empty", function()
+        local home = setup("fork", "keep", "record-only")
+        h.equal(r.live_room_for(home, h.rooms.new_room_id()), "", "unknown id")
+    end)
+end
+-- }}}
+
+return run

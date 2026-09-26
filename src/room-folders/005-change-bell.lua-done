@@ -1,0 +1,76 @@
+-- 005-change-bell.lua — the bell rung whenever a room changes.
+--
+-- Some files in a home are summaries of other files: a room's `where`
+-- (its path of names) is worked out from the parents' names, and the
+-- `people/` links are worked out from every room's recipient list.  When
+-- a room changes, those summaries must be redone.  Rather than have the
+-- code that changes a room know every summary that depends on it, it
+-- rings this bell, saying which room and what kind of change; whoever
+-- keeps a summary has asked to be told, and redoes it.  The module that
+-- keeps the `where` files (room-tree) and the one that keeps the
+-- `people/` links (people-links) each sign up when they are loaded.
+--
+-- A listener that fails stops the ring and the failure reaches whoever
+-- made the change: a summary left out of date silently would be a lie on
+-- disk.  Listeners are told in the order they signed up.
+
+-- The kinds of change a ring can announce.  A table rather than a chain
+-- of comparisons, so the list is written once and read everywhere.
+local KINDS_OF_CHANGE = {
+    ["created"]      = "a new room folder now exists",
+    ["name"]         = "a room's name file was rewritten",
+    ["parent"]       = "a room's parent file was rewritten",
+    ["recipients"]   = "a room's recipients file was rewritten",
+    ["log"]          = "a message was filed in a room's log (rung by message-log)",
+    ["removed-room"] = "a room folder is gone or retired (rung by recipients on a rekey split)",
+    ["split"]        = "a room became a read-only record of a split (rung by recipients after writing its split marker)",
+}
+
+-- The signed-up listeners, a list of functions.  Lives as long as the Lua
+-- program: require() hands every module the same copy of this file.
+local listeners = {}
+
+-- {{{ local function on_change
+local function on_change(listener)
+    -- only a function can be called when the bell rings.
+    if type(listener) ~= "function" then
+        error("on_change needs a function, got " .. type(listener), 2)
+    end
+    listeners[#listeners + 1] = listener
+end
+-- }}}
+
+-- {{{ local function notify
+local function notify(home, room_id, what)
+    -- an unknown kind is a typo in the ringer; nobody would be listening
+    -- for it, so the change would pass unnoticed.
+    if KINDS_OF_CHANGE[what] == nil then
+        error("notify: unknown kind of change '" .. tostring(what) .. "'", 2)
+    end
+    -- the home and room must be real values; listeners would otherwise
+    -- fail somewhere far from the mistake.
+    if type(home) ~= "table" or type(home.dir) ~= "string" then
+        error("notify: first argument must be a home {dir = string}", 2)
+    end
+    if type(room_id) ~= "string" then
+        error("notify: room id must be a string, got " .. type(room_id), 2)
+    end
+    for _, listener in ipairs(listeners) do
+        listener(home, room_id, what)
+    end
+end
+-- }}}
+
+-- {{{ local function listener_count
+-- How many listeners have signed up; for tests and the phase demo.
+local function listener_count()
+    return #listeners
+end
+-- }}}
+
+return {
+    on_change = on_change,
+    notify = notify,
+    listener_count = listener_count,
+    KINDS_OF_CHANGE = KINDS_OF_CHANGE,
+}

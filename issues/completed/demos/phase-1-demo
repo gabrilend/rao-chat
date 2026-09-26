@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+#
+# phase-1-demo - shows phase 1 of rao-chat working: rooms on the home server.
+#
+# A room is a contact: a label, a shared token, and every member's
+# (address, port) pairs.  This demo builds rooms that way in throwaway home
+# folders held in RAM - direct messages beside group rooms, tokens, a tree
+# of child rooms, members and the ones you withhold from, leaving, ignoring,
+# the people/ folder and the message log - running every variant of every
+# choice the owner has not made yet, and prints what is really on disk:
+# the entry files as written, folder and link listings, file sizes, counts
+# and timings.  Ends with the list of choices still open.  It reads input/
+# first and writes a goodbye into output/ last.
+#
+# Usage (from any folder):
+#   phase-1-demo                 the project named below
+#   phase-1-demo <project dir>   another copy of the project
+
+DIR="/home/ritz/programs/rao-chat"
+if [ -n "${1:-}" ]; then
+    DIR="$1"
+fi
+
+if [ ! -d "${DIR}/src/phase-1-demo" ]; then
+    echo "phase-1-demo: ${DIR} does not look like the rao-chat project (no src/phase-1-demo)" >&2
+    exit 1
+fi
+
+# The scratch homes live in RAM: tmp/ points at /tmp/<project>, and inside it
+# shared-memory/ points at /dev/shm/<project>.  Make whichever piece is missing.
+PROJECT="$(basename "${DIR}")"
+mkdir -p "/dev/shm/${PROJECT}" "/tmp/${PROJECT}/tmp"
+if [ ! -e "/tmp/${PROJECT}/shared-memory" ]; then
+    ln -s "/dev/shm/${PROJECT}" "/tmp/${PROJECT}/shared-memory"
+fi
+if [ ! -e "${DIR}/tmp" ]; then
+    ln -s "/tmp/${PROJECT}" "${DIR}/tmp"
+fi
+
+exec luajit "${DIR}/src/phase-1-demo/106-phase-1-demo.lua" "${DIR}"

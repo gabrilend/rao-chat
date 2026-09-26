@@ -1,0 +1,184 @@
+-- 045-test-harness.lua — the shared toolkit for the recipients tests.
+--
+-- It does three things: it wires up either the stand-in neighbours kept in
+-- this tests folder or the real room-folders and message-log modules (the
+-- runner says which); it makes fresh throw-away home folders in RAM for each
+-- test, with contacts and settings filled in; and it counts passes and
+-- failures, printing one line per test.
+--
+-- Returns a function(dir, neighbours) giving the harness table `h`.
+
+-- {{{ local function wire_neighbours
+-- "stand-in": the two copies in this folder are put where require looks
+-- first, so 041-recipients picks them up as if they were the real ones.
+-- "real": nothing is pre-loaded; require finds src/room-folders and
+-- src/message-log through the load path.
+local function wire_neighbours(dir, neighbours)
+    dofile(dir .. "/src/room-folders/001-load-path.lua")(dir)
+    local wirings = {
+        ["stand-in"] = function()
+            local tests = dir .. "/src/recipients/tests/"
+            package.loaded["002-room-folders"] = dofile(tests .. "042-stand-in-room-folders.lua")
+            package.loaded["081-message-log"] = dofile(tests .. "043-stand-in-message-log.lua")
+        end,
+        ["real"] = function() end,
+    }
+    -- only the two built wirings; anything else is a typo in the runner call
+    if wirings[neighbours] == nil then
+        error("harness: neighbours must be stand-in or real, got " .. tostring(neighbours))
+    end
+    wirings[neighbours]()
+end
+-- }}}
+
+-- {{{ local function make_harness
+local function make_harness(dir, neighbours)
+    wire_neighbours(dir, neighbours)
+    local h = {
+        dir = dir,
+        neighbours = neighbours,
+        rooms = require("002-room-folders"),
+        log = require("081-message-log"),
+        recipients = require("041-recipients"),
+        passed = 0,
+        failed = 0,
+        failures = {},
+        home_count = 0,
+        clock = 1790000000,
+        -- config keys other modules read (docs/phase-1-module-contract.md
+        -- choices table plus keys announced on the builders' board)
+        neighbour_config = {
+            ["log.record-shape"] = "tsv",
+            ["log.edits"] = "never",
+            ["log.duplicate-check"] = "scan",
+            ["log.shape-mixing"] = "fixed",
+            ["tree.parent-disclosure"] = "always",
+            ["people.link-collision"] = "suffix-id",
+            ["people.own-devices"] = "skip",
+        },
+    }
+    -- every run gets its own scratch folder in RAM, named by time and pid-ish
+    -- random suffix so two runs never share homes
+    h.scratch = dir .. "/tmp/shared-memory/recipients/run-" .. os.time()
+        .. "-" .. h.rooms.new_room_id():sub(1, 6)
+    os.execute('mkdir -p "' .. h.scratch .. '"')
+
+    -- {{{ function h.check
+    -- Runs one test; a test fails by raising an error.
+    function h.check(name, test)
+        local ok, why = pcall(test)
+        -- no error: a pass; an error: a failure with its message
+        if ok then
+            h.passed = h.passed + 1
+            print("pass  " .. name)
+        else
+            h.failed = h.failed + 1
+            h.failures[#h.failures + 1] = name
+            print("FAIL  " .. name .. "\n        " .. tostring(why))
+        end
+    end
+    -- }}}
+
+    -- {{{ function h.expect_error
+    -- Passes when fn raises an error whose text contains `fragment`.
+    function h.expect_error(fragment, fn)
+        local ok, why = pcall(fn)
+        -- no error at all: the refusal the test wanted did not happen
+        if ok then
+            error("expected an error containing '" .. fragment .. "', got none", 2)
+        end
+        -- an error, but a different one: some other mistake happened first
+        if not tostring(why):find(fragment, 1, true) then
+            error("expected an error containing '" .. fragment .. "', got: " .. tostring(why), 2)
+        end
+    end
+    -- }}}
+
+    -- {{{ function h.equal
+    function h.equal(got, want, what)
+        -- equal: fine; different: say both
+        if got ~= want then
+            error((what or "value") .. ": wanted " .. tostring(want) .. ", got " .. tostring(got), 2)
+        end
+    end
+    -- }}}
+
+    -- {{{ function h.same_set
+    -- Two lists hold the same names, order aside.
+    function h.same_set(got, want, what)
+        local a, b = {}, {}
+        for _, v in ipairs(got) do a[#a + 1] = v end
+        for _, v in ipairs(want) do b[#b + 1] = v end
+        table.sort(a)
+        table.sort(b)
+        local ga, gb = table.concat(a, ","), table.concat(b, ",")
+        -- same names: fine; different: show both lists
+        if ga ~= gb then
+            error((what or "list") .. ": wanted {" .. gb .. "}, got {" .. ga .. "}", 2)
+        end
+    end
+    -- }}}
+
+    -- {{{ function h.file_exists
+    function h.file_exists(path)
+        local file = io.open(path, "r")
+        -- found: close and say yes
+        if file then
+            file:close()
+            return true
+        end
+        return false
+    end
+    -- }}}
+
+    -- {{{ function h.new_home
+    -- A fresh home folder.  contacts: list of names (plain people);
+    -- own: list of names marked own = true; config: key -> value.
+    function h.new_home(label, contacts, own, config)
+        h.home_count = h.home_count + 1
+        local home_dir = h.scratch .. "/" .. h.home_count .. "-" .. label
+        local home = h.rooms.open_home(home_dir)
+        local lines = {}
+        for _, name in ipairs(contacts) do
+            lines[#lines + 1] = name .. ".token = t-" .. name .. "\n"
+            lines[#lines + 1] = name .. ".ip = 10.0.0.1\n"
+        end
+        for _, name in ipairs(own) do
+            lines[#lines + 1] = name .. ".token = t-" .. name .. "\n"
+            lines[#lines + 1] = name .. ".own = true\n"
+        end
+        local file = assert(io.open(home_dir .. "/contacts", "w"))
+        file:write(table.concat(lines))
+        file:close()
+        -- the neighbours' own settings, so the real modules (which refuse to
+        -- guess, as this one does) can run; one variant each is enough here,
+        -- since these tests are about recipients, not about the log's shape
+        for key, value in pairs(h.neighbour_config) do
+            h.rooms.set_config(home, key, value)
+        end
+        for key, value in pairs(config) do
+            h.rooms.set_config(home, key, value)
+        end
+        return home
+    end
+    -- }}}
+
+    -- {{{ function h.message
+    -- A message in the contract's shape, each one later than the last.
+    function h.message(author, text)
+        h.clock = h.clock + 1
+        return {
+            id = h.log.new_message_id(),
+            author = author,
+            written = h.clock,
+            arrived = h.clock,
+            text = text,
+        }
+    end
+    -- }}}
+
+    return h
+end
+-- }}}
+
+return make_harness

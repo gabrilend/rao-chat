@@ -1,0 +1,163 @@
+-- 049-test-six-become-two-fives.lua — the owner's example, played out on six
+-- home servers at once.
+--
+-- Six people (p1 … p6) share one room; each has their own home folder and
+-- their own list naming the other five.  p1 removes p2.  p2's server is told
+-- and splits its copy.  Then everyone talks, and messages are carried by
+-- hand from each sender's list to each reader's home (phase 2 will do this
+-- over the network).  The owner: "they're talking into their room with 5
+-- people (used to be 6) and you're talking into your room of 5 people (used
+-- to be 6) - everyone else is listening eagerly."
+--
+-- The whole story runs once for every split shape × every arrival mode, and
+-- checks what each combination does to the four people in the middle.
+
+-- {{{ local function run
+local function run(h)
+    local r = h.recipients
+    local people = { "p1", "p2", "p3", "p4", "p5", "p6" }
+
+    -- {{{ local function others
+    local function others(me)
+        local list = {}
+        for _, name in ipairs(people) do
+            -- everyone except the person themself
+            if name ~= me then list[#list + 1] = name end
+        end
+        return list
+    end
+    -- }}}
+
+    -- {{{ local function has_text
+    local function has_text(home, room_id, text)
+        for _, m in ipairs(h.log.read(home, room_id)) do
+            if m.text == text then return true end
+        end
+        return false
+    end
+    -- }}}
+
+    -- {{{ local function build_world
+    -- Six homes, one shared room id, each person sending to the other five.
+    local function build_world(shape, mode)
+        local world = { homes = {}, shape = shape, mode = mode }
+        world.room = h.rooms.new_room_id()
+        for _, name in ipairs(people) do
+            local home = h.new_home(shape .. "-" .. mode .. "-" .. name, others(name), {}, {
+                ["recipients.split-shape"] = shape,
+                ["recipients.arrival-list"] = mode,
+                ["recipients.split-parent"] = "keep",
+                ["recipients.split-alone"] = "record-only",
+            })
+            h.rooms.create_room(home, { name = "the-six", parent_id = "", recipients = others(name), room_id = world.room })
+            world.homes[name] = home
+        end
+        return world
+    end
+    -- }}}
+
+    -- {{{ local function deliver
+    -- `sender` writes `text` into their room `room_id`; it is filed in their
+    -- own log as "me" and carried to each name on their list.  A reader's
+    -- server files it in the live room for that id, or makes the room on
+    -- arrival in the configured mode.  The carried list is the sender's list
+    -- in the reader's names (everyone here names everyone "pN"), with the
+    -- reader written as "me".  Returns the names it reached.
+    local function deliver(world, sender, room_id, text)
+        local home = world.homes[sender]
+        local message = h.message("me", text)
+        h.log.append(home, room_id, message)
+        local list = h.rooms.read_room(home, room_id).recipients
+        for _, reader in ipairs(list) do
+            local reader_home = world.homes[reader]
+            local carried = { recipients = {} }
+            for i, name in ipairs(list) do
+                carried.recipients[i] = (name == reader) and "me" or name
+            end
+            local target = r.live_room_for(reader_home, room_id)
+            -- never seen (or rekeyed away): the room is made on arrival
+            if target == "" then
+                local mode = r.configured_arrival_list(reader_home)
+                target = r.room_from_arrival(reader_home, room_id, sender, mode, carried)
+            end
+            h.log.append(reader_home, target, {
+                id = message.id, author = sender, written = message.written,
+                arrived = message.arrived, text = text,
+            })
+        end
+        return list
+    end
+    -- }}}
+
+    for _, shape in ipairs({ "fork", "rekey" }) do
+        for _, mode in ipairs({ "adder-only", "heard-from", "adder-list" }) do
+            local tag = "six->5+5 " .. shape .. "/" .. mode .. ": "
+
+            h.check(tag .. "the whole story", function()
+                local w = build_world(shape, mode)
+                local R = w.room
+                for _, name in ipairs(people) do deliver(w, name, R, "hello from " .. name) end
+
+                -- p1 removes p2; p2's server is told and splits
+                r.remove(w.homes.p1, R, "p2")
+                local R2 = r.split_on_removal(w.homes.p2, R, "p1", r.configured_split_shape(w.homes.p2))
+
+                -- two rooms of five
+                local p1_list = h.rooms.read_room(w.homes.p1, R).recipients
+                local p2_list = h.rooms.read_room(w.homes.p2, R2).recipients
+                h.same_set(p1_list, { "p3", "p4", "p5", "p6" }, "p1's list")
+                h.same_set(p2_list, { "p3", "p4", "p5", "p6" }, "p2's list")
+                h.equal(1 + #p1_list, 5, "p1's room size")
+                h.equal(1 + #p2_list, 5, "p2's room size")
+                h.equal(#h.log.read(w.homes.p2, R2), 6, "p2 kept all six hellos")
+
+                -- each talks into their own room; neither reaches the other
+                h.same_set(deliver(w, "p1", R, "p1 after"), { "p3", "p4", "p5", "p6" }, "p1 reached")
+                h.same_set(deliver(w, "p2", R2, "p2 after"), { "p3", "p4", "p5", "p6" }, "p2 reached")
+                h.equal(has_text(w.homes.p2, R2, "p1 after"), false, "p2 hears p1")
+                h.equal(r.live_room_for(w.homes.p1, R2), "", "p1 has p2's room")
+
+                -- everyone else listens to both rooms
+                for _, name in ipairs({ "p3", "p4", "p5", "p6" }) do
+                    local home = w.homes[name]
+                    h.equal(has_text(home, R, "p1 after"), true, name .. " hears p1's room")
+                    h.equal(has_text(home, R2, "p2 after"), true, name .. " hears p2's room")
+                end
+
+                -- what p3's copy of p2's room sends to depends on the mode:
+                -- only adder-list gives p3 the same room of five p2 sees
+                local p3_view = h.rooms.read_room(w.homes.p3, R2).recipients
+                local expected_view = {
+                    ["adder-only"] = { "p2" },
+                    ["heard-from"] = { "p2" },
+                    ["adder-list"] = { "p2", "p4", "p5", "p6" },
+                }
+                h.same_set(p3_view, expected_view[mode], "p3's list for p2's room")
+
+                -- p3 still sends in the shared room to p1 AND p2.  At p2:
+                -- fork follows the record into p2's room; rekey forgot the
+                -- old id, so a fresh room is made on arrival
+                deliver(w, "p3", R, "p3 in the shared room")
+                h.equal(has_text(w.homes.p1, R, "p3 in the shared room"), true, "p1 hears p3")
+                local at_p2 = {
+                    ["fork"] = function()
+                        h.equal(has_text(w.homes.p2, R2, "p3 in the shared room"), true, "filed in p2's room")
+                        h.equal(h.rooms.room_exists(w.homes.p2, R), true, "record kept")
+                    end,
+                    ["rekey"] = function()
+                        h.equal(has_text(w.homes.p2, R2, "p3 in the shared room"), false, "filed in p2's room")
+                        h.equal(has_text(w.homes.p2, R, "p3 in the shared room"), true, "filed in a fresh room")
+                        h.same_set(h.rooms.read_room(w.homes.p2, R).recipients,
+                            ({ ["adder-only"] = { "p3" }, ["heard-from"] = { "p3" },
+                               ["adder-list"] = { "p3", "p1", "p4", "p5", "p6" } })[mode],
+                            "p2's fresh room list (p1 is back under adder-list)")
+                    end,
+                }
+                at_p2[shape]()
+            end)
+        end
+    end
+end
+-- }}}
+
+return run

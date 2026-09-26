@@ -1,0 +1,9 @@
+# 086-edits.lua — corrections and deletions (open question 12)
+
+| function | takes | gives |
+|---|---|---|
+| `check(mode, records, edit, config_value)` | `log.edits` value (string), the room's records (list), the edit record (kind correction/deletion), function(key) → string | — ; error when the rule refuses: `never` always; `corrections` when the target is missing, not a plain message, already deleted, or by another author; `window` as corrections plus when `edit.written − target.written` exceeds `log.edit-window-seconds` |
+| `apply(records)` | records in file order | list of views `{id, author, written, arrived, text, edited=bool, deleted=bool}`, messages only, file order; latest correction by (written, id) wins; deleted → text `""`; error if an edit by someone other than the message's author is found |
+
+Edits already in a file are applied when reading whatever `log.edits` says
+now; the rule governs filing only.

@@ -1,0 +1,606 @@
+-- 061-people-links.lua — keeps the people/ folder: for each person, one link
+-- per room you share with them, so "what do I share with this person?" is
+-- answered by listing their folder.
+--
+--   people/<contact>/<room name> -> ../../rooms/<room id>
+--
+-- The rooms' recipient lists are the truth; these links are only a view of
+-- them.  Nothing here is ever the only copy of anything: delete the whole
+-- people/ folder, rebuild, and the same links come back.
+--
+-- How a person's links are worked out, in plain words: look at every room
+-- they are on the recipient list of.  Of those, keep only the ones whose
+-- parent room they are NOT on the list of (or that have no parent).  Those
+-- are the tops of the trees they can see: in the owner's example, where your
+-- girlfriend is in "home" and "programming" but not in "ritz" between them,
+-- she gets two links, home and programming; add her to ritz and programming
+-- is no longer a top (its parent is hers now), leaving just home.
+--
+-- Four things are not decided yet and are picked by rao-home/config (the
+-- fourth, people.slash-in-link-name = percent | division-slash, is read only
+-- when a room name holds "/", which 101 allows under rooms.slash-in-name):
+--   people.link-collision  what to call two top rooms with the same name
+--                          (suffix-id | numbered | id-folder; see 063)
+--   people.own-devices     whether your own devices get a folder
+--                          (none | all-tops)
+--   people.split-records   whether a room kept as the read-only record of a
+--                          split (103's rooms/<id>/split marker) still shows
+--                          up as a shared room (show | hide)
+--
+-- Loading this module registers a listener on 101's change bell, so every
+-- change to a name, parent or recipient list rebuilds the links.
+--
+-- Safety promise: only links this module made are ever removed.  A link is
+-- recognised as ours by its shape: it lives directly in people/<contact>/
+-- and points at ../../rooms/<32 hex characters>, or lives in a
+-- people/<contact>/<32 hex>/ folder and points at ../../../rooms/<same>.
+-- Anything else found in people/ (a note, a file, someone else's link) is
+-- left exactly where it is, and if it sits where a link must go, the
+-- rebuild stops with an error instead of overwriting it.
+
+local rooms      = require("002-room-folders")
+local disk       = require("062-disk-links")
+local link_names = require("063-link-names")
+
+local M = {}
+
+-- a room id: 32 lower-case hexadecimal characters (contract, "room id")
+local ROOM_ID_PATTERN = string.rep("[0-9a-f]", 32)
+
+-- the link targets this module writes, by how deep the link sits under the
+-- person's folder: 1 = people/<c>/<name>, 2 = people/<c>/<id>/<name>.
+-- Relative, so rao-home can be copied or moved whole.
+local TARGET_PREFIX = {
+    [1] = "../../rooms/",
+    [2] = "../../../rooms/",
+}
+
+-- {{{ local function list_contains
+local function list_contains(list, wanted)
+    for _, item in ipairs(list) do
+        -- found it
+        if item == wanted then
+            return true
+        end
+    end
+    return false
+end
+-- }}}
+
+-- {{{ local function file_exists
+local function file_exists(path)
+    local file = io.open(path, "r")
+    -- opened: it is there
+    if file then
+        file:close()
+        return true
+    end
+    return false
+end
+-- }}}
+
+-- {{{ local function check_folder_name
+-- A contact name becomes a folder name under people/, so it must be one.
+local function check_folder_name(name)
+    local bad = type(name) ~= "string" or name == "" or name == "." or name == ".."
+             or name:find("/", 1, true) or name:find("\0", 1, true)
+    -- unusable as a folder name: stop
+    if bad then
+        error("people-links: " .. string.format("%q", tostring(name))
+              .. " cannot be a folder name under people/")
+    end
+end
+-- }}}
+
+-- {{{ local function is_own_device
+-- rmail's contacts format marks your own devices with own = true.
+local function is_own_device(contact_fields)
+    return contact_fields.own == "true"
+end
+-- }}}
+
+-- The three undecided choices, each read from config with config_value,
+-- which errors when the key is missing: there is no silent default.
+local CHOICES = {
+    ["people.link-collision"] = { "suffix-id", "numbered", "id-folder" },
+    ["people.own-devices"]    = { "none", "all-tops" },
+    ["people.split-records"]  = { "show", "hide" },
+    ["people.slash-in-link-name"] = { "percent", "division-slash" },
+}
+
+-- {{{ local function read_choice
+local function read_choice(home, key)
+    local value = rooms.config_value(home, key)
+    -- a value somebody built: use it; anything else: say what exists
+    if not list_contains(CHOICES[key], value) then
+        error("people-links: unknown " .. key .. " = " .. value
+              .. " (built: " .. table.concat(CHOICES[key], ", ") .. ")")
+    end
+    return value
+end
+-- }}}
+
+-- What a parent id that names no room held here means (101's
+-- rooms.unknown-parent, read only when such a room is found, as 101 and 102
+-- do):
+--   keep    a room that arrived naming a parent you are not in yet (the
+--           girlfriend's "programming" before she is added to "ritz"); it is
+--           a top until that parent arrives with that id
+--   refuse  such a room can only come from hand-editing or a deleted room:
+--           stop loudly
+local unheld_parent_rules = {
+    ["keep"]   = true,
+    ["refuse"] = false,
+}
+
+-- {{{ local function check_unheld_parents
+local function check_unheld_parents(home, snapshot)
+    for _, id in ipairs(snapshot.room_ids) do
+        local parent = snapshot.rooms[id].parent_id
+        -- a parent id with no room here: the config decides
+        if parent ~= "" and snapshot.rooms[parent] == nil then
+            local rule = rooms.config_value(home, "rooms.unknown-parent")
+            -- a value 101 does not build
+            if unheld_parent_rules[rule] == nil then
+                error("people-links: unknown rooms.unknown-parent = " .. rule)
+            end
+            -- refuse: stop; keep: the room counts as a top (see receives)
+            if not unheld_parent_rules[rule] then
+                error("people-links: room " .. id .. " names parent " .. parent
+                      .. ", which is not here (rooms.unknown-parent = refuse)")
+            end
+        end
+    end
+end
+-- }}}
+
+-- {{{ local function slash_mode_for
+-- A room name holding "/" cannot be a link name as it is.  101's
+-- rooms.slash-in-name says whether such names exist at all; when they are
+-- allowed, people.slash-in-link-name says how the "/" is shown in a link
+-- name (see slash_rewrites).  Both keys are read only when a name with "/"
+-- is actually found, so homes that never have one need not set them.
+-- Gives "" when no name has a "/".
+local function slash_mode_for(home, snapshot)
+    for _, id in ipairs(snapshot.room_ids) do
+        -- a name with a slash: the two keys decide
+        if snapshot.rooms[id].name:find("/", 1, true) then
+            local allowed = rooms.config_value(home, "rooms.slash-in-name")
+            -- 101 refuses such names on write; one on disk is hand-made
+            if allowed ~= "allow" then
+                error("people-links: room " .. id .. " has a '/' in its name but rooms.slash-in-name = "
+                      .. allowed)
+            end
+            return read_choice(home, "people.slash-in-link-name")
+        end
+    end
+    return ""
+end
+-- }}}
+
+-- {{{ local function read_snapshot
+-- Reads everything a rebuild needs, once, so one rebuild of every person
+-- does not re-read every room per person.  The snapshot is a table:
+--   modes      { collision = string, own_devices = string, split_records = string }
+--   room_ids   list of room ids (sorted, as 101 gives them)
+--   rooms      room id -> { id, name, parent_id, recipients = list of string }
+--   visible    room id -> true for rooms that count as shared rooms
+--              (every room, less split records when split-records = hide)
+--   contacts   name -> { field -> string }, from the contacts file
+--   recipients list of every name on any visible room's list, sorted
+--   slash_mode "" when no room name holds "/", else the value of
+--              people.slash-in-link-name
+function M.read_snapshot(home)
+    local snapshot = {
+        modes = {
+            collision     = read_choice(home, "people.link-collision"),
+            own_devices   = read_choice(home, "people.own-devices"),
+            split_records = read_choice(home, "people.split-records"),
+        },
+        room_ids = rooms.list_rooms(home),
+        rooms    = {},
+        visible  = {},
+        contacts = rooms.read_contacts(home),
+    }
+    local seen = {}
+    snapshot.recipients = {}
+    for _, id in ipairs(snapshot.room_ids) do
+        local room = rooms.read_room(home, id)
+        snapshot.rooms[id] = room
+        local is_record = file_exists(rooms.room_dir(home, id) .. "/split")
+        -- a split record under "hide" is not a room you share any more;
+        -- otherwise every room counts
+        snapshot.visible[id] = not (is_record and snapshot.modes.split_records == "hide")
+        for _, name in ipairs(room.recipients) do
+            local fields = snapshot.contacts[name]
+            -- a recipient who is not a contact: the list is wrong (103 only
+            -- ever adds contacts), so stop rather than guess
+            if fields == nil then
+                error("people-links: " .. name .. " is on the list of room " .. id
+                      .. " but is not a contact")
+            end
+            -- an own device on a list: also wrong (103 refuses it)
+            if is_own_device(fields) then
+                error("people-links: own device " .. name .. " is on the list of room " .. id)
+            end
+            -- first time this name is seen on a shown room: remember it
+            if snapshot.visible[id] and not seen[name] then
+                seen[name] = true
+                snapshot.recipients[#snapshot.recipients + 1] = name
+            end
+        end
+    end
+    table.sort(snapshot.recipients)
+    check_unheld_parents(home, snapshot)
+    snapshot.slash_mode = slash_mode_for(home, snapshot)
+    return snapshot
+end
+-- }}}
+
+-- {{{ local function receives
+-- Whether this person is on the list of a room that counts as shared.
+-- A parent id that names no room here is a room nobody receives, so the
+-- child is a top.  That state is only reached under 101's
+-- rooms.unknown-parent = keep (checked in read_snapshot, which errors under
+-- refuse): a room that arrived under a parent you are not in yet.
+local function receives(snapshot, room_id, contact)
+    local room = snapshot.rooms[room_id]
+    -- no such room here, or a hidden record: nobody receives it
+    if room == nil or not snapshot.visible[room_id] then
+        return false
+    end
+    return list_contains(room.recipients, contact)
+end
+-- }}}
+
+-- {{{ local function shown
+-- For own devices under all-tops: a room counts when it exists and is not
+-- a hidden record.
+local function shown(snapshot, room_id)
+    return snapshot.rooms[room_id] ~= nil and snapshot.visible[room_id]
+end
+-- }}}
+
+-- {{{ local function tops_for_recipient
+-- The highest room of each tree the person is in: a room they receive whose
+-- parent they do not.  This is the same answer as walking up 102's
+-- ancestors from each received room and stopping at the last one they
+-- receive, but needs only one step up, so it cannot loop even if a parent
+-- chain were ever made circular.
+local function tops_for_recipient(snapshot, contact)
+    local tops = {}
+    for _, id in ipairs(snapshot.room_ids) do
+        local parent = snapshot.rooms[id].parent_id
+        -- received, and either no parent or a parent they do not receive
+        if receives(snapshot, id, contact)
+           and (parent == "" or not receives(snapshot, parent, contact)) then
+            tops[#tops + 1] = id
+        end
+    end
+    return tops
+end
+-- }}}
+
+-- {{{ local function tops_for_own_device
+-- Your own devices see every room, so under all-tops their folder holds the
+-- top of every tree you have.
+local function tops_for_own_device(snapshot)
+    local tops = {}
+    for _, id in ipairs(snapshot.room_ids) do
+        local parent = snapshot.rooms[id].parent_id
+        -- shown, and either no parent or a parent that is not shown
+        if shown(snapshot, id) and (parent == "" or not shown(snapshot, parent)) then
+            tops[#tops + 1] = id
+        end
+    end
+    return tops
+end
+-- }}}
+
+-- {{{ local function no_tops
+-- people.own-devices = none: your own devices get no folder.
+local function no_tops(snapshot)
+    return {}
+end
+-- }}}
+
+-- what an own device's folder holds, by people.own-devices
+local own_device_tops = {
+    ["none"]     = no_tops,
+    ["all-tops"] = tops_for_own_device,
+}
+
+-- {{{ local function tops_in_snapshot
+local function tops_in_snapshot(snapshot, contact)
+    local fields = snapshot.contacts[contact]
+    -- one of your own devices: the own-devices choice decides
+    if fields ~= nil and is_own_device(fields) then
+        return own_device_tops[snapshot.modes.own_devices](snapshot)
+    end
+    -- anyone else (a contact, or a leftover folder name that is no longer a
+    -- contact and so is on no list): their received tops
+    return tops_for_recipient(snapshot, contact)
+end
+-- }}}
+
+-- {{{ function M.top_rooms_for
+-- home: { dir = string }; contact: string.
+-- Gives the sorted list of room ids that are the tops of the trees this
+-- contact is in, as you see them.
+function M.top_rooms_for(home, contact)
+    return tops_in_snapshot(M.read_snapshot(home), contact)
+end
+-- }}}
+
+-- How a "/" in a room name is shown in its link name
+-- (people.slash-in-link-name), when 101 allows such names:
+--   percent         home%2Fritz — plain ASCII, obviously an escape
+--   division-slash  home∕ritz (U+2215) — reads like the real name in ls,
+--                   but looks identical to a path to a human eye
+-- "" (no name has a slash) leaves names alone.  A rewritten name can clash
+-- with a real one (a room really called home%2Fritz); 063's collision modes
+-- then separate them like any other clash.
+local slash_rewrites = {
+    [""]               = "/",
+    ["percent"]        = "%%2F",   -- "%%" is gsub's way of writing one %
+    ["division-slash"] = "\226\136\149",
+}
+
+-- {{{ local function link_name_for
+local function link_name_for(snapshot, name)
+    local replacement = slash_rewrites[snapshot.slash_mode]
+    return (name:gsub("/", replacement))
+end
+-- }}}
+
+-- {{{ local function planned_in_snapshot
+local function planned_in_snapshot(snapshot, contact)
+    local named = {}
+    for _, id in ipairs(tops_in_snapshot(snapshot, contact)) do
+        named[#named + 1] = { room_id = id, name = link_name_for(snapshot, snapshot.rooms[id].name) }
+    end
+    local links = link_names.plan(named, snapshot.modes.collision)
+    for _, link in ipairs(links) do
+        local depth = (link.folder == "") and 1 or 2
+        link.target = TARGET_PREFIX[depth] .. link.room_id
+    end
+    return links
+end
+-- }}}
+
+-- {{{ function M.planned_links
+-- The links this contact's folder should hold, without touching the disk:
+-- a list of { path = string (inside people/<contact>/), target = string,
+-- room_id = string, folder = "" or room id, name = string }, sorted by path.
+function M.planned_links(home, contact)
+    return planned_in_snapshot(M.read_snapshot(home), contact)
+end
+-- }}}
+
+-- {{{ local function is_our_target
+-- Whether a link target has the exact shape this module writes at a depth.
+local function is_our_target(target, depth)
+    local prefix = TARGET_PREFIX[depth]
+    -- wrong start: not ours
+    if target:sub(1, #prefix) ~= prefix then
+        return false
+    end
+    return target:sub(#prefix + 1):match("^" .. ROOM_ID_PATTERN .. "$") ~= nil
+end
+-- }}}
+
+-- {{{ local function sweep_link
+-- Looks at one entry that might be our link.  Keeps it if it is exactly a
+-- planned link; removes it if it is ours but no longer planned (or points
+-- elsewhere); leaves it if it is not ours.  Gives true when kept.
+local function sweep_link(path, relative, depth, wanted_by_path)
+    -- not a link at all: not ours
+    if not disk.is_link(path) then
+        return false
+    end
+    local target = disk.read_link(path)
+    -- a link of some other shape: not ours, leave it
+    if not is_our_target(target, depth) then
+        return false
+    end
+    local wanted = wanted_by_path[relative]
+    -- ours and still exactly right: keep
+    if wanted ~= nil and wanted.target == target then
+        return true
+    end
+    -- ours and stale (room gone, renamed, moved, mode changed): remove
+    disk.remove_link(path)
+    return false
+end
+-- }}}
+
+-- {{{ local function sweep_person
+-- Removes this module's stale links from one person's folder.  Gives the
+-- set of planned paths already present (relative path -> true).
+local function sweep_person(person_dir, wanted_by_path, wanted_folders)
+    local present = {}
+    for _, entry in ipairs(disk.list_dir(person_dir)) do
+        local path = person_dir .. "/" .. entry
+        local is_link = disk.is_link(path)
+        -- a link directly in the folder: depth 1
+        if is_link then
+            present[entry] = sweep_link(path, entry, 1, wanted_by_path) or nil
+        -- a room-id folder (id-folder mode's shape): look inside
+        elseif entry:match("^" .. ROOM_ID_PATTERN .. "$") and disk.is_dir(path) then
+            for _, inner in ipairs(disk.list_dir(path)) do
+                local relative = entry .. "/" .. inner
+                present[relative] = sweep_link(path .. "/" .. inner, relative, 2, wanted_by_path) or nil
+            end
+            -- no longer a wanted folder: remove it if our sweep emptied it
+            if not wanted_folders[entry] then
+                disk.remove_dir_if_empty(path)
+            end
+        end
+        -- anything else is not ours: left untouched
+    end
+    return present
+end
+-- }}}
+
+-- {{{ local function rebuild_in_snapshot
+local function rebuild_in_snapshot(home, snapshot, contact)
+    check_folder_name(contact)
+    local people_dir = home.dir .. "/people"
+    local person_dir = people_dir .. "/" .. contact
+    local links = planned_in_snapshot(snapshot, contact)
+    local wanted_by_path, wanted_folders = {}, {}
+    for _, link in ipairs(links) do
+        wanted_by_path[link.path] = link
+        -- a link inside a room-id folder: that folder is wanted
+        if link.folder ~= "" then
+            wanted_folders[link.folder] = true
+        end
+    end
+
+    -- people/ as a link would make every relative target point somewhere
+    -- else; the layout says it is a real folder
+    if disk.is_link(people_dir) then
+        error("people-links: " .. people_dir .. " is a link; it must be a folder in rao-home")
+    end
+    disk.make_dir(people_dir)
+
+    local present = {}
+    local person_is_link = disk.is_link(person_dir)
+    -- a real folder: sweep our stale links out of it
+    if disk.is_dir(person_dir) and not person_is_link then
+        present = sweep_person(person_dir, wanted_by_path, wanted_folders)
+    -- something that is not a folder where the folder goes, and links are
+    -- needed: stop instead of replacing it
+    elseif disk.exists(person_dir) and #links > 0 then
+        error("people-links: " .. person_dir .. " is in the way (not a folder)")
+    end
+
+    -- nothing shared: remove the folder if our sweep left it empty
+    if #links == 0 then
+        -- a real folder: tidy it; anything else (absent, or someone's file):
+        -- leave it be
+        if disk.is_dir(person_dir) and not person_is_link then
+            disk.remove_dir_if_empty(person_dir)
+        end
+        return
+    end
+
+    disk.make_dir(person_dir)
+    for _, link in ipairs(links) do
+        -- not already there: make it
+        if not present[link.path] then
+            -- id-folder mode: the room-id folder first
+            if link.folder ~= "" then
+                disk.make_dir(person_dir .. "/" .. link.folder)
+            end
+            local path = person_dir .. "/" .. link.path
+            -- something that is not our link sits where the link goes
+            if disk.exists(path) then
+                error("people-links: " .. path .. " is in the way; it is not a link this module made")
+            end
+            disk.make_link(link.target, path)
+        end
+    end
+end
+-- }}}
+
+-- {{{ function M.rebuild_person
+-- Makes people/<contact>/ hold exactly the planned links (removing stale
+-- ones of ours, keeping anything not ours).
+function M.rebuild_person(home, contact)
+    rebuild_in_snapshot(home, M.read_snapshot(home), contact)
+end
+-- }}}
+
+-- {{{ local function folders_already_there
+-- The names of the real folders already in people/ (so a person who is on
+-- no list any more still gets their old links swept).
+local function folders_already_there(people_dir)
+    local names = {}
+    -- no people/ yet (first run, or deleted): nothing to sweep
+    if not disk.is_dir(people_dir) then
+        return names
+    end
+    for _, entry in ipairs(disk.list_dir(people_dir)) do
+        local path = people_dir .. "/" .. entry
+        -- a real folder: a person's (or someone's own folder, swept safely);
+        -- files and links at this level are not ours and are skipped
+        if disk.is_dir(path) and not disk.is_link(path) then
+            names[#names + 1] = entry
+        end
+    end
+    return names
+end
+-- }}}
+
+-- {{{ local function add_once
+-- Adds a name to a list the first time it is seen.
+local function add_once(list, seen, name)
+    -- first sighting: add; seen before: nothing
+    if not seen[name] then
+        seen[name] = true
+        list[#list + 1] = name
+    end
+end
+-- }}}
+
+-- {{{ function M.rebuild_all
+-- Rebuilds every person's folder: everyone on any list, every own device
+-- under all-tops, and every folder already in people/.
+function M.rebuild_all(home)
+    local snapshot = M.read_snapshot(home)
+    local everyone, seen = {}, {}
+    for _, name in ipairs(snapshot.recipients) do
+        add_once(everyone, seen, name)
+    end
+    for name, fields in pairs(snapshot.contacts) do
+        -- own devices get a folder only under all-tops
+        if is_own_device(fields) and snapshot.modes.own_devices == "all-tops" then
+            add_once(everyone, seen, name)
+        end
+    end
+    for _, name in ipairs(folders_already_there(home.dir .. "/people")) do
+        add_once(everyone, seen, name)
+    end
+    table.sort(everyone)
+    for _, name in ipairs(everyone) do
+        rebuild_in_snapshot(home, snapshot, name)
+    end
+end
+-- }}}
+
+-- {{{ local function changes_no_links
+-- A bell ring that cannot change anyone's links (a message was filed).
+local function changes_no_links(home)
+end
+-- }}}
+
+-- What each ring of the bell means for people/.  Anything that can change a
+-- name, a parent, a list, whether a room exists, or whether it is a split
+-- record (which people.split-records = hide leaves out) can change who has which
+-- tops, and a parent change can move tops for everyone below it, so the
+-- whole of people/ is rebuilt.  A new message changes none of that.
+local on_bell = {
+    ["created"]      = M.rebuild_all,
+    ["name"]         = M.rebuild_all,
+    ["parent"]       = M.rebuild_all,
+    ["recipients"]   = M.rebuild_all,
+    ["removed-room"] = M.rebuild_all,
+    ["split"]        = M.rebuild_all,   -- a room just became a split record
+    ["log"]          = changes_no_links,
+}
+
+-- {{{ local function hear_bell
+local function hear_bell(home, room_id, what)
+    local action = on_bell[what]
+    -- a kind of change the contract does not list: stop, the contract moved
+    if action == nil then
+        error("people-links: unknown change " .. tostring(what) .. " on room " .. tostring(room_id))
+    end
+    action(home)
+end
+-- }}}
+
+rooms.on_change(hear_bell)
+
+return M

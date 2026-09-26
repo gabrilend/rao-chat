@@ -1,0 +1,113 @@
+-- 046-test-add-remove.lua — tests for adding and removing recipients.
+--
+-- Checks the rules a person meets when editing who hears them in a room:
+-- only contacts can be added, never your own devices, never twice; only
+-- people on the list can be removed, and never the last one.  Also checks
+-- that each change rings the change bell and that the two config readers
+-- refuse to guess when the setting is missing.
+
+-- {{{ local function run
+local function run(h)
+    local r = h.recipients
+    local config = {
+        ["recipients.split-shape"] = "fork",
+        ["recipients.arrival-list"] = "adder-only",
+        ["recipients.split-parent"] = "keep",
+        ["recipients.split-alone"] = "record-only",
+    }
+
+    -- {{{ local function fresh
+    local function fresh()
+        local home = h.new_home("addrm", { "ana", "bo", "cy" }, { "myphone" }, config)
+        local id = h.rooms.create_room(home, { name = "kitchen", parent_id = "", recipients = { "ana" } })
+        return home, id
+    end
+    -- }}}
+
+    h.check("add: a contact joins the list", function()
+        local home, id = fresh()
+        r.add(home, id, "bo")
+        h.same_set(h.rooms.read_room(home, id).recipients, { "ana", "bo" })
+    end)
+
+    h.check("add: a stranger is refused", function()
+        local home, id = fresh()
+        h.expect_error("is not a contact", function() r.add(home, id, "zed") end)
+    end)
+
+    h.check("add: your own device is refused", function()
+        local home, id = fresh()
+        h.expect_error("own devices", function() r.add(home, id, "myphone") end)
+    end)
+
+    h.check("add: adding twice is refused", function()
+        local home, id = fresh()
+        h.expect_error("already a recipient", function() r.add(home, id, "ana") end)
+    end)
+
+    h.check("add: a room that does not exist is refused", function()
+        local home = fresh()
+        h.expect_error("no room", function() r.add(home, h.rooms.new_room_id(), "bo") end)
+    end)
+
+    h.check("add: rings the bell with recipients", function()
+        local home, id = fresh()
+        local heard = {}
+        h.rooms.on_change(function(_, room_id, what)
+            -- only this room's rings are of interest to this test
+            if room_id == id then heard[#heard + 1] = what end
+        end)
+        r.add(home, id, "cy")
+        h.equal(heard[#heard], "recipients", "last bell")
+    end)
+
+    h.check("remove: a recipient leaves the list", function()
+        local home, id = fresh()
+        r.add(home, id, "bo")
+        r.remove(home, id, "ana")
+        h.same_set(h.rooms.read_room(home, id).recipients, { "bo" })
+    end)
+
+    h.check("remove: someone not on the list is refused", function()
+        local home, id = fresh()
+        h.expect_error("is not a recipient", function() r.remove(home, id, "bo") end)
+    end)
+
+    h.check("remove: the last recipient is refused (room of two floor)", function()
+        local home, id = fresh()
+        h.expect_error("the last recipient", function() r.remove(home, id, "ana") end)
+        h.same_set(h.rooms.read_room(home, id).recipients, { "ana" }, "list untouched")
+    end)
+
+    h.check("remove then add again: allowed, list back", function()
+        local home, id = fresh()
+        r.add(home, id, "bo")
+        r.remove(home, id, "bo")
+        r.add(home, id, "bo")
+        h.same_set(h.rooms.read_room(home, id).recipients, { "ana", "bo" })
+    end)
+
+    h.check("no upper limit: fifty contacts all added", function()
+        local names = {}
+        for i = 1, 50 do names[i] = "p" .. i end
+        local home = h.new_home("many", names, {}, config)
+        local id = h.rooms.create_room(home, { name = "big", parent_id = "", recipients = { "p1" } })
+        for i = 2, 50 do r.add(home, id, "p" .. i) end
+        h.equal(#h.rooms.read_room(home, id).recipients, 50, "list size")
+    end)
+
+    h.check("config readers give the configured variant", function()
+        local home = fresh()
+        h.equal(r.configured_split_shape(home), "fork")
+        h.equal(r.configured_arrival_list(home), "adder-only")
+    end)
+
+    h.check("config readers refuse when the key is absent", function()
+        local home = h.new_home("noconfig", { "ana" }, {}, {})
+        h.expect_error("recipients.split-shape", function() r.configured_split_shape(home) end)
+        h.expect_error("recipients.arrival-list", function() r.configured_arrival_list(home) end)
+    end)
+end
+-- }}}
+
+return run

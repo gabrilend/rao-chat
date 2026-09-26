@@ -1,0 +1,11 @@
+# 099-options.lua — message-log's undecided choices
+
+Returns a list of choice tables in the contract's shape (`id`, `question`,
+`waits_on`, `detail`, `config_key`, `variants` = list of `{name, summary,
+built_in, tests, findings}`, `leaning`).  Read by `scripts/tally-options`
+(issue 106).  Plain data.
+
+Choices: `log-record-shape` (log.record-shape), `log-shape-mixing`
+(log.shape-mixing), `log-duplicate-check` (log.duplicate-check, waits on
+state), `log-edits` (log.edits), `log-pictures` (open question 9, not
+switchable).  Figures come from `tests/095-measure.lua`.

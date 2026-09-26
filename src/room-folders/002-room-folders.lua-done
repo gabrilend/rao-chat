@@ -1,0 +1,519 @@
+-- 002-room-folders.lua — the home folder, its settings, and its rooms.
+--
+-- A rao-chat home server keeps everything in one folder, rao-home:
+--
+--     rao-home/
+--       config        settings, "key = value" (rmail's format)
+--       contacts      the address book, "name.field = value" (rmail's)
+--       rooms/<room id>/name        your name for the room, one line
+--       rooms/<room id>/parent      the parent room's id, or empty
+--       rooms/<room id>/recipients  who your messages go to, one per line
+--       rooms/<room id>/log         messages; made empty here, kept by message-log
+--       people/                     links, kept by the people-links module
+--
+-- Rooms nest like folders, but the folder a room lives in is NOT its
+-- name and NOT inside its parent's folder: every room sits side by side
+-- under rooms/, filed by a long random id, and each one records its own
+-- parent in a small file.  That is because names belong to the reader
+-- (two rooms may both be "programming") and ids are what travel between
+-- servers.  The tree is a set of arrows pointing upward, one per room.
+--
+-- This file is the front door the other modules use.  Every change it
+-- makes to a room is written whole-or-not-at-all (see 003-disk) and then
+-- announced on the change bell (005-change-bell), so the modules that
+-- keep summaries of rooms can bring them up to date.
+--
+-- Usage:
+--   dofile(DIR .. "/src/room-folders/001-load-path.lua")(DIR)
+--   local rooms = require("002-room-folders")
+--   local home  = rooms.open_home("/path/to/rao-home")
+
+local disk    = require("003-disk")
+local formats = require("004-rmail-formats")
+local bell    = require("005-change-bell")
+
+-- File headers written into a brand-new home, so a person opening the
+-- file in an editor knows what it is.  Both are comments in their format.
+local NEW_CONFIG_TEXT =
+    "# rao-chat settings: one 'key = value' per line (rmail's config format).\n" ..
+    "# A setting a module asks for and does not find here is an error, never\n" ..
+    "# a quiet default; the error names the key to add.\n"
+local NEW_CONTACTS_TEXT =
+    "// rao-chat contacts: 'name.field = value' lines (rmail's contacts format).\n" ..
+    "// An rmail contacts file can be copied here unchanged.\n"
+
+-- {{{ local function check_home
+-- Every function taking a home checks it first: a wrong argument order
+-- (id where home belongs) would otherwise surface as a baffling path.
+local function check_home(home)
+    if type(home) ~= "table" or type(home.dir) ~= "string" then
+        error("expected a home {dir = string} as first argument, got " .. type(home), 3)
+    end
+end
+-- }}}
+
+-- {{{ local function is_room_id
+-- A room id is exactly 32 lower-case hexadecimal characters (16 random
+-- bytes).  Upper-case is refused so one room never has two spellings.
+local function is_room_id(value)
+    return type(value) == "string" and #value == 32 and value:match("^[0-9a-f]+$") ~= nil
+end
+-- }}}
+
+-- {{{ local function check_room_id
+local function check_room_id(value)
+    -- not an id: say what was given, so a name passed as an id is obvious.
+    if not is_room_id(value) then
+        error("not a room id (32 lower-case hex characters): " .. tostring(value), 3)
+    end
+end
+-- }}}
+
+-- {{{ local function open_home
+-- Makes whatever is missing of the layout and returns the home value.
+-- The folder above rao-home must already exist: a typo in a path should
+-- not quietly grow a new tree of folders somewhere unexpected.
+local function open_home(dir)
+    -- a relative path would mean different homes from different working
+    -- folders; only absolute paths name one place.
+    if type(dir) ~= "string" or dir:sub(1, 1) ~= "/" then
+        error("open_home needs an absolute path, got " .. tostring(dir), 2)
+    end
+    dir = dir:gsub("/+$", "")
+    local parent = dir:match("^(.*)/[^/]+$")
+    -- parent "" means the home is directly under "/", which exists.
+    if parent ~= "" and not disk.is_dir(parent) then
+        error("open_home: the folder above the home does not exist: " .. parent, 2)
+    end
+    -- absent: make it.  A plain file with that name: refuse.
+    if not disk.is_dir(dir) then
+        if disk.is_file(dir) then
+            error("open_home: " .. dir .. " is a file, not a folder", 2)
+        end
+        disk.make_dir(dir)
+    end
+    -- each file and folder of the layout: made if missing, left alone if
+    -- present (opening a home twice changes nothing).
+    if not disk.is_file(dir .. "/config") then
+        disk.write_atomic(dir .. "/config", NEW_CONFIG_TEXT)
+    end
+    if not disk.is_file(dir .. "/contacts") then
+        disk.write_atomic(dir .. "/contacts", NEW_CONTACTS_TEXT)
+    end
+    for _, folder in ipairs({ "rooms", "people" }) do
+        if not disk.is_dir(dir .. "/" .. folder) then
+            disk.make_dir(dir .. "/" .. folder)
+        end
+    end
+    return { dir = dir }
+end
+-- }}}
+
+-- {{{ local function read_config
+local function read_config(home)
+    check_home(home)
+    local path = home.dir .. "/config"
+    return formats.parse_config(disk.read_all(path), path)
+end
+-- }}}
+
+-- {{{ local function set_config
+local function set_config(home, key, value)
+    check_home(home)
+    local path = home.dir .. "/config"
+    local text = disk.read_all(path)
+    -- parse first: refuse to edit a file that is already broken, so the
+    -- error points at the original damage rather than at this write.
+    formats.parse_config(text, path)
+    disk.write_atomic(path, formats.config_with(text, key, value))
+end
+-- }}}
+
+-- {{{ local function config_value
+-- The strict lookup: every undecided choice is read through this, so an
+-- unset choice stops the program with the line to add, rather than
+-- picking a variant nobody chose.
+local function config_value(home, key)
+    check_home(home)
+    local value = read_config(home)[key]
+    -- absent: name the key and the file, and show the fix.
+    if value == nil then
+        error("config key '" .. key .. "' is not set in " .. home.dir ..
+              "/config (add a line: " .. key .. " = <value>)", 2)
+    end
+    return value
+end
+-- }}}
+
+-- {{{ local function read_contacts
+local function read_contacts(home)
+    check_home(home)
+    local path = home.dir .. "/contacts"
+    return formats.parse_contacts(disk.read_all(path), path)
+end
+-- }}}
+
+-- {{{ local function new_room_id
+-- 16 bytes from the kernel's random source, written as 32 hex characters.
+-- 128 random bits: two servers making rooms independently will not pick
+-- the same id in the lifetime of the universe.
+local function new_room_id()
+    local source, problem = io.open("/dev/urandom", "rb")
+    -- no random source: refuse rather than make a guessable id.
+    if not source then
+        error("cannot open /dev/urandom: " .. tostring(problem), 2)
+    end
+    local bytes = source:read(16)
+    source:close()
+    return (bytes:gsub(".", function(c) return string.format("%02x", c:byte()) end))
+end
+-- }}}
+
+-- {{{ local function room_dir
+local function room_dir(home, id)
+    check_home(home)
+    check_room_id(id)
+    return home.dir .. "/rooms/" .. id
+end
+-- }}}
+
+-- {{{ local function log_path
+-- Where the message log lives; the log itself is message-log's business.
+local function log_path(home, id)
+    return room_dir(home, id) .. "/log"
+end
+-- }}}
+
+-- {{{ local function room_exists
+local function room_exists(home, id)
+    return disk.is_dir(room_dir(home, id))
+end
+-- }}}
+
+-- {{{ local function check_name
+-- A room name is one non-empty line.  Whether it may hold "/" is an
+-- undecided choice (019-options "room-name-slash"): path_of_names joins
+-- names with "/", and people/ links are named after rooms, so a "/" in a
+-- name is ambiguous in one and impossible in the other.  The config is
+-- only consulted when a name actually holds a "/".
+local SLASH_IN_NAME = {
+    ["refuse"] = function(name)
+        error("room name may not contain '/' (rooms.slash-in-name = refuse): " .. name, 4)
+    end,
+    ["allow"] = function(name)
+        -- accepted as written; readers of path_of_names must cope.
+    end,
+}
+local function check_name(home, name)
+    if type(name) ~= "string" or name == "" then
+        error("room name must be a non-empty string, got " .. tostring(name), 3)
+    end
+    -- a newline would make the one-line name file two lines.
+    if name:find("[\r\n]") then
+        error("room name must be one line: " .. name, 3)
+    end
+    -- "/" present: the owner's choice decides; absent: nothing to decide.
+    if name:find("/", 1, true) then
+        local mode = config_value(home, "rooms.slash-in-name")
+        local handler = SLASH_IN_NAME[mode]
+        if handler == nil then
+            error("rooms.slash-in-name must be refuse or allow, got " .. mode, 3)
+        end
+        handler(name)
+    end
+end
+-- }}}
+
+-- {{{ local function check_recipients
+-- A recipient list is a list of contact names in rmail's name shape.
+-- Names are NOT checked against the contacts file: rooms made on arrival
+-- and tests name people before they are contacts, and whether a message
+-- can reach a name is a delivery question (phase 2).  "me" is refused:
+-- it is the word the message log uses for yourself.
+local function check_recipients(list)
+    if type(list) ~= "table" then
+        error("recipients must be a list of contact names, got " .. type(list), 3)
+    end
+    local seen = {}
+    for index, name in ipairs(list) do
+        -- not a contact-name word: could not be written one-per-line safely.
+        if type(name) ~= "string" or not name:match(formats.CONTACT_NAME_PATTERN) then
+            error("recipient " .. index .. " is not a contact name (letters, digits, _ -): " .. tostring(name), 3)
+        end
+        if name == "me" then
+            error("recipient 'me' is refused: 'me' means yourself in the message log", 3)
+        end
+        -- listed twice: the list is a set; a double would send twice.
+        if seen[name] then
+            error("recipient listed twice: " .. name, 3)
+        end
+        seen[name] = true
+    end
+    -- holes in the list (list[3] set, list[2] nil) would be skipped by
+    -- ipairs above and lost; count every key to be sure there are none.
+    local keys = 0
+    for _ in pairs(list) do keys = keys + 1 end
+    if keys ~= #list then
+        error("recipients must be a plain list with no gaps or named keys", 3)
+    end
+end
+-- }}}
+
+-- {{{ local function read_parent_file
+-- Reads only the parent file of a room: "" or one id and a newline.
+local function read_parent_file(home, id)
+    local text = disk.read_all(room_dir(home, id) .. "/parent")
+    -- empty: a top room.  "<id>\n": that id.  Anything else: damaged.
+    if text == "" then
+        return ""
+    end
+    local parent_id = text:match("^(%x+)\n$")
+    if not is_room_id(parent_id) then
+        error("damaged parent file in room " .. id .. ": " .. string.format("%q", text), 3)
+    end
+    return parent_id
+end
+-- }}}
+
+-- {{{ local function check_parent
+-- A parent is "" (a top room) or a room id.  A room may not be its own
+-- parent or sit below itself; the walk upward stops at a top room or at a
+-- parent this home does not have.  A parent id not held here is the
+-- undecided choice "room-unknown-parent" (019-options): a room that
+-- arrived from someone else can name a parent you are not in yet.
+local UNKNOWN_PARENT = {
+    ["refuse"] = function(parent_id)
+        error("parent room " .. parent_id .. " does not exist here (rooms.unknown-parent = refuse)", 4)
+    end,
+    ["keep"] = function(parent_id)
+        -- kept as written: the room reads as a top room until the parent
+        -- arrives, and then the tree joins up by itself.
+    end,
+}
+local function check_parent(home, id, parent_id)
+    if type(parent_id) ~= "string" then
+        error("parent_id must be a string (\"\" for a top room), got " .. type(parent_id), 3)
+    end
+    -- "": a top room, nothing more to check.
+    if parent_id == "" then
+        return
+    end
+    check_room_id(parent_id)
+    if parent_id == id then
+        error("a room cannot be its own parent: " .. id, 3)
+    end
+    -- parent not held here: the owner's choice decides.
+    if not room_exists(home, parent_id) then
+        local mode = config_value(home, "rooms.unknown-parent")
+        local handler = UNKNOWN_PARENT[mode]
+        if handler == nil then
+            error("rooms.unknown-parent must be refuse or keep, got " .. mode, 3)
+        end
+        handler(parent_id)
+        return
+    end
+    -- walk upward from the new parent; meeting this room means the move
+    -- would make a loop.  The comparison comes before the existence
+    -- check: under rooms.unknown-parent = keep, a room already here can
+    -- name as its parent the very room now arriving, and that loop must
+    -- be caught although the arriving room has no folder yet.
+    -- "seen" guards against a loop already on disk.
+    local seen = {}
+    local cursor = parent_id
+    while cursor ~= "" do
+        if cursor == id then
+            error("room " .. id .. " cannot be placed inside itself (via " .. parent_id .. ")", 3)
+        end
+        -- a parent id with no folder here: the top of what this home
+        -- knows; nothing above it to walk.
+        if not room_exists(home, cursor) then
+            break
+        end
+        if seen[cursor] then
+            error("the rooms above " .. parent_id .. " already form a loop at " .. cursor, 3)
+        end
+        seen[cursor] = true
+        cursor = read_parent_file(home, cursor)
+    end
+end
+-- }}}
+
+-- {{{ local function recipients_text
+-- One name per line, each ending in a newline; an empty list is an empty
+-- file.  `cat recipients` then shows exactly who hears you.
+local function recipients_text(list)
+    -- empty: an empty file, not a lone newline (which would read as one
+    -- blank name).
+    if #list == 0 then
+        return ""
+    end
+    return table.concat(list, "\n") .. "\n"
+end
+-- }}}
+
+-- {{{ local function parent_text
+local function parent_text(parent_id)
+    -- "": a top room is an empty parent file.  Otherwise the id + newline.
+    if parent_id == "" then
+        return ""
+    end
+    return parent_id .. "\n"
+end
+-- }}}
+
+-- {{{ local function create_room
+-- spec = { name = string, parent_id = string ("" for a top room),
+--          recipients = list of string, room_id = string or nil }
+-- room_id is given when the room already has an id elsewhere (it arrived
+-- from another server, or a split keeps one); otherwise a new one is made.
+-- The room is built in a hidden folder "rooms/.new-<id>" and renamed into
+-- place, so the room appears with all four files (name, parent,
+-- recipients, and an empty log) or not at all.
+-- Rings "created" once (not "name", "parent", "recipients" as well).
+local function create_room(home, spec)
+    check_home(home)
+    if type(spec) ~= "table" then
+        error("create_room needs a spec table, got " .. type(spec), 2)
+    end
+    local id = spec.room_id
+    -- no id given: make one.  Given: it must be well formed and unused.
+    if id == nil then
+        id = new_room_id()
+    else
+        check_room_id(id)
+    end
+    if room_exists(home, id) then
+        error("room " .. id .. " already exists", 2)
+    end
+    check_name(home, spec.name)
+    check_parent(home, id, spec.parent_id)
+    check_recipients(spec.recipients)
+
+    local final = room_dir(home, id)
+    local building = home.dir .. "/rooms/.new-" .. id
+    disk.make_dir(building)
+    disk.write_atomic(building .. "/name", spec.name .. "\n")
+    disk.write_atomic(building .. "/parent", parent_text(spec.parent_id))
+    disk.write_atomic(building .. "/recipients", recipients_text(spec.recipients))
+    -- The log starts empty and is message-log's from here on; it is made
+    -- here so no room is ever seen without one (message-log treats a
+    -- missing log as damage, not as "no messages yet").
+    disk.write_atomic(building .. "/log", "")
+    disk.rename(building, final)
+    bell.notify(home, id, "created")
+    return id
+end
+-- }}}
+
+-- {{{ local function read_room
+-- Returns { id, name, parent_id, recipients = list }.  Reads the three
+-- files fresh each time; nothing is cached, so another program editing a
+-- room by hand is seen at once.
+local function read_room(home, id)
+    local dir = room_dir(home, id)
+    -- absent: callers ask for rooms they believe exist.
+    if not disk.is_dir(dir) then
+        error("no such room: " .. id, 2)
+    end
+    local name_text = disk.read_all(dir .. "/name")
+    local name = name_text:match("^([^\n]+)\n$")
+    -- not exactly one non-empty line: damaged or hand-edited wrongly.
+    if name == nil then
+        error("damaged name file in room " .. id .. ": " .. string.format("%q", name_text), 2)
+    end
+    local recipients = {}
+    for line in disk.read_all(dir .. "/recipients"):gmatch("([^\n]*)\n") do
+        recipients[#recipients + 1] = line
+    end
+    return {
+        id = id,
+        name = name,
+        parent_id = read_parent_file(home, id),
+        recipients = recipients,
+    }
+end
+-- }}}
+
+-- {{{ local function check_existing_room
+local function check_existing_room(home, id)
+    check_home(home)
+    check_room_id(id)
+    -- the room must be there to be changed.
+    if not room_exists(home, id) then
+        error("no such room: " .. id, 3)
+    end
+end
+-- }}}
+
+-- {{{ local function write_name
+local function write_name(home, id, name)
+    check_existing_room(home, id)
+    check_name(home, name)
+    disk.write_atomic(room_dir(home, id) .. "/name", name .. "\n")
+    bell.notify(home, id, "name")
+end
+-- }}}
+
+-- {{{ local function write_parent
+-- Rewrites where a room hangs in the tree.  The loop check lives here as
+-- well as in room-tree's move_room, because this is the last hand on the
+-- file: a loop on disk would send every upward walk round forever.
+local function write_parent(home, id, parent_id)
+    check_existing_room(home, id)
+    check_parent(home, id, parent_id)
+    disk.write_atomic(room_dir(home, id) .. "/parent", parent_text(parent_id))
+    bell.notify(home, id, "parent")
+end
+-- }}}
+
+-- {{{ local function write_recipients
+local function write_recipients(home, id, list)
+    check_existing_room(home, id)
+    check_recipients(list)
+    disk.write_atomic(room_dir(home, id) .. "/recipients", recipients_text(list))
+    bell.notify(home, id, "recipients")
+end
+-- }}}
+
+-- {{{ local function list_rooms
+-- Every room id in rooms/, sorted.  Hidden entries (".new-<id>" left by a
+-- crash mid-create) are skipped: they are not rooms yet.  Anything else
+-- that is not a room id is an error, so a stray file is noticed.
+local function list_rooms(home)
+    check_home(home)
+    local ids = {}
+    for _, entry in ipairs(disk.list_dir(home.dir .. "/rooms")) do
+        -- hidden: half-built, skip.  A room id: keep.  Other: refuse.
+        if entry:sub(1, 1) == "." then
+            -- skipped on purpose
+        elseif is_room_id(entry) then
+            ids[#ids + 1] = entry
+        else
+            error("unexpected entry in " .. home.dir .. "/rooms: " .. entry, 2)
+        end
+    end
+    return ids
+end
+-- }}}
+
+return {
+    open_home = open_home,
+    read_config = read_config,
+    set_config = set_config,
+    config_value = config_value,
+    read_contacts = read_contacts,
+    new_room_id = new_room_id,
+    is_room_id = is_room_id,
+    create_room = create_room,
+    read_room = read_room,
+    write_name = write_name,
+    write_parent = write_parent,
+    write_recipients = write_recipients,
+    list_rooms = list_rooms,
+    room_exists = room_exists,
+    room_dir = room_dir,
+    log_path = log_path,
+    on_change = bell.on_change,
+    notify = bell.notify,
+    listener_count = bell.listener_count,
+}

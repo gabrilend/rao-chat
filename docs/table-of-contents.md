@@ -9,10 +9,23 @@ and issue files do not; they have their own indexes.
   people who each run a home server), how rooms are kept on disk, how the
   Android app and web client reach their server, what it borrows from rmail
   and from double-diaper-dungeon's conversation pages, proposed phases, and
-  the open questions still to answer.
+  the open questions still to answer.  Sections 1–4 describe the adopted
+  model, where a room is a contact: a label of your own, a random
+  plain-text token its members share, and every member's address paired
+  with its own port; a direct message is a room with one other person;
+  child rooms only hold members of their parent; each person keeps their
+  own withheld and ignore lists.  Section 14 keeps the conversation about
+  the second model (a room is its name), including the threat model;
+  section 15 keeps the conversation that produced the adopted one.
+  Appendix A keeps the first model, which phase 1 was first built to;
+  Appendix B keeps the second.
 
 ## Documentation
 - docs/table-of-contents.md - this file.
+- docs/phase-1-module-contract.md - how phase 1's five room modules and its
+  demo plug together: where each lives, the functions each offers, the
+  change bell they listen on, the undecided choices each builds every
+  variant of, and the options tally that lists those choices for review.
 
 ## Phases
 Phases group related functionality, not calendar time. It is normal for the
@@ -21,11 +34,14 @@ last issue completed in a project to belong to phase 1.
 Proposed in notes/vision-planning.md (section 12); to be confirmed when the
 roadmap is written:
 
-1. Rooms on the home server - room folders, the tree, recipient lists, the
-   people/ links, the message log and ids.
-2. Server-to-server delivery - rmail's networking, sending at once,
-   acknowledgements, retries, duplicates ignored, late messages placed in
-   order.
+1. Rooms on the home server - room folders by local tag, each with a
+   contact-style entry (label, token, paired addresses, parent); group
+   rooms and direct messages alike; the tree of child rooms; withheld
+   lists; the ignore list; the people/ links; the message log and ids.
+2. Server-to-server delivery - sealing with the room's token, sending at
+   once with acknowledgement and retries, the failed-decryption log, the
+   call-back check, the hello (which is also joining), contact syncing,
+   leaving, and periodic cross-checking.
 3. Clients' connection - pairing, catching up, live pushing, several
    devices at once, the locked-screen check-in.
 4. The web client.

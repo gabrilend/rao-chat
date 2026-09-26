@@ -1,0 +1,12 @@
+# 005-change-bell.lua
+
+The bell other modules listen on to keep summaries of rooms up to date.
+One shared list of listeners per Lua program.  Re-exported by
+`002-room-folders`; other modules use it from there.
+
+| function / value | takes | gives | what it does |
+|---|---|---|---|
+| `on_change(listener)` | function(home, room_id: string, what: string) | nothing | Signs the listener up; errors if not a function. |
+| `notify(home, room_id, what)` | home `{dir=string}`, string, string | nothing | Calls every listener in sign-up order.  Errors on an unknown `what`, a bad home, or a non-string id.  A listener's error stops the ring and passes to the caller. |
+| `listener_count()` | — | integer | How many listeners are signed up. |
+| `KINDS_OF_CHANGE` | — | table what (string) → description (string) | The allowed kinds: `created`, `name`, `parent`, `recipients`, `log`, `removed-room`, `split`. |

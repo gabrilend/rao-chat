@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# 098-run-tests — runs every message-log test, first against the stand-in
+# room-folders module kept in tests/stand-in/, then against the real one
+# (issue 101) when it is present, and prints pass/fail counts.  Exits
+# non-zero if any test fails.  The 10,000-message measurement is not run
+# here (it takes about a minute); run tests/095-measure.lua for that.
+#
+# Usage: 098-run-tests [DIR]
+
+DIR="/home/ritz/programs/rao-chat"
+# Path: a DIR argument — use it.  None — the hard-coded project folder.
+if [ -n "$1" ]; then
+    DIR="$1"
+fi
+
+TESTS_DIR="${DIR}/src/message-log/tests"
+mkdir -p "${DIR}/tmp/shared-memory/message-log"
+
+NEIGHBOURS="stand-in"
+# Path: the real room-folders module exists — test against it too.
+# Absent — the stand-in only, and say so.
+if [ -f "${DIR}/src/room-folders/002-room-folders.lua" ]; then
+    NEIGHBOURS="stand-in real"
+else
+    echo "note: src/room-folders/002-room-folders.lua is not there; stand-in only"
+fi
+
+FAILED_FILES=0
+for neighbour in ${NEIGHBOURS}; do
+    for test_file in 091-test-codecs.lua 092-test-log.lua 093-test-edits.lua 094-test-mixing-and-memory.lua; do
+        luajit "${TESTS_DIR}/${test_file}" "${DIR}" "${neighbour}"
+        status=$?
+        # Path: non-zero — a failure (or a crash) in that file; count it.
+        if [ ${status} -ne 0 ]; then
+            echo "  ${test_file} [${neighbour}] exited ${status}"
+            FAILED_FILES=$((FAILED_FILES + 1))
+        fi
+    done
+done
+
+# Path: every file passed — say so, exit 0.  Else — exit 1.
+if [ ${FAILED_FILES} -eq 0 ]; then
+    echo "message-log: all test files passed (${NEIGHBOURS})"
+    exit 0
+fi
+echo "message-log: ${FAILED_FILES} test file(s) failed"
+exit 1

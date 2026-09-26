@@ -1,0 +1,81 @@
+-- 034-test-reader-forest.lua — tests the reader's side on its own: turning
+-- a list of received rooms into the trees a person sees, and drawing them.
+--
+-- Hands the forest-maker lists written out by hand (no home folder is
+-- needed; the reader's side never sees the sender's disk) and checks how
+-- rooms join, which stand alone, which are marked as having an unseen room
+-- above, the order they come out in, and that broken lists (a room twice,
+-- rooms naming each other in a ring, a missing field) are reported.
+--
+-- Run: luajit 034-test-reader-forest.lua [DIR] stand-in|real
+
+local DIR = "/home/ritz/programs/rao-chat"
+-- a project folder given first: use it; otherwise the one above
+if arg[1] and arg[1] ~= "" then
+    DIR = arg[1]
+end
+
+local t = dofile(DIR .. "/src/room-tree/tests/031-test-support.lua")
+local rooms, tree, text = t.setup(DIR, arg[2])
+
+-- {{{ local function id
+-- Readable fake room ids: id("a") is 32 characters of "a".
+local function id(letter)
+    return string.rep(letter, 32)
+end
+-- }}}
+
+-- {{{ local function room
+local function room(letter, name, parent_letter)
+    local parent = ""
+    -- a parent letter given: that room's id; none: no parent said
+    if parent_letter then
+        parent = id(parent_letter)
+    end
+    return { room_id = id(letter), name = name, disclosed_parent_id = parent }
+end
+-- }}}
+
+t.equal(#tree.visible_forest({}), 0, "nothing received, no trees")
+
+-- a chain, given bottom first: order of the list must not matter
+local forest = tree.visible_forest({ room("c", "programming", "b"), room("b", "ritz", "a"), room("a", "home") })
+t.equal(#forest, 1, "a full chain is one tree")
+t.same_list(tree.forest_paths(forest), { "home", "home/ritz", "home/ritz/programming" }, "chain paths")
+t.equal(text.text(forest), "home\n└── ritz\n    └── programming\n", "chain drawn")
+
+-- a gap: parent said but not received
+forest = tree.visible_forest({ room("a", "home"), room("c", "programming", "b") })
+t.equal(#forest, 2, "a gap makes two trees")
+t.same_list(tree.forest_paths(forest), { "home", "programming" }, "gap paths")
+t.check(forest[2].parent_unseen, "programming knows something is above it")
+t.check(not forest[1].parent_unseen, "home does not")
+t.equal(text.text(forest), "home\nprogramming   (inside a room you are not in)\n", "gap drawn with its mark")
+
+-- the same gap with nothing said: two trees, no mark
+forest = tree.visible_forest({ room("a", "home"), room("c", "programming") })
+t.check(not forest[2].parent_unseen, "nothing said, nothing marked")
+
+-- sorting: by name, then by id when names are equal; branches drawn open
+forest = tree.visible_forest({
+    room("z", "b-room"), room("y", "a-room"), room("x", "a-room"),
+    room("m", "second", "y"), room("n", "first", "y"), room("o", "deeper", "m"),
+})
+t.same_list(tree.forest_paths(forest),
+    { "a-room", "a-room", "a-room/first", "a-room/second", "a-room/second/deeper", "b-room" },
+    "sorted by name then id")
+t.equal(forest[1].room_id, id("x"), "equal names fall back to room id order")
+t.equal(text.text(forest), "a-room\na-room\n├── first\n└── second\n    └── deeper\nb-room\n", "branches drawn")
+
+-- broken lists
+t.refuses(function() tree.visible_forest({ room("a", "x"), room("a", "y") }) end, "received twice", "a room twice")
+t.refuses(function() tree.visible_forest({ room("a", "x", "b"), room("b", "y", "a") }) end, "ring", "two rooms in a ring")
+t.refuses(function() tree.visible_forest({ room("a", "x", "a") }) end, "itself", "a room its own parent")
+t.refuses(function() tree.visible_forest({ { room_id = id("a"), name = "x" } }) end, "disclosed_parent_id", "a missing field")
+
+-- a ring beside a good tree is still reported
+t.refuses(function()
+    tree.visible_forest({ room("h", "home"), room("a", "x", "b"), room("b", "y", "a") })
+end, "2 received rooms", "a ring beside a good tree")
+
+t.finish("034-test-reader-forest")

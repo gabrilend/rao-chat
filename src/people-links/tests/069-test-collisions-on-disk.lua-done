@@ -1,0 +1,83 @@
+-- 069-test-collisions-on-disk.lua — two top rooms with the same name shared
+-- with one person, on disk, in each collision mode; and switching modes,
+-- which must leave no links of the old mode behind.
+--
+-- Run: luajit 069-test-collisions-on-disk.lua [DIR] <stand-in|real>
+
+local DIR = arg[1] or "/home/ritz/programs/rao-chat"
+local H = dofile(DIR .. "/src/people-links/tests/065-test-harness.lua")
+H.setup(DIR, arg[2])
+local rooms, people = H.rooms, H.people
+
+-- fixed ids so the expected names can be written down
+local LOW  = "1111" .. string.rep("a", 28)
+local HIGH = "9999" .. string.rep("b", 28)
+local MID  = "5555" .. string.rep("c", 28)
+
+-- {{{ local function make_two_programmings
+local function make_two_programmings(label, mode)
+    local home = H.fresh_home("collisions-" .. label, mode)
+    -- created high id first, to prove order comes from ids, not creation
+    rooms.create_room(home, { name = "programming", parent_id = "", recipients = { "friend" }, room_id = HIGH })
+    rooms.create_room(home, { name = "programming", parent_id = "", recipients = { "friend" }, room_id = LOW })
+    return home
+end
+-- }}}
+
+local expected = {
+    ["suffix-id"] = {
+        "programming~1111 -> ../../rooms/" .. LOW,
+        "programming~9999 -> ../../rooms/" .. HIGH,
+    },
+    ["numbered"] = {
+        "programming -> ../../rooms/" .. LOW,
+        "programming-2 -> ../../rooms/" .. HIGH,
+    },
+    ["id-folder"] = {
+        LOW .. "/",
+        LOW .. "/programming -> ../../../rooms/" .. LOW,
+        HIGH .. "/",
+        HIGH .. "/programming -> ../../../rooms/" .. HIGH,
+    },
+}
+
+for _, mode in ipairs(H.names.MODES) do
+    local home = make_two_programmings(mode, mode)
+    H.same(H.view(home, "friend"), expected[mode], mode .. ": two rooms called programming, both linked")
+
+    -- a third, middle-id one arrives
+    rooms.create_room(home, { name = "programming", parent_id = "", recipients = { "friend" }, room_id = MID })
+    local three = H.view(home, "friend")
+    H.check(#three == (mode == "id-folder" and 6 or 3), mode .. ": three rooms, three links")
+    -- finding for numbered: the middle id takes -2 and HIGH moves to -3
+    if mode == "numbered" then
+        H.same(three, {
+            "programming -> ../../rooms/" .. LOW,
+            "programming-2 -> ../../rooms/" .. MID,
+            "programming-3 -> ../../rooms/" .. HIGH,
+        }, "numbered: a newcomer between two ids renumbers the higher one")
+    end
+
+    -- renaming one away removes the clash
+    rooms.write_name(home, MID, "work")
+    rooms.write_name(home, HIGH, "games")
+    H.check(H.disk.is_link(home.dir .. "/people/friend/" .. (mode == "id-folder" and (LOW .. "/") or "") .. "programming"),
+            mode .. ": no clash left: the bare name returns")
+end
+
+-- switching mode: every link of the old shape goes, the new shape appears
+for _, from in ipairs(H.names.MODES) do
+    for _, to in ipairs(H.names.MODES) do
+        -- only real switches
+        if from ~= to then
+            local home = make_two_programmings(from .. "-to-" .. to, from)
+            rooms.set_config(home, "people.link-collision", from)
+            people.rebuild_all(home)
+            rooms.set_config(home, "people.link-collision", to)
+            people.rebuild_all(home)
+            H.same(H.view(home, "friend"), expected[to], "switch " .. from .. " -> " .. to .. ": only new-mode links remain")
+        end
+    end
+end
+
+H.finish()

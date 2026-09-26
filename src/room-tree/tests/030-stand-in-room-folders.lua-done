@@ -1,0 +1,261 @@
+-- 030-stand-in-room-folders.lua — a small copy of the room-folders module
+-- (issue 101), used only by the room-tree tests while the real one is being
+-- built.
+--
+-- The room tree needs somewhere to keep rooms: a home folder with a config
+-- file and one folder per room holding its name, its parent and its
+-- recipients, plus a bell that rings when any of those change.  This file
+-- does just enough of that, following the shared plug shape in
+-- docs/phase-1-module-contract.md, so the tree can be tested before the
+-- real room-folders module exists.  The tests can be pointed at the real
+-- module instead, and should give the same answers.
+--
+-- Data shapes kept on disk (same as the contract):
+--   rooms/<id>/name        one line, the room's name
+--   rooms/<id>/parent      the parent's room id and a line break, or an
+--                          entirely empty file for a top room (101 treats
+--                          a lone line break as a damaged file)
+--   rooms/<id>/recipients  one contact name per line
+--   config                 "key = value" lines
+
+local M = {}
+
+-- listeners registered with on_change, in the order they were registered
+local listeners = {}
+
+-- {{{ local function read_file
+local function read_file(path)
+    local f = assert(io.open(path, "r"))
+    local text = f:read("*a")
+    f:close()
+    return text
+end
+-- }}}
+
+-- {{{ local function write_file
+local function write_file(path, text)
+    local f = assert(io.open(path, "w"))
+    f:write(text)
+    f:close()
+end
+-- }}}
+
+-- {{{ local function file_exists
+local function file_exists(path)
+    local f = io.open(path, "r")
+    -- present: close it and say so; absent: say so
+    if f then
+        f:close()
+        return true
+    end
+    return false
+end
+-- }}}
+
+-- {{{ local function first_line
+-- A one-line file with its trailing newline removed; an empty file is "".
+local function first_line(path)
+    return (read_file(path):gsub("\n.*$", ""))
+end
+-- }}}
+
+-- {{{ local function parent_text
+local function parent_text(parent_id)
+    -- a top room: an empty file; otherwise the id on one line
+    if parent_id == "" then
+        return ""
+    end
+    return parent_id .. "\n"
+end
+-- }}}
+
+-- {{{ function M.open_home
+function M.open_home(dir)
+    os.execute('mkdir -p "' .. dir .. '/rooms" "' .. dir .. '/people"')
+    local home = { dir = dir }
+    -- a config file already there is kept; a new home gets an empty one
+    if not file_exists(dir .. "/config") then
+        write_file(dir .. "/config", "")
+    end
+    -- same for contacts
+    if not file_exists(dir .. "/contacts") then
+        write_file(dir .. "/contacts", "")
+    end
+    return home
+end
+-- }}}
+
+-- {{{ function M.read_config
+function M.read_config(home)
+    local config = {}
+    for line in io.lines(home.dir .. "/config") do
+        local key, value = line:match("^%s*([^=]-)%s*=%s*(.-)%s*$")
+        -- a key = value line is kept; blank lines and anything else are skipped
+        if key then
+            config[key] = value
+        end
+    end
+    return config
+end
+-- }}}
+
+-- {{{ function M.set_config
+function M.set_config(home, key, value)
+    local config = M.read_config(home)
+    config[key] = value
+    local keys = {}
+    for k in pairs(config) do
+        keys[#keys + 1] = k
+    end
+    table.sort(keys)
+    local lines = {}
+    for _, k in ipairs(keys) do
+        lines[#lines + 1] = k .. " = " .. config[k]
+    end
+    write_file(home.dir .. "/config", table.concat(lines, "\n") .. "\n")
+end
+-- }}}
+
+-- {{{ function M.config_value
+function M.config_value(home, key)
+    local value = M.read_config(home)[key]
+    -- absent: loud error, never a quiet default
+    if value == nil then
+        error("config key '" .. key .. "' is not set in " .. home.dir .. "/config")
+    end
+    return value
+end
+-- }}}
+
+-- {{{ function M.read_contacts
+function M.read_contacts(home)
+    local contacts = {}
+    for line in io.lines(home.dir .. "/contacts") do
+        local name, field, value = line:match("^%s*([^.=%s]+)%.([^=%s]+)%s*=%s*(.-)%s*$")
+        -- a name.field = value line is kept; anything else is skipped
+        if name then
+            contacts[name] = contacts[name] or {}
+            contacts[name][field] = value
+        end
+    end
+    return contacts
+end
+-- }}}
+
+-- {{{ function M.new_room_id
+function M.new_room_id()
+    local f = assert(io.open("/dev/urandom", "rb"))
+    local bytes = f:read(16)
+    f:close()
+    return (bytes:gsub(".", function(c) return string.format("%02x", c:byte()) end))
+end
+-- }}}
+
+-- {{{ function M.room_dir
+function M.room_dir(home, id)
+    return home.dir .. "/rooms/" .. id
+end
+-- }}}
+
+-- {{{ function M.log_path
+function M.log_path(home, id)
+    return M.room_dir(home, id) .. "/log"
+end
+-- }}}
+
+-- {{{ function M.room_exists
+function M.room_exists(home, id)
+    return file_exists(M.room_dir(home, id) .. "/name")
+end
+-- }}}
+
+-- {{{ function M.notify
+function M.notify(home, id, what)
+    for _, listener in ipairs(listeners) do
+        listener(home, id, what)
+    end
+end
+-- }}}
+
+-- {{{ function M.on_change
+function M.on_change(listener)
+    listeners[#listeners + 1] = listener
+end
+-- }}}
+
+-- {{{ function M.create_room
+function M.create_room(home, spec)
+    local id = spec.room_id or M.new_room_id()
+    local dir = M.room_dir(home, id)
+    os.execute('mkdir -p "' .. dir .. '"')
+    write_file(dir .. "/name", spec.name .. "\n")
+    write_file(dir .. "/parent", parent_text(spec.parent_id))
+    local lines = {}
+    for _, who in ipairs(spec.recipients) do
+        lines[#lines + 1] = who .. "\n"
+    end
+    write_file(dir .. "/recipients", table.concat(lines))
+    write_file(dir .. "/log", "")
+    M.notify(home, id, "created")
+    return id
+end
+-- }}}
+
+-- {{{ function M.read_room
+function M.read_room(home, id)
+    local dir = M.room_dir(home, id)
+    local recipients = {}
+    for line in io.lines(dir .. "/recipients") do
+        -- a non-blank line is a contact name; blank lines are skipped
+        if line ~= "" then
+            recipients[#recipients + 1] = line
+        end
+    end
+    return {
+        id = id,
+        name = first_line(dir .. "/name"),
+        parent_id = first_line(dir .. "/parent"),
+        recipients = recipients,
+    }
+end
+-- }}}
+
+-- {{{ function M.write_name
+function M.write_name(home, id, value)
+    write_file(M.room_dir(home, id) .. "/name", value .. "\n")
+    M.notify(home, id, "name")
+end
+-- }}}
+
+-- {{{ function M.write_parent
+function M.write_parent(home, id, value)
+    write_file(M.room_dir(home, id) .. "/parent", parent_text(value))
+    M.notify(home, id, "parent")
+end
+-- }}}
+
+-- {{{ function M.write_recipients
+function M.write_recipients(home, id, list)
+    local lines = {}
+    for _, who in ipairs(list) do
+        lines[#lines + 1] = who .. "\n"
+    end
+    write_file(M.room_dir(home, id) .. "/recipients", table.concat(lines))
+    M.notify(home, id, "recipients")
+end
+-- }}}
+
+-- {{{ function M.list_rooms
+function M.list_rooms(home)
+    local ids = {}
+    local listing = io.popen('ls -1 "' .. home.dir .. '/rooms"')
+    for entry in listing:lines() do
+        ids[#ids + 1] = entry
+    end
+    listing:close()
+    table.sort(ids)
+    return ids
+end
+-- }}}
+
+return M

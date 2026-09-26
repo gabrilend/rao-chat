@@ -1,0 +1,166 @@
+-- 072-test-with-neighbours.lua — people-links working next to the real
+-- neighbouring modules: 102's tree walk agrees with our tops, and 103's
+-- recipient edits and splits reach people/ through the bell alone.
+--
+-- Runs only in "real" mode; parts whose module is not written yet are
+-- reported as skipped (they count as neither pass nor fail).
+--
+-- Run: luajit 072-test-with-neighbours.lua [DIR] real
+
+local DIR = arg[1] or "/home/ritz/programs/rao-chat"
+local H = dofile(DIR .. "/src/people-links/tests/065-test-harness.lua")
+H.setup(DIR, arg[2])
+local rooms, people, disk = H.rooms, H.people, H.disk
+
+-- stand-in mode: the neighbours would run on the stand-in 101; not useful
+if H.mode ~= "real" then
+    print("SKIP 072: neighbours are only tested in real mode")
+    H.finish()
+end
+
+-- {{{ local function sorted
+local function sorted(list)
+    local copy = {}
+    for i, v in ipairs(list) do
+        copy[i] = v
+    end
+    table.sort(copy)
+    return copy
+end
+-- }}}
+
+-- {{{ local function set_neighbour_config
+-- Every key 102, 103 and 105 read, so their listeners never stop on a
+-- missing one during these tests.
+local function set_neighbour_config(home)
+    local keys = {
+        { "tree.parent-disclosure", "always" },
+        { "recipients.split-shape", "fork" },
+        { "recipients.arrival-list", "adder-only" },
+        { "recipients.split-parent", "keep" },
+        { "recipients.split-alone", "keep-empty" },
+        { "log.record-shape", "tsv" },
+        { "log.shape-mixing", "fixed" },
+        { "log.duplicate-check", "scan" },
+        { "log.edits", "never" },
+    }
+    for _, pair in ipairs(keys) do
+        rooms.set_config(home, pair[1], pair[2])
+    end
+end
+-- }}}
+
+-- {{{ local function owners_tree
+local function owners_tree(home)
+    local home_id = H.room(home, "home", "", { "girlfriend", "housemate" })
+    local ritz_id = H.room(home, "ritz", home_id, { "housemate" })   -- 103 will not remove a last recipient
+    local prog_id = H.room(home, "programming", ritz_id, { "girlfriend", "friend" })
+    return home_id, ritz_id, prog_id
+end
+-- }}}
+
+-- 102: walking up with ancestors gives the same tops ---------------------------
+if H.module_present("src/room-tree/021-room-tree.lua") then
+    local tree = require("021-room-tree")
+
+    -- {{{ local function tops_by_ancestors
+    -- The issue's own wording: from each room the contact receives, walk up
+    -- and stop at the last room they still receive.
+    local function tops_by_ancestors(home, contact)
+        local found, tops = {}, {}
+        for _, id in ipairs(rooms.list_rooms(home)) do
+            -- a room they receive: walk up from it
+            if H.list_has(rooms.read_room(home, id).recipients, contact) then
+                local chain = tree.ancestors(home, id)
+                local top = id
+                for i = #chain - 1, 1, -1 do
+                    -- still theirs: climb; not theirs: the walk ends
+                    if H.list_has(rooms.read_room(home, chain[i]).recipients, contact) then
+                        top = chain[i]
+                    else
+                        break
+                    end
+                end
+                -- first time this top is reached: keep it
+                if not found[top] then
+                    found[top] = true
+                    tops[#tops + 1] = top
+                end
+            end
+        end
+        return sorted(tops)
+    end
+    -- }}}
+
+    local home = H.fresh_home("neighbours-tree", "numbered")
+    set_neighbour_config(home)
+    local home_id, ritz_id, prog_id = owners_tree(home)
+    local bugs_id = H.room(home, "bugs", prog_id, { "friend", "housemate" })
+    H.room(home, "games", home_id, { "housemate", "friend" })
+    H.room(home, "deep", bugs_id, { "girlfriend" })
+    for _, contact in ipairs({ "girlfriend", "friend", "housemate" }) do
+        H.same(people.top_rooms_for(home, contact), tops_by_ancestors(home, contact),
+               "102 ancestors walk agrees for " .. contact)
+    end
+    rooms.write_recipients(home, ritz_id, { "girlfriend", "friend" })
+    for _, contact in ipairs({ "girlfriend", "friend", "housemate" }) do
+        H.same(people.top_rooms_for(home, contact), tops_by_ancestors(home, contact),
+               "102 ancestors walk agrees for " .. contact .. " after ritz changes")
+    end
+    -- 102's move_room rings the bell; links follow
+    tree.move_room(home, prog_id, "")
+    H.same(people.top_rooms_for(home, "friend"), tops_by_ancestors(home, "friend"),
+           "after 102 moves programming to the top")
+else
+    print("SKIP 072 part 102: src/room-tree/021-room-tree.lua not there yet")
+end
+
+-- 103: add, remove and splits through the bell -------------------------------
+if H.module_present("src/recipients/041-recipients.lua") then
+    local recipients = require("041-recipients")
+    for _, mode in ipairs(H.names.MODES) do
+        local home = H.fresh_home("neighbours-add-" .. mode, mode)
+        set_neighbour_config(home)
+        local home_id, ritz_id, prog_id = owners_tree(home)
+        recipients.add(home, ritz_id, "girlfriend")
+        H.same(people.top_rooms_for(home, "girlfriend"), { home_id }, mode .. ": 103 add to ritz leaves one top")
+        H.check(#people.planned_links(home, "girlfriend") == 1, mode .. ": one planned link after 103 add")
+        recipients.remove(home, ritz_id, "girlfriend")
+        H.same(people.top_rooms_for(home, "girlfriend"), sorted({ home_id, prog_id }),
+               mode .. ": 103 remove from ritz gives two again")
+    end
+
+    for _, shape in ipairs({ "fork", "rekey" }) do
+        for _, records in ipairs({ "show", "hide" }) do
+            local label = shape .. "-" .. records
+            local home = H.fresh_home("neighbours-split-" .. label, "numbered", "none", records)
+            set_neighbour_config(home)
+            local home_id, ritz_id, prog_id = owners_tree(home)
+            local before = H.view(home)
+            local new_id = recipients.split_on_removal(home, prog_id, "girlfriend", shape)
+            local view_by_bell = H.view(home)
+            people.rebuild_all(home)
+            H.same(view_by_bell, H.view(home), label .. ": the bell alone left people/ as a full rebuild would")
+
+            local friend_tops = people.top_rooms_for(home, "friend")
+            local gf_tops = people.top_rooms_for(home, "girlfriend")
+            H.check(H.list_has(friend_tops, new_id), label .. ": friend has the room you now talk in")
+            -- fork + show: the record stays a shared room for everyone on
+            -- its old list, the removed person included
+            if shape == "fork" and records == "show" then
+                H.same(friend_tops, sorted({ prog_id, new_id }), label .. ": friend sees record and new room")
+                H.same(gf_tops, sorted({ home_id, prog_id }), label .. ": girlfriend still linked to the record")
+            -- fork + hide, and rekey (the old id is gone): the old room is no
+            -- one's shared room any more
+            else
+                H.same(friend_tops, { new_id }, label .. ": friend has only the new room")
+                H.same(gf_tops, { home_id }, label .. ": girlfriend no longer linked to programming")
+            end
+            H.check(#before > 0, label .. ": people/ was built before the split")
+        end
+    end
+else
+    print("SKIP 072 part 103: src/recipients/041-recipients.lua not there yet")
+end
+
+H.finish()

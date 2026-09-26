@@ -1,0 +1,118 @@
+-- 011-test-variants.lua — tests for room-folders' two undecided choices.
+--
+-- Each choice is only asked about when its edge case happens, so each is
+-- tested three ways: the edge case with no setting (must stop with the
+-- key to add), and once under each variant.  Also checks that homes that
+-- never meet the edge case never need the setting.
+--   rooms.unknown-parent  refuse | keep   (a parent id not held here)
+--   rooms.slash-in-name   refuse | allow  (a room name holding "/")
+-- Run: luajit 011-test-variants.lua [project folder]
+
+local DIR = arg[1] or "/home/ritz/programs/rao-chat"
+local kit = dofile(DIR .. "/src/room-folders/tests/006-kit-for-tests.lua")
+local rooms = kit.setup(DIR)
+local check, same, fails = kit.check, kit.same, kit.fails
+
+check("no edge case: neither key is needed", function()
+    local home = rooms.open_home(kit.fresh_home_dir("variants-none"))
+    local top = rooms.create_room(home, { name = "a", parent_id = "", recipients = {} })
+    rooms.create_room(home, { name = "b", parent_id = top, recipients = {} })
+    rooms.write_name(home, top, "c")
+end)
+
+check("unknown parent with no setting: stops and names the key", function()
+    local home = rooms.open_home(kit.fresh_home_dir("variants-parent-unset"))
+    fails(function()
+        rooms.create_room(home, { name = "a", parent_id = rooms.new_room_id(), recipients = {} })
+    end, "rooms.unknown-parent = <value>")
+    same(#rooms.list_rooms(home), 0, "nothing made")
+end)
+
+check("unknown parent, refuse: create and write_parent refused", function()
+    local home = rooms.open_home(kit.fresh_home_dir("variants-parent-refuse"))
+    rooms.set_config(home, "rooms.unknown-parent", "refuse")
+    local ghost = rooms.new_room_id()
+    fails(function() rooms.create_room(home, { name = "a", parent_id = ghost, recipients = {} }) end, "does not exist here")
+    local id = rooms.create_room(home, { name = "a", parent_id = "", recipients = {} })
+    fails(function() rooms.write_parent(home, id, ghost) end, "does not exist here")
+    same(rooms.read_room(home, id).parent_id, "")
+end)
+
+check("unknown parent, keep: stored, and the tree joins when it arrives", function()
+    local home = rooms.open_home(kit.fresh_home_dir("variants-parent-keep"))
+    rooms.set_config(home, "rooms.unknown-parent", "keep")
+    local later_parent = rooms.new_room_id()
+    local child = rooms.create_room(home, { name = "programming", parent_id = later_parent, recipients = { "ritz" } })
+    same(rooms.read_room(home, child).parent_id, later_parent)
+    -- the parent arrives afterwards with the id the child already names
+    rooms.create_room(home, { name = "ritz", parent_id = "", recipients = { "ritz" }, room_id = later_parent })
+    same(rooms.room_exists(home, rooms.read_room(home, child).parent_id), true)
+end)
+
+check("unknown parent, keep: a loop through a kept parent is still refused", function()
+    local home = rooms.open_home(kit.fresh_home_dir("variants-parent-loop"))
+    rooms.set_config(home, "rooms.unknown-parent", "keep")
+    local a_id = rooms.new_room_id()
+    local b = rooms.create_room(home, { name = "b", parent_id = a_id, recipients = {} })
+    -- a arrives, naming b as its parent: b > a > b would be a loop
+    fails(function()
+        rooms.create_room(home, { name = "a", parent_id = b, recipients = {}, room_id = a_id })
+    end, "inside itself")
+end)
+
+check("unknown parent, unrecognised value refused", function()
+    local home = rooms.open_home(kit.fresh_home_dir("variants-parent-bad"))
+    rooms.set_config(home, "rooms.unknown-parent", "maybe")
+    fails(function()
+        rooms.create_room(home, { name = "a", parent_id = rooms.new_room_id(), recipients = {} })
+    end, "must be refuse or keep")
+end)
+
+check("slash in name with no setting: stops and names the key", function()
+    local home = rooms.open_home(kit.fresh_home_dir("variants-slash-unset"))
+    fails(function() rooms.create_room(home, { name = "a/b", parent_id = "", recipients = {} }) end, "rooms.slash-in-name = <value>")
+end)
+
+check("slash in name, refuse", function()
+    local home = rooms.open_home(kit.fresh_home_dir("variants-slash-refuse"))
+    rooms.set_config(home, "rooms.slash-in-name", "refuse")
+    fails(function() rooms.create_room(home, { name = "a/b", parent_id = "", recipients = {} }) end, "may not contain '/'")
+    local id = rooms.create_room(home, { name = "ab", parent_id = "", recipients = {} })
+    fails(function() rooms.write_name(home, id, "a/b") end, "may not contain '/'")
+end)
+
+check("slash in name, allow: stored and read back as written", function()
+    local home = rooms.open_home(kit.fresh_home_dir("variants-slash-allow"))
+    rooms.set_config(home, "rooms.slash-in-name", "allow")
+    local id = rooms.create_room(home, { name = "home/ritz", parent_id = "", recipients = {} })
+    same(rooms.read_room(home, id).name, "home/ritz")
+    same(kit.read_file(rooms.room_dir(home, id) .. "/name"), "home/ritz\n")
+end)
+
+check("slash in name, unrecognised value refused", function()
+    local home = rooms.open_home(kit.fresh_home_dir("variants-slash-bad"))
+    rooms.set_config(home, "rooms.slash-in-name", "sometimes")
+    fails(function() rooms.create_room(home, { name = "a/b", parent_id = "", recipients = {} }) end, "must be refuse or allow")
+end)
+
+check("019-options has the contract's shape, and names the config keys used here", function()
+    local options = dofile(DIR .. "/src/room-folders/019-options.lua")
+    local keys = {}
+    for _, choice in ipairs(options) do
+        for _, field in ipairs({ "id", "question", "waits_on", "detail", "config_key", "leaning" }) do
+            same(type(choice[field]), "string", choice.id .. "." .. field)
+        end
+        same(choice.waits_on == "owner" or choice.waits_on == "state", true, choice.id .. " waits_on")
+        same(#choice.variants >= 2, true, choice.id .. " has variants")
+        for _, variant in ipairs(choice.variants) do
+            for _, field in ipairs({ "name", "summary", "built_in", "tests", "findings" }) do
+                same(type(variant[field]), "string", choice.id .. " variant " .. tostring(variant.name) .. "." .. field)
+            end
+        end
+        keys[choice.config_key] = true
+    end
+    same(keys["rooms.unknown-parent"], true, "rooms.unknown-parent listed")
+    same(keys["rooms.slash-in-name"], true, "rooms.slash-in-name listed")
+end)
+
+kit.finish()

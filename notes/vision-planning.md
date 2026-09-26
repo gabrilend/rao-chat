@@ -81,11 +81,28 @@ Private chat between people who each run a small server at home.  There is
 no central server: a message goes from the writer's home server straight to
 each reader's, the way rmail mail does.
 
-Conversations are **rooms**, and rooms are arranged like **folders in a
-tree**: a room can hold rooms inside it, to any depth.  Every room has its
-own list of the people its messages go to, so a parent room and its child
-can have entirely different people in them.  A room has at least two people
-(you and one other); there is no upper limit.
+**A room is a contact.**  An rmail contact is a name, a shared token, and
+the addresses of one person's machines.  A rao-chat room is the same thing
+with the addresses of everyone in it: a label, a token its members share,
+and every member's (address, port) pairs.  A message written in the room
+goes to every pair.  A **direct message** is a room with one other person
+in it — exactly an rmail contact.  Direct messages and group rooms are
+listed apart, but are built the same way, by the same code.
+
+- **The token is the invitation.**  Holding a room's token is being
+  invited; the token makes the key every message in the room is sealed
+  with.  Tokens are plain text, anything the maker likes; rao-chat
+  suggests readable ones ("maple-orbit-velvet-tin") so they can be read
+  aloud.  A room whose token is deliberately guessable is a public square.
+- **Labels belong to the reader.**  Two rooms you call `coffee-shop` are
+  simply two rooms, with different tokens.  Rename freely.
+- **Rooms form a tree**, shown like a file explorer: folders that open and
+  collapse.  A room made as a **child** of another carries its parent in
+  its invitation, and can only hold people who are in the parent — tiers
+  of trust.  Owner: "The farther down in the directory structure you go,
+  the more people you'll need to have invited you ... it encourages task
+  focus to specialize, rather than power to hierarchicalize".  Anyone in a
+  room may start a child room.
 
 Each person reaches their home server from:
 
@@ -102,9 +119,12 @@ rao-chat and back, the way Facebook's app and Messenger link to each other.
 
 - **Not a hosted service.**  Nobody's messages pass through a server that
   none of the people in the room runs.
-- **Not a shared, agreed membership list.**  Nobody holds "the" list of a
-  room's members.  Each person holds their own list of who they send to
+- **Not an identity system.**  Nobody can know for certain who wrote a
+  message.  A message carries whatever signature its writer typed, or none
   (section 3).
+- **Not a defence against betrayal.**  rao-chat protects a room from
+  strangers.  Someone a member let in holds what any member holds, and what
+  they do with it is a human matter (section 14, "The threat model").
 - **Not a mail client.**  rmail stays the place for long, file-shaped
   messages and attachments.
 
@@ -115,13 +135,17 @@ rao-chat and back, the way Facebook's app and Messenger link to each other.
 | word | meaning |
 |---|---|
 | **home server** | the program each person runs on a computer at home (in rmail, "the daemon").  It holds their rooms, talks to other home servers, and serves their clients. |
-| **contact** | another person, known to your home server by a name you choose, a shared secret (token), and one or more addresses.  Same idea and file format as rmail's contacts. |
-| **device** | one of your own clients (a phone, a browser) paired with your home server; in the contacts file, an entry marked `own = true`, as in rmail. |
-| **room** | a place messages are written, with a name, a parent room (or none), and a recipient list.  Rooms nest like folders. |
-| **room id** | a long random identifier every room gets when it is made.  It is what travels between servers; names never do (section 4). |
-| **recipient list** | the people *your* messages in a room go to.  Yours alone; everyone else in the room keeps their own. |
-| **tree** | a room and everything nested in it.  A person may see one of your trees as several separate trees, if they are in some of its rooms and not others. |
-| **message** | one entry in a room: who wrote it, when, and the text. |
+| **room** | a conversation: a label, a token, and the (address, port) pairs of its members.  A group room has many members; a direct message has one other. |
+| **token** | a room's shared secret, plain text, chosen by whoever makes the room (readable words suggested).  It makes the key the room's messages are sealed with; holding it is being invited. |
+| **label** | your own name for a room.  Never sent; rename freely. |
+| **address** | where a home server can be reached: an IP address or hostname **and its own port**, always as a pair.  There is no default port.  Addresses answer "where do I send"; they never prove who wrote something. |
+| **member** | an address in a room's list.  Members are added freely: whoever holds the token and says hello is added, and members share their lists. |
+| **child room** | a room made inside another, whose invitation names its parent.  Your server only accepts a member into a child room if it is a member of the parent. |
+| **withheld** | a member you have chosen not to send to in a room.  Everyone else keeps their own choices. |
+| **ignore list** | addresses whose messages you do not want: hidden entirely, or marked ("someone you ignore spoke").  Yours alone; holds until that address changes. |
+| **signature** | the last line of a message, typed by its writer in a persistent "signature" field, or nothing.  Signing as someone else is taboo, not prevented. |
+| **device** | one of your own clients (a phone, a browser) paired with your home server, as in rmail (`own = true`). |
+| **message** | one entry in a room: its id, the address it arrived from, when it was written and arrived, and its text (signature included). |
 | **delivery** | a message moving from the writer's home server to a reader's. |
 | **live connection** | a connection a client holds open to its home server, so new messages arrive the moment they land. |
 
@@ -129,111 +153,87 @@ rao-chat and back, the way Facebook's app and Messenger link to each other.
 
 ## 3. Rooms and who hears what
 
-This follows rmail's addressing: a message goes to the names on its `to:`
-lines, and the sender's server remembers who it went to.  In rao-chat each
-room keeps that list, and every message written in the room goes to it.
-
-- **You choose who hears you.**  Adding someone to a room's recipient list
-  means your messages there reach them from then on.  Removing them means
-  they stop.  That is all adding and removing is.
-- **You cannot choose who hears anyone else.**  Each person in a room has
-  their own recipient list for it.  If you remove someone and a third
-  person has not, the third person's messages still reach them.  Owner:
-  "Nobody can control if someone else is listening to someone else, but we
-  can control if they're listening to us."
-- **Being removed splits the room.**  Rooms and conversations are a way of
-  sorting on each person's own screen, nothing more.  When you remove
-  someone, their server is told, and their copy of the room becomes a new
-  room of its own, with everything they had received kept in it.  From
-  then on you talk into your room and they talk into theirs; their
-  messages no longer reach you there.  Everyone else stays on both lists
-  unless they choose otherwise, so they now hear two rooms where there
-  was one.  Owner: "yes it's a different room, no their messages don't
-  reach you, because they're talking into their room with 5 people (used
-  to be 6) and you're talking into your room of 5 people (used to be 6) -
-  everyone else is listening eagerly."
-- **Replying.**  When a message arrives in a room you have never seen, your
-  server makes that room for you.  Whom your replies go to is open
-  question 2.
+- **Joining.**  Someone gives you a room's token and one member's address
+  (and, for a child room, you must already be in its parent).  Your server
+  says hello to that address, sealed with the token; holding the token is
+  the proof, so you are added.  Members then share their lists with you,
+  and yours with them.
+- **You choose who hears you.**  Every member of a room hears your messages
+  unless you withhold them.  Withholding someone is all removal is.
+- **You cannot choose who hears anyone else.**  Each person makes their own
+  choices.  To shut someone out entirely, change the token: by hand, for
+  now, and give the new one to everyone else through their direct
+  messages.  The room keeps its history, label and members, minus the
+  person left out.
+- **Ignoring** is separate from withholding.  Two levels: hide an address's
+  messages entirely, or hide them but show that they spoke.  The ignore
+  list also refuses that address when other members' lists bring it back.
+- **Leaving** is a message: "I'm not in this room anymore."  A leave notice
+  is confirmed by asking that address before it is removed, so no one can
+  send it for someone else.  Speaking again brings you back.  Addresses are
+  added freely: a move adds the new address beside the old.
+- **Child rooms.**  Anyone in a room may make a child room and invite
+  people to it.  A member of the child must be a member of the parent, as
+  each server sees it; each server refuses anyone else.
+- **Signatures.**  The sender of a message is unknowable by design: an
+  address can change or pass through Tor.  The signature is what a message
+  says about itself.
+- **Edits.**  Anything may be edited.  An edit is its own message naming the
+  one it changes; your server keeps the original beside it, so your own
+  copy is the record.
 - **Order.**  Messages carry the time they were written (whole seconds
-  since 1970).  A room shows them in that order, and a message that
-  arrives late is placed where it belongs, moving the ones after it down.
-  Ties are broken by room id then message id, so every reader sees the
-  same order.
-
-### Trees, and trees that look separate
-
-Take the owner's example.  You have three rooms, one inside the next:
-
-```
-home                  recipients: everyone in your household
-└── ritz              recipients: (just you)
-    └── programming   recipients: the people you program with
-```
-
-- **Your girlfriend** is in `home` and `programming`, but not `ritz`.  She
-  sees two separate trees: `home`, and `programming` on its own.  Nothing
-  she receives tells her they are connected.
-- **A programming friend** is in `programming` only.  He sees one tree,
-  `programming`, and nothing above it.
-- **If you add your girlfriend to `ritz`**, the gap closes: she now sees one
-  tree, `home → ritz → programming`.
-
-So a room's place in someone's tree is only as complete as the rooms of
-that tree they are in.  (What travels with a message to make this work is
-open question 3.)
-
-### Names belong to the reader
-
-A room's name is a label each person keeps for themselves.  You can have
-two rooms called `programming`; a friend can call your `programming` room
-`ritz-code`.  Names are how people sort; room ids are how servers match.
-Owner: "it's just a name that we sort ourselves, it doesn't necessarily
-refer directly to the filesystem."
+  since 1970).  A room shows them in that order; a late message is placed
+  where it belongs.  Ties are broken by message id, so every reader sees
+  the same order.
+- **Checking each other.**  Members periodically compare what they have
+  received.  A missing message is normal; the same message id with
+  different contents is an error, raised to the person.
 
 ---
 
 ## 4. Rooms on disk
 
-Because names do not imply structure, the folder a room is stored in cannot
-be its name.  Rooms are stored flat, by room id, and the tree is recorded
-inside them.  Owner: "These can be stored on disk behind the scenes as we
-please ... However we keep the actual file-path of the file on our disk
-right next to the file, easily accessible as easily as accessing the name."
+Every room — group or direct message — is a folder named by a random tag
+of your own, never sent.  Inside, its **entry** is written in rmail's
+contacts format, so one reader serves rooms, direct messages, and rmail's
+own contacts.  The folder's own path is kept beside the label.  Owner: "we
+keep the actual file-path of the file on our disk right next to the file,
+easily accessible as easily as accessing the name."
 
 ```
 rao-home/
-  config                      name, port, settings (rmail's config format)
-  contacts                    people and own devices (rmail's format)
+  config                      settings (rmail's config format)
+  ignore                      one address per line, with its level (hide | mark)
   rooms/
-    <room id>/
-      name                    your name for the room (one line of text)
-      parent                  the parent room's id, or empty for a top room
-      recipients              one contact name per line: who you send to
-      where                   this room's own folder path, and its path of
-                              names from the top ("home/ritz/programming"),
-                              kept beside the room so either is one read away
+    <local tag>/
+      entry                   rmail contacts format, one entry:
+                                label, token, kind (group | direct),
+                                address[N] with port[N] (always paired),
+                                parent (the parent room's fingerprint, or empty),
+                                filed-under (where you placed it in your tree)
+      withheld                members you do not send to here, one per line
+      where                   this folder's path, and the label
       log                     the messages, appended to, never rewritten
   people/
-    <contact>/
-      <room name> -> ../../rooms/<room id>
-                              one link per top room this contact is in, as
-                              you see it: the highest room of each tree
-                              they are a recipient of
+    <direct-message label>/
+      <link name> -> ../../rooms/<local tag>
+                              one link per top room this person is a
+                              member of, as you see it
 ```
 
-- **`people/`** answers "what do I share with this person?" with an `ls`.
-  The links are rebuilt from the rooms' recipient lists whenever a list
-  changes; the lists are the truth, the links are the view.
-- **`log`** is plain text, one record per message: message id (text,
-  unique), author (text: "me" or a contact's name), time written (whole
-  seconds since 1970), time arrived (the same), and the text.  Its exact
-  shape is open question 8.  A person can read a room with `cat` or
-  `less`, back it up by copying the folder, and search it with `grep`.
-- **Ids make delivery safe to repeat.**  A delivery sent twice (the first
-  answer got lost) is recognised by its message id and not filed again.
-  rmail learned this in September 2026, when two daemons dialling each
-  other at once filed one message eight times.
+- **A parent is named by a fingerprint of its token** (a one-way scramble),
+  so an invitation to a child room names its parent without revealing the
+  parent's token to anyone who does not already hold it.
+- **`people/`** answers "what do I share with this person?" with an `ls`:
+  the rooms whose members include an address of that direct-message
+  contact.  The entries are the truth, the links are the view.
+- **`log`** is plain text, one record per message: message id, the address
+  it arrived from (or `me`), time written, time arrived, and the text.  A
+  person can read a room with `cat` or `less`, back it up by copying the
+  folder, and search it with `grep`.
+- **Ids make delivery safe to repeat.**  A message delivered twice is
+  recognised by its id and not filed again; the same id with different
+  contents is an error.
 
 ---
 
@@ -245,11 +245,19 @@ something rmail already does and has had its bugs found in.
 - **Contacts file.**  `name.field = value` lines.  Several addresses per
   contact (`ip`, `ip[N]`, `port[N]`), home-network addresses (`local-ip`),
   IPv6, hostnames, a shared token, and `own = true` for your own devices.
-  An address that works moves to the front.
+  An address that works moves to the front.  One change: in rmail a
+  missing `port[N]` falls back to the contact's default port; in rao-chat
+  every address carries its own port, and a missing one is an error
+  (owner: "the current rmail design has one port for many IPs which
+  doesn't really make sense tbh"; and "no default port numbers").
 - **Encryption.**  Every message between servers is sealed with
-  AES-256-GCM under a key derived from the pair's token (`SHA-256(token)`),
-  in length-prefixed frames with a random 12-byte nonce.  Who sent a frame
-  is known by which contact's key opens it.  No names travel in the clear.
+  AES-256-GCM, in length-prefixed frames with a random 12-byte nonce, as
+  rmail does, under a key made from the room's token (`SHA-256(token)`,
+  exactly as rmail makes one from a contact's token).  Each frame ends with
+  a 16-byte check value computed over every byte, so opening a frame
+  either succeeds or returns nothing — the lock itself says whether it is
+  genuine.  Nothing about a room travels in the clear.  There is no
+  per-connection key; a room is as private as its token is hard to guess.
 - **Acknowledgement.**  As in rmail, a delivery counts only when the
   receiving server confirms it; until then the message is "not yet
   delivered" to that person and is retried.
@@ -428,11 +436,15 @@ Whether they stay separate apps is open question 10.
 Grouped by what builds on what.  To become a roadmap and issues once the
 open questions are answered.
 
-1. **Rooms on the home server** — room folders, the tree, recipient lists,
-   the `people/` links, the message log and ids.
-2. **Server-to-server delivery** — rmail's networking, sending at once,
-   acknowledgements, retries, duplicates ignored, late messages placed in
-   order, rooms made on first arrival.
+1. **Rooms on the home server** — room folders by local tag, each with an
+   entry in rmail's contacts format (label, token, paired addresses,
+   parent); group rooms and direct messages alike; the tree of child rooms
+   and the parent-membership rule; withheld lists; the ignore list; the
+   `people/` links; the message log and ids.
+2. **Server-to-server delivery** — sealing with the room's token, sending
+   at once with acknowledgement and retries, the failed-decryption log,
+   the call-back check, the hello (which is also joining), contact
+   syncing, leaving, and periodic cross-checking.
 3. **Clients' connection** — pairing, catching up, live pushing, several
    devices, the locked-screen check-in.
 4. **The web client.**
@@ -450,12 +462,15 @@ each other.
 To be asked and answered one at a time before the roadmap is written.
 
 1. *(answered; see below)*
-2. **Whom your replies go to.**  When someone adds you to a room and you
+2. *(retired 2026-09-25 with the first model: every member hears you
+   unless withheld; see section 3)*  **Whom your replies go to.**  When
+   someone adds you to a room and you
    reply, who receives it: only the person who added you; everyone you
    have received a message from in that room; or everyone on the adder's
    list, which would mean each message carries its sender's recipient list
    (as rmail's `to:` lines are visible to the sender only, today)?
-3. **What travels with a message to place its room in a tree.**  To let a
+3. *(retired 2026-09-25 with the first model: a room's place is its
+   name)*  **What travels with a message to place its room in a tree.**  To let a
    reader join `programming` to `ritz` once they are in both, a message
    must say which room it is in and which room that one is inside.  Send
    the parent's id always (the reader learns that a parent exists, not its
@@ -487,7 +502,8 @@ To be asked and answered one at a time before the roadmap is written.
     Would you rather one Android app with a switch?
 11. **Read receipts, "typing…", online status.**  Each tells others about
     you.  Which, if any, and can each person turn them off?
-12. **Editing and deleting sent messages.**  Allowed, allowed for a short
+12. *(answered 2026-09-25; see Answered)*  **Editing and deleting sent
+    messages.**  Allowed, allowed for a short
     time, or never (the log is append-only)?
 13. **The name.**  What does "rao" stand for, if anything?
 
@@ -504,8 +520,954 @@ To be asked and answered one at a time before the roadmap is written.
 - **Removing someone** (2026-09-23): splits the room.  The removed
   person's copy becomes a room of its own; their messages stop reaching
   the remover there; everyone else hears both rooms.  Rooms are a
-  client-side way of sorting.  See section 3.
+  client-side way of sorting.  *(Superseded 2026-09-25: removing is
+  withholding, and ignoring is separate; see section 3.  The first model is
+  kept in Appendix A.)*
+- **Editing** (2026-09-25, question 12): allowed, with no time limit; an
+  edit is its own message and each reader's server keeps the original.
+- **A room is its name** (2026-09-25): section 14.  *(Replaced the same day
+  by section 15; kept in Appendix B.)*
+- **A room is a contact** (2026-09-25): section 15, now sections 1–4.
 - **Licence** (2026-09-23): the GNU Affero General Public License, version
   3 or later, as rmail.  `LICENSE` holds the full text.  rmail's extra
   permission for hook scripts is not carried over; rao-chat has no hooks
   yet.
+
+---
+
+## 14. A second model: a room is its name (adopted, then replaced, 2026-09-25)
+
+Raised by the owner after phase 1 was built to the first model, while
+asking what that model's complexity bought over a plain conversation /
+nested room / forum thread design.  Adopted 2026-09-25 (owner: "Yes
+please. Let's re-write the old issues, and update the functionality
+afterward."), then replaced the same day by section 15's model; the
+sections 1–4 written for it are kept in Appendix B.  This section keeps the
+conversation that produced it, in the owner's words, with the reasoning
+and the questions as they were settled.  Much of it carries into the
+current model: signatures, the sender being unknowable, withholding and
+ignoring, leaving and the address rule, the call-back check, the hello and
+its port, contact syncing, cross-checking, and the threat model.
+
+### The owner's words
+
+On whether the host model and the no-host model conflict:
+
+> these sound compatible to me? Like, what if we shared peer-to-peer style
+> with anyone we knew who was in the same room. We could share their IPs,
+> or ideally, we could require or highly suggest hostnames instead. The
+> system is already peer-to-peer, we'd be adding a way to share contacts
+> peer-to-peer, and the shared key would just be the name of the room.
+> Nesting would mean that the shared key had slashes in it, easy peasy.
+> You could theoretically have separate islands of conversation that had
+> the same shared key, but didn't have any contacts in common between them
+> except you - for that, we'd just have to handle the sorting on our end,
+> and ensure that the two contact lists don't get cross-contaminated.
+>
+> Then, if you wanted to block or remove someone, you could have two
+> levels - hide all their messages from me because I don't want to see
+> them, but maybe I do want to know that they said something, or hide them
+> entirely from me. Separately, you could say who you wanted to send to.
+> They would have a separate list of who they wanted to send to. If you
+> start getting spam, just go to a different server after identifying who
+> it was that caused it. It could only happen if someone intentionally
+> sells the contact details to a spammer or whatever, and then it's just
+> easy to ignore them and move on because you need shared keys to receive
+> anything they send anyway. We should also ensure that we have logs that
+> show unsuccessful decryption attempts, by the way, to avoid DDOSing or
+> whatever.
+>
+> I don't think groups or forum threads need to be monolithic, we just
+> send the messages when we can and they get sorted accordingly.
+> Everything is edit-able by design with no record, so nothing can be
+> trusted unless you make local copies yourself. Which might be something
+> we want to build in, now that I think of it...!
+>
+> It's like the cryptocurrency version of social media. Or like NFTs,
+> except instead of jpegs they're digital town squares and third spaces.
+> All you need is to know someone who is in a room, and then you can be
+> there. If you don't, then you can make your own at that same location
+> and they layer over each other semantically, but not practically,
+> because you'd never even know the other existed. You could even merge
+> spaces by just, inviting everyone to both, and they would collapse into
+> a single group naturally.
+
+On tokens and nesting:
+
+> the token is the room name. The contact details are the IP and port.
+
+> I was thinking that the upper level rooms would be like, a discord
+> server, and the lower level ones would be arbitrarily nested rooms in
+> that server.
+
+On secure names, signatures, trust and removal:
+
+> Okay for the room names, I think it's okay. If they wanted a secure
+> name, they'd have a randomized top-level domain and then they could add
+> lower rooms below it that are more sanely organized. Since the client is
+> open source, they might even be able to just, modify their client to
+> hide the random part, and then the key could be as long as they wanted
+> and impossible to guess.
+>
+> for the names, we could just, um, "suggest", that the last line in a
+> message is the contact's name. In the chat dialogue that the users type
+> into, we could have a persistent text entry field nearby that basically
+> says "signature" and if there's no signature, then nobody can tell who
+> left that sheet of notebook paper at the starbucks, and that's expected.
+> You can also sign things by someone else but that's considered taboo for
+> obvious reasons. We could even have a system that flags things that are
+> signed by specific names, but, ah that's complexity for no perfect value
+> because the fraudster might just ignore you and never send to you, so
+> you'd have nothing to check. Unless all clients continually verified the
+> received messages with each other consistently, then we could remove the
+> concept of blocking people entirely and just say if you don't like
+> someone, then go to a different room. Or maybe we could support both
+> systems, and depending on which rmail hooks each group of clients
+> enable, they could be part of various different rooms with differing
+> standards... ideas?
+
+> I don't like the idea of tokens being non-plain text. They're harder to
+> share.
+
+> also, it means that anyone can make private channels inside of servers,
+> which really are just an organizational [convenience, but pronounced
+> hazard] since there's no servers and everything is push-to-talk only.
+
+> I mean, you could just... remove that person from everyone else's
+> send-to contact list. Then they'd never be able to see again. And you
+> could specifically ignore them, so even if they send you spam junk you
+> can ignore them. Eventually, everyone's IP's will change, (unless they
+> use a hostname I guess), so if you ignore people often then IPs are a
+> better choice, but if you prefer reliability and trust DNS, then
+> hostnames are better.
+
+> That's not entirely true. If the top level name is something common like
+> "coffee-shop" or whatever, then even if other people know the key,
+> there's a discoverability problem. They won't know about each other.
+> Sure, they can decode each other's messages, and their clients know how
+> to sort them in their UIs, but they lack the IP and port address
+> connection to anyone who is joining a coffee-shop in Baltimore or
+> Timbuktu or whatever.
+
+> People should not be liable for their words. Responsibility should be
+> forged through something stronger than air.
+
+> could just, have everyone sync their contacts list whenever they notice
+> that a new person joined the room. We can't tell when someone left.
+> Also, we should be able to request that others automatically send their
+> contacts list to us, in the same way that the RGPL requires people to
+> send their source-code if requested. Like, if we make a special type of
+> message and put it in the outbox. In the UI it'll probably be tapping a
+> button or something, or the user could make it auto-triggered...
+
+> I mean, we could just keep track of our ignore list. That'll stay valid
+> until they change IP addresses.
+
+### The model
+
+- **A room is its name.**  The whole path, as plain text
+  (`coffee-shop/games/chess`), is both what people share and the room's
+  key.  The program turns the text into an encryption key internally (as
+  rmail turns its plain-text token into `SHA-256(token)`); people only
+  ever see and share words.
+- **Nesting is slashes.**  The top level is like a Discord server, the
+  rooms below it like its channels.  Knowing a room's name tells you every
+  name above it, and that is accepted: rooms below the top are for
+  organising.  The girlfriend example (section 3) becomes separate top
+  levels, not a gap in one tree.
+- **Privacy has two layers.**
+  - *Who you can reach.*  A common name is private in practice: two
+    `coffee-shop` groups share a key but not an address list, so they
+    never meet.  A room is joined by knowing someone in it, meaning their
+    address and port.
+  - *Who can guess the key.*  Anyone wanting a name nobody can guess uses
+    a random top level (`x7q9kw…/games`); a client may hide the random
+    part on screen.
+- **Two facts about each message.**  *Where it came from* is the address
+  of the connection that delivered it (every writer sends directly to
+  every reader).  *Who signed it* is a suggested last line, typed in a
+  persistent "signature" field, or nothing: an unsigned message is the
+  notebook page left at the coffee shop.  Signing as someone else is
+  taboo, not prevented.
+- **Sending and hearing are each person's own.**  You keep who you send
+  to; others keep theirs.  Removing someone is each person taking them
+  off their own send list.  Ignoring has two levels: hide their messages
+  but show that they spoke, or hide them entirely.  An ignore list is
+  kept by address and holds until the address changes.
+- **Contacts spread within a room.**  When a new person is noticed in a
+  room, everyone shares their contact list for that room.  Anyone may
+  also ask for it with a request message in the outbox (a button, or
+  automatic), the way the licence obliges source code to be sent on
+  request.  The ignore list filters incoming contacts as well as
+  messages.  Leaving cannot be noticed; a person leaves by no longer
+  sending.
+- **Islands and merging.**  Two groups with the same name and no contact
+  in common stay separate.  A person in both keeps the two apart on their
+  own disk, so the two contact lists do not mix; inviting everyone to
+  both merges them.
+- **Edits.**  Anything may be edited, with no record kept by the sender;
+  a reader who wants proof keeps their own copy.  (Phase 1's message log
+  `corrections` setting already keeps the original beside every edit.)
+- **Failed decryption is logged**, to notice someone flooding a server.
+- **Addresses or hostnames.**  Plain addresses drop ignored people
+  naturally when addresses change; hostnames keep everyone, dropped
+  people included, able to find you.
+
+### What it would retire from phase 1
+
+The removal split and its four settings, un-telling a room's place, parent
+disclosure and separate trees joining, a parent you do not hold, and the
+naming and placing of rooms made on arrival.  The message log, the room
+folders on disk, the people view and the options tally carry over.
+
+### Open questions for this model
+
+1. **Protecting the wire.**  With the room name as the only key, anyone
+   who can watch traffic (an internet provider, a café's router) can
+   guess a common name and read along.  Should every connection between
+   two servers also get a throwaway key agreed by the two computers when
+   they connect (as HTTPS does), changing nothing people share?
+2. **What "something stronger than air" is.**  If people are not to be
+   liable for their words, what are they answerable through: the
+   connection (knowing where someone is), knowing them in person,
+   something else?
+3. **When is a silent contact forgotten?**  Leaving cannot be noticed, and
+   rmail retries an unreachable contact forever (slowing to every 2
+   hours), so every person who ever passed through a room becomes a
+   permanent retry.  After how long, or on what sign, is one dropped?
+4. **Keeping islands apart on your own disk.**  A message arrives
+   addressed to `coffee-shop` from an address you have never seen.  If
+   you are in two `coffee-shop` islands, which one is it filed in?
+5. **Consent to being passed along.**  Contact syncing passes your address
+   to everyone in the room, including people who join later.  Is being in
+   a room consent to that?
+6. **Signed-as-someone-else.**  Taboo but not prevented.  Does the client
+   show anything when a signature names a contact whose address differs
+   from where the message came from?
+7. **Cross-checking between clients.**  Clients telling each other what
+   they received from whom would catch someone showing different words to
+   different people.  Wanted, as an optional hook, or not at all?
+8. **Rooms with different standards.**  Filters run as rmail hooks, per
+   group of clients.  Given "people should not be liable for their
+   words", which kinds of filter are in keeping, if any?
+
+### Toward question 4: strangers, vouching and the waiting pile
+
+The owner, answering question 4:
+
+> you send out a request to the other people in the room "hey can you send
+> me your contact lists?" then you don't decrypt the untrusted message
+> until you get back a response that confirms that the sender is invited.
+>
+> wait, hang on, if we only know a sender based on their token... How the
+> heck would we validate new contacts?
+>
+> um. Maybe there's a different endpoint that sends a different, also
+> encrypted packet, that has their, idk, IP address and port, so you know
+> how to send back to? And someone else in the room has to have added them
+> to their "contacts list" manually, and you have to be able to request
+> their list and validate, before you decrypt any untrusted messages. The
+> IP address and port of a new contact will have to be in cleartext, which
+> sucks... What do you think?
+
+Worked through (proposal, not yet agreed):
+
+- **Nothing new in the clear.**  Every internet packet already carries its
+  sender's address openly; that cannot be hidden and need not be
+  repeated.  What the packet does not show is the port the sender
+  *listens* on (outgoing connections use a random port), so a **hello**
+  message says "call me back on port N", sealed with the room key.
+- **Open freely, file only when vouched.**  Opening a message with the
+  room key does not trust it.  A message from an unknown address is
+  opened and put in a **waiting pile** for that room name; the server asks
+  the people it knows in each island of that name whether any of them
+  vouches for the address.  **The island whose member vouches is the
+  island it is filed in** — this answers question 4.  Unvouched messages
+  stay waiting; the client can show that they exist without showing them.
+- **Inviting is vouching.**  The member who added the newcomer by hand is
+  the one who answers yes.
+- **The call-back check.**  Before trusting "I am at this address, port
+  N", the server calls that address and port and asks "did you send
+  message X?"  Only a computer really listening there can answer.  No
+  keys needed; it also stops a false return address being used to aim
+  replies at someone else.
+
+New open questions:
+
+9. **"I moved."**  Everyone in a room holds the same key, so anyone in it
+   can send "I am sorelu, my new address is X" and take sorelu's place in
+   every contact list that believes it.  rmail avoids this because each
+   pair has its own token.  Close it with: hostnames plus the call-back
+   (DNS says where a name points, and only its owner can change that); a
+   personal secret per person, used only to prove "still me"; or
+   re-vouching after every move?
+10. **An unvouched message that never gets vouched.**  How long does the
+    waiting pile keep it, and does it count toward the failed-decryption
+    / flooding log?
+
+Where the port sits, asked by the owner ("can we use a manually defined
+port? ... Where in the stack would that rest?"): ports are in **TCP**,
+not HTTP.  A program may choose its outgoing port (even its listening
+one), but most homes sit behind a router doing address translation, which
+may rewrite the outgoing port, and which reaches the server from outside
+only through a forwarded port whose outside number can differ from the
+inside one.  So the port worth telling others is the outside forwarded
+one, and it has to be said, not read off the connection.
+
+11. *(answered 2026-09-25)* **A default port.**  Proposed: everyone
+    listens on one agreed port, so a hello only carries a port when it
+    differs.  Owner: "no way. no default port numbers."  Every hello
+    carries its port; a hello without one is an error, not a guess.  (It
+    also leaves no well-known port for scanners to probe.)
+
+### Answers, 2026-09-25 (questions 1–10 asked together)
+
+The owner's words, then what follows from them.
+
+1. **Protecting the wire.**  Owner: "the token isn't passed over the
+   network ever though...?"  True; but the sealed messages are, and a
+   person recording them can try guessed names against them later (the
+   seal says plainly whether a key opened it, which is how leaked
+   password lists are cracked).  rmail's tokens resist this by being long
+   and random.  **Still open** — (a) a throwaway key per connection as
+   well, or (b) accept that common names are readable by anyone who
+   records the traffic?
+2. **Answerable through:** "Knowing them in person, or being vouched for
+   by someone who does."  Vouching governs whom you send to; it does not
+   prove who wrote a message (see 6).
+3. **Leaving.**  "the moment we know that the person has left the room.
+   We should add messages that do so. We should assume that everyone is
+   keeping a transcript log of everything that is said, so letting the
+   messages pile up with unsent contacts still waiting is fine probably,
+   unless it strains the rmail single-threaded messaging core engine in
+   which case we'll re-assess at scale."  A **leave message** is added.
+   Undelivered messages wait for their contact indefinitely; re-assess if
+   the queue strains the sending engine.
+4. **Strangers.**  "we should open it and only read enough of it to
+   confirm that it decrypted correctly. Otherwise, yes, this design."  The
+   seal's check covers every byte, so the whole message passes through
+   the lock; it is then held in the waiting pile unparsed and unshown
+   until vouched.  (If the body should stay sealed until then, the hello
+   travels as its own small sealed piece and the body is sealed
+   separately — noted, not decided.)
+5. **Consent:** being in a room is consent to your address being passed
+   to its members.
+6. **Signatures.**  "It shows nothing: signing as someone else is taboo,
+   not policed. … we can't know for sure anyway because we don't have any
+   way to know who sent which message. Sure, we can see which IP address
+   sent it, but IP addresses change, so we shouldn't trust or rely on
+   them. Someone might even be passing it through TOR, or some other kind
+   of routing protocol, so we should just assume that we can't know who
+   sent something, and trust the signature, which explicitely can be
+   signed however you'd like. If this turns out to be a stupid design
+   decision, we'll catch it and update."  **The sender is unknowable by
+   design; the signature is what a message says about itself.**
+7. **Cross-checking.**  "we shouldn't syncronize on every single message,
+   but like... periodically we can sync. If there's ever a discrepancy
+   it's raised as an error, not a silent warning in some log somewhere
+   that gets auto-corrected. But remember, we also need to be able to
+   edit messages as well... Phew this is complex!"  Periodic sync.
+   Because each person chooses whom they send to, people legitimately
+   hold different sets of messages, so a *missing* message is normal.
+   The one real discrepancy is **the same message id with different
+   contents**, raised as an error.  An edit is its own record with its
+   own id, so edits never cause one.  Consequence for phase 1: the
+   message log currently answers "duplicate" to a repeated id without
+   comparing contents (issue 105, `log-repeated-id-different-content`);
+   under this answer it must become an error.
+8. **Standards and filters:** "let's build these later. They are
+   mentioned because they are possible, and should be considered, but the
+   base platform is an open, permissive one that doesn't require complete
+   trust."
+9. **"I moved."**  "again we just, shouldn't trust a sender's IP address.
+   So, no need to validate such a thing."  Addresses answer "where do I
+   send", never "who wrote this".  Since everyone in a room can already
+   read it, a false move reveals nothing; its only harm is silencing (the
+   real person stops receiving), and a false leave message does the same.
+   Proposed single rule: **addresses are added freely; an address is
+   removed only when it says so itself or stops answering.**  A move adds
+   the new address beside the old (rmail already keeps several per
+   contact); a leave message is confirmed by asking the leaving address.
+   A forger can add noise but cannot silence anyone.  (Proposal; not yet
+   agreed.)
+10. **Unvouched messages** are dropped after a set time.  Owner: "the
+    user can specify in their contacts file maybe?"  A stranger has no
+    contacts entry, so the setting lives in `config`, per home or per
+    room, with no default.  (Where exactly: open.)
+
+Still open after this round: 1 (the wire), the add-freely/remove-by-own-
+word rule in 9, the separately-sealed hello in 4, and where 10's setting
+lives.
+
+### Follow-up, 2026-09-25
+
+1. **The wire.**  Owner: "I don't see how this is more likely than, like,
+   having an IP address and guessing which ports are open? … It feels...
+   like a rare situation? Can you give me example "use-cases" that a
+   hacker or malicious attacker might attempt? I don't know the exact
+   term for it - threat profiles maybe?"  The term is a **threat model**.
+   The attacker in question 1 does not guess: they sit on the path the
+   traffic already takes (café wifi, an internet provider, a school or
+   employer network, bulk surveillance), where every packet shows its
+   addresses and ports in the open, and try room names against recorded
+   messages later at no cost.  The threat model worked through:
+
+   | who | already sees | does | answer |
+   |---|---|---|---|
+   | café wifi, open network | the phone's traffic there | records, guesses common names later | open (question 1) |
+   | internet provider, school, employer | all traffic, by policy | keeps it in bulk | open (question 1) |
+   | bulk surveillance | traffic across networks | runs name dictionaries automatically | open (question 1) |
+   | harvester | one public room | collects every address via contact sync | accepted (being in a room is consent) |
+   | flooder | an address and port | sends junk; every piece costs a try of every key | failed-decryption log; slow down failing addresses |
+   | silencer | the room name | false "left" / "moved" | the address rule (2 below) |
+   | two-faced sender | the room name | different contents under one id | periodic cross-check raises an error |
+   | impersonator | the room name | signs as someone else | accepted by design |
+   | replayer | a recorded message | re-sends it | the duplicate-id check |
+   | locator | any contact list | an address gives city and provider | accepted with consent |
+
+   The fix, if wanted, is a throwaway key agreed per connection (as HTTPS
+   does), which OpenSSL — already used by rmail — provides.  **Still
+   open**: is reading common-named rooms by those already on the path
+   acceptable for an open, permissive platform?
+2. **Addresses: agreed.**  Owner: "yeah, the address will send to everyone
+   and say "hello I'm not in this room anymore" and if they receive more
+   messages from them, they get re-added of course because that's how it
+   works in general right?"  Rule: addresses are added freely (speaking
+   re-adds you; the ignore list still overrides); an address is removed
+   only by its own say-so or by going silent.  Proposed addition: a leave
+   notice is confirmed by asking that address "did you leave?", so no one
+   can send it for someone else.
+3. **Opening without touching.**  Owner: "opened but not parsed. Not
+   scanned. Not even touched. We decrypt the entire message, then scan
+   through the first N bytes looking for a success code that indicates
+   that the message has been successfully decrypted. That's how we do it
+   for rmail, right?"  rmail (`rmail_crypto.c`) does it more strongly:
+   every sealed frame ends with a 16-byte check value (the AES-GCM tag)
+   computed from the key and every byte; opening recomputes it and returns
+   nothing at all if one bit or the key is wrong.  So the lock itself says
+   "opened" or "not", nothing reads the contents, and the opened message
+   waits unparsed until vouched.  **Agreed: opened, not parsed.**  The
+   separately-sealed hello is not needed.
+4. **Waiting-pile time limit.**  Owner: "Um, I dunno."  Suggestion: one
+   value for the whole home in `config`, no default; a per-room value can
+   be added later if a room needs one.  Open.
+
+### The threat model, answered (2026-09-25)
+
+The owner, row by row:
+
+- Café wifi, internet provider: "it's all encrypted, so I don't think
+  that's very vulnerabilizing." / "same."
+- Bulk surveillance: "good, make them work for it. Anyone who cares about
+  privacy will use randomized base room names anyway."
+- Harvester: "you'd need a contact in the room. rmail doesn't protect
+  against being betrayed by someone you trust."
+- Flooder: "the isp will notice DDOS attacks and change your IP out from
+  under you. And from under them. Also, fail2ban is a thing, albiet it's
+  effectiveness is mitigated by proxies and such."
+- Silencer, two-faced sender, impersonator: "they need to already be
+  trusted, and then they only get what any other contact would have. rmail
+  does not protect against betrayal. but that's a human problem that
+  software should not be designed to counteract."
+- Replayer: "I struggle to see how that would be malicious. Maybe
+  annoying, especially when coupled with the DDoS style attacks, but it
+  doesn't even damage your hard drive through repeated use and mechanical
+  wear so what's the concern aside from increased latency from the
+  traffic? That's something the ISP could notice, or your dynamic firewall
+  or something."
+- Locator: "again, this is betrayal, and we cannot help with that. We can
+  mitigate it by being as simple and secure as possible, but at the end of
+  the day if you march to war and your buddy draws his sword alongside you
+  but uses it on his brother, then is the sword to blame? The scabbard?
+  The battlefield?"
+
+What follows:
+
+- **Principle: rao-chat defends against strangers, not against betrayal
+  by someone you trusted.**  Harvesting, forged signatures and passing on
+  a location all need a member to have let the person in; after that they
+  hold only what any member holds.  The software stays as simple and
+  secure as it can and does not try to counteract a human choice.
+- **Question 1 answered: no per-connection key.**  Encryption under a
+  guessable name makes attackers work for it; privacy is a random
+  top-level name, chosen by those who want it.  A common-named room is
+  like a conversation in a real café.
+- **Harvester correction:** contact syncing only reaches people already
+  connected to a room, so harvesting is betrayal, not a stranger's attack.
+- **Replay:** harmless — dropped as a duplicate; a replayed leave notice is
+  caught by the "did you leave?" call-back.
+- **Flooding is left to the internet provider and the firewall.**  The
+  failed-decryption log is written for fail2ban (which watches a log file
+  and blocks addresses that keep appearing): one line per failure, with
+  time and address, at a fixed path.  rao-chat builds no flood defence of
+  its own beyond that log.
+
+Still open from this round: where the waiting pile's time limit lives
+(suggested: one value per home in `config`, no default).
+
+---
+
+## 15. A third model: a room is a contact (adopted 2026-09-25)
+
+Raised by the owner after section 14 was adopted and the issues rewritten
+for it.  Adopted the same day; sections 1–4 now describe it.
+
+### The owner's words
+
+> Yo I just had a new idea for the design, can we compare it with the
+> current design?
+>
+> basically, instead of the token being the room name, we could have the
+> contact name be the room name. Then, each contact could have several
+> IPs, and we'd deliver to all of them. Each of these IP/port combinations
+> (we'd have to bundle them together, the current rmail design has one
+> port for many IPs which doesn't really make sense tbh) would be a
+> recipient. The shared key would be a special code that is for
+> authentication purposes only. Is that... somehow better or worse?
+
+On each nested room needing its own invitation:
+
+> I think it's okay. This way, we can have tiers of trust. The farther down
+> in the directory structure you go, the more people you'll need to have
+> invited you. It also guarantees that lower rooms have only members that
+> exist in higher rooms. And it encourages task focus to specialize,
+> rather than power to hierarchicalize, though I bet people will still use
+> it the other way too, /sigh
+
+On a leaked token: "And this can be resolved without losing the room
+itself."
+
+On rooms and people sharing the contacts file:
+
+> We can keep them separate, so that we can communicate with people with
+> direct-messaging style conversations and group chats. Though, I'd like
+> if all of them used the same general architecture, with as much
+> code-reuse as possible.
+
+### The model
+
+- **A room is a contact entry**: a label (the reader's own), a random
+  plain-text token, and a list of addresses, each an (address, port) pair
+  with no default port.  Every pair is a recipient.  The token makes the
+  sealing key, as rmail's does; being able to seal is the proof of
+  belonging.
+- **A direct message is a room with one other member** — exactly an rmail
+  contact today.  People and rooms are kept in two files of one format,
+  read and written by the same code.
+- **The token is random**, so recording traffic and guessing is useless.
+  A public square is a room whose token is deliberately guessable; the
+  section 14 model is the special case "token = name".
+- **Two groups with the same label are simply different rooms** (different
+  tokens).  Islands, vouching, the waiting pile and merging are not needed:
+  holding the token is being invited.
+- **Names belong to the reader again**; rename freely.
+- **Nesting: each room has its own token and its own invitation.**  Tiers
+  of trust: deeper rooms need more people to have invited you.
+- **rmail's `ip[N]`/`port[N]` pairs** already exist, but a missing
+  `port[N]` falls back to the default port; that fallback goes.
+
+### Worked through
+
+- **Tiers of trust need one enforced rule.**  Tokens are independent, so a
+  member of a child room can hand its token to an outsider.  "Lower rooms
+  hold only members of higher rooms" holds only if every server refuses a
+  new address in a child room that is not a member of the parent room as
+  it sees it.
+- **This conflicts with the owner's first example** (the girlfriend in
+  `home` and `home/ritz/programming` but not `ritz`; the programming friend
+  in `programming` only).  Proposed: two kinds of "below" — *declared
+  children* (the invitation names the parent; parent membership enforced;
+  the trust tiers) and *your own filing* (a room placed under another on
+  your own screen only; a separate room to everyone else; the first
+  example).
+- **Changing a leaked token** keeps the room (history, name, members minus
+  the leaker).  The new token cannot be sent sealed with the old one; it
+  goes to each remaining member through their direct-message contact.
+  Members without one need a re-invite from someone who has one.
+
+### Open questions for this model
+
+1. *(answered)* **Adopt it** in place of section 14's model?  Owner: "yes".
+2. **Two kinds of "below"** (declared children and your own filing), or
+   declared children only (dropping the first example's shape)?  Owner:
+   "in the UI we will have rooms sorted like a directory tree structure.
+   Picture a filesystem that lets you open and collapse nodes to view the
+   contents in the tree. Very Microsoft Windows Explorer core."  The tree
+   is settled; whether a room may also be *filed* under another without
+   being its declared child (the first example: the girlfriend in
+   `programming` without `ritz`) is **still open**.  Sections 1–4 keep a
+   `filed-under` field for it.
+3. *(answered)* **Who may change a room's token?**  Owner: "Not sure. When
+   it's built we'll develop usability improvements. For now, let's say
+   it's manually modified."  By hand, for now; the new token is given out
+   by hand through direct messages.
+4. *(answered)* **Readable tokens.**  Owner: "we don't restrict what users
+   use for their token, but we suggest readable tokens like that."  Any
+   text is allowed; the app suggests random readable words.
+5. *(answered)* **Who may start a child room?**  Owner: "Anyone. It's not
+   like it's taking up space on a server somewhere, so no need to restrict
+   it to certain permissions."
+
+---
+
+## Appendix A. The first model (built in phase 1, retired 2026-09-25)
+
+Sections 3 and 4 as they stood when phase 1 was first built.  In this
+model a room was known by a random id that travelled between servers,
+names belonged to each reader, and removing someone split the room.  It
+was retired for the model in section 14 (Appendix B), which needs no
+split, no disclosure of parent rooms and no agreed room ids; that model was
+itself replaced by section 15's (sections 1–4).  Kept so the first build
+can be understood.
+
+### A.3 Rooms and who hears what
+
+This follows rmail's addressing: a message goes to the names on its `to:`
+lines, and the sender's server remembers who it went to.  In rao-chat each
+room keeps that list, and every message written in the room goes to it.
+
+- **You choose who hears you.**  Adding someone to a room's recipient list
+  means your messages there reach them from then on.  Removing them means
+  they stop.  That is all adding and removing is.
+- **You cannot choose who hears anyone else.**  Each person in a room has
+  their own recipient list for it.  If you remove someone and a third
+  person has not, the third person's messages still reach them.  Owner:
+  "Nobody can control if someone else is listening to someone else, but we
+  can control if they're listening to us."
+- **Being removed splits the room.**  Rooms and conversations are a way of
+  sorting on each person's own screen, nothing more.  When you remove
+  someone, their server is told, and their copy of the room becomes a new
+  room of its own, with everything they had received kept in it.  From
+  then on you talk into your room and they talk into theirs; their
+  messages no longer reach you there.  Everyone else stays on both lists
+  unless they choose otherwise, so they now hear two rooms where there
+  was one.  Owner: "yes it's a different room, no their messages don't
+  reach you, because they're talking into their room with 5 people (used
+  to be 6) and you're talking into your room of 5 people (used to be 6) -
+  everyone else is listening eagerly."
+- **Replying.**  When a message arrives in a room you have never seen, your
+  server makes that room for you.  Whom your replies go to is open
+  question 2.
+- **Order.**  Messages carry the time they were written (whole seconds
+  since 1970).  A room shows them in that order, and a message that
+  arrives late is placed where it belongs, moving the ones after it down.
+  Ties are broken by room id then message id, so every reader sees the
+  same order.
+
+#### Trees, and trees that look separate
+
+Take the owner's example.  You have three rooms, one inside the next:
+
+```
+home                  recipients: everyone in your household
+└── ritz              recipients: (just you)
+    └── programming   recipients: the people you program with
+```
+
+- **Your girlfriend** is in `home` and `programming`, but not `ritz`.  She
+  sees two separate trees: `home`, and `programming` on its own.  Nothing
+  she receives tells her they are connected.
+- **A programming friend** is in `programming` only.  He sees one tree,
+  `programming`, and nothing above it.
+- **If you add your girlfriend to `ritz`**, the gap closes: she now sees one
+  tree, `home → ritz → programming`.
+
+So a room's place in someone's tree is only as complete as the rooms of
+that tree they are in.  (What travels with a message to make this work is
+open question 3.)
+
+#### Names belong to the reader
+
+A room's name is a label each person keeps for themselves.  You can have
+two rooms called `programming`; a friend can call your `programming` room
+`ritz-code`.  Names are how people sort; room ids are how servers match.
+Owner: "it's just a name that we sort ourselves, it doesn't necessarily
+refer directly to the filesystem."
+
+
+
+### A.4 Rooms on disk
+
+Because names do not imply structure, the folder a room is stored in cannot
+be its name.  Rooms are stored flat, by room id, and the tree is recorded
+inside them.  Owner: "These can be stored on disk behind the scenes as we
+please ... However we keep the actual file-path of the file on our disk
+right next to the file, easily accessible as easily as accessing the name."
+
+```
+rao-home/
+  config                      name, port, settings (rmail's config format)
+  contacts                    people and own devices (rmail's format)
+  rooms/
+    <room id>/
+      name                    your name for the room (one line of text)
+      parent                  the parent room's id, or empty for a top room
+      recipients              one contact name per line: who you send to
+      where                   this room's own folder path, and its path of
+                              names from the top ("home/ritz/programming"),
+                              kept beside the room so either is one read away
+      log                     the messages, appended to, never rewritten
+  people/
+    <contact>/
+      <room name> -> ../../rooms/<room id>
+                              one link per top room this contact is in, as
+                              you see it: the highest room of each tree
+                              they are a recipient of
+```
+
+- **`people/`** answers "what do I share with this person?" with an `ls`.
+  The links are rebuilt from the rooms' recipient lists whenever a list
+  changes; the lists are the truth, the links are the view.
+- **`log`** is plain text, one record per message: message id (text,
+  unique), author (text: "me" or a contact's name), time written (whole
+  seconds since 1970), time arrived (the same), and the text.  Its exact
+  shape is open question 8.  A person can read a room with `cat` or
+  `less`, back it up by copying the folder, and search it with `grep`.
+- **Ids make delivery safe to repeat.**  A delivery sent twice (the first
+  answer got lost) is recognised by its message id and not filed again.
+  rmail learned this in September 2026, when two daemons dialling each
+  other at once filed one message eight times.
+
+---
+
+## Appendix B. The second model: a room is its name (adopted and replaced 2026-09-25)
+
+Sections 1-4 as they stood while section 14's model was the design.  A
+room's plain-text name was its key; same-named groups were islands told
+apart by vouching; strangers' messages waited in a waiting pile.  Replaced
+the same day by section 15's model, where a room is a contact with a
+random token: holding the token is being invited, so islands, vouching
+and the waiting pile are not needed, and a recorded message cannot be
+opened by guessing a common name.
+
+### B.1 What rao-chat is
+
+Private chat between people who each run a small server at home.  There is
+no central server: a message goes from the writer's home server straight to
+each reader's, the way rmail mail does.
+
+**A room is its name.**  A room's full name — a path of words such as
+`coffee-shop/games/chess` — is both what people tell each other and the
+key its messages are sealed with.  Rooms nest by the slashes in their
+names: the top level is like a Discord server, the rooms below it like its
+channels.  All you need to be in a room is its name and someone in it who
+will vouch for you.
+
+Two groups can use the same name without ever meeting: a `coffee-shop` in
+Baltimore and one in Timbuktu share a key but no one who knows anyone in
+the other, so neither ever hears the other.  Each such group is an
+**island**.  Invite everyone to both, and the two islands become one room.
+(Owner: "they layer over each other semantically, but not practically,
+because you'd never even know the other existed.")
+
+Each person reaches their home server from:
+
+- the **Android app**, which looks and behaves like the rmail app;
+- the **web client**, a page served by their own home server, for talking
+  from a computer.
+
+Both show the same rooms and history, because both live on the home server.
+
+Later, once rao-chat works, rmail's Android app gains a button that jumps to
+rao-chat and back, the way Facebook's app and Messenger link to each other.
+
+#### What it is not
+
+- **Not a hosted service.**  Nobody's messages pass through a server that
+  none of the people in the room runs.
+- **Not an identity system.**  Nobody can know for certain who wrote a
+  message.  A message carries whatever signature its writer typed, or none
+  (section 3).
+- **Not a defence against betrayal.**  rao-chat protects a room from
+  strangers.  Someone a member let in holds what any member holds, and what
+  they do with it is a human matter (section 14, "The threat model").
+- **Not a mail client.**  rmail stays the place for long, file-shaped
+  messages and attachments.
+
+
+
+### B.2 Words used in this document
+
+| word | meaning |
+|---|---|
+| **home server** | the program each person runs on a computer at home (in rmail, "the daemon").  It holds their rooms, talks to other home servers, and serves their clients. |
+| **room name** | a room's full path of words, as plain text (`coffee-shop/games`).  It is shared by telling people, and the program turns it into the room's encryption key.  The last word is the room's own; the words before it name the rooms it sits inside. |
+| **island** | one group of people using a room name, connected to each other by knowing each other's addresses.  Two islands can share a name and never meet.  Your server tells them apart by a tag it keeps to itself, never sent. |
+| **address** | where a home server can be reached: an IP address or hostname, and the port it listens on.  Addresses answer "where do I send"; they never prove who wrote something. |
+| **member** | an address your server knows to be in a room, because someone in the room vouched for it. |
+| **withheld** | a member you have chosen not to send to in a room.  Everyone else in the room keeps their own choices. |
+| **ignore list** | addresses whose messages you do not want: hidden entirely, or marked ("someone you ignore spoke").  Yours alone; holds until that address changes. |
+| **signature** | the last line of a message, typed by its writer in a persistent "signature" field, or nothing.  Signing as someone else is taboo, not prevented. |
+| **vouching** | a member confirming that an address belongs in a room.  Inviting someone is vouching for them. |
+| **waiting pile** | messages from addresses no one has vouched for yet: opened (so the lock has said they are genuine), but not parsed or shown. |
+| **contact** | a person you have named yourself in the contacts file (rmail's format), with their addresses.  Members you have not named are shown by their address. |
+| **device** | one of your own clients (a phone, a browser) paired with your home server; in the contacts file, an entry marked `own = true`, as in rmail. |
+| **message** | one entry in a room: its id, the address it arrived from, when it was written and arrived, and its text (signature included). |
+| **delivery** | a message moving from the writer's home server to a reader's. |
+| **live connection** | a connection a client holds open to its home server, so new messages arrive the moment they land. |
+
+
+
+### B.3 Rooms and who hears what
+
+- **You choose who hears you.**  Every member of a room hears your messages
+  there unless you withhold them.  Withholding someone means your messages
+  stop reaching them; that is all removal is.
+- **You cannot choose who hears anyone else.**  Each person makes their own
+  choices.  To stop someone hearing a room entirely, everyone in it would
+  have to withhold them.  Owner: "Nobody can control if someone else is
+  listening to someone else, but we can control if they're listening to
+  us."
+- **Ignoring** is separate from withholding.  Two levels: hide an address's
+  messages entirely, or hide them but show that they spoke.  The ignore
+  list also refuses that address when other members' contact lists bring
+  it back.  It holds until the address changes.
+- **Joining.**  Someone in the room tells you its name and vouches for you.
+  When your first message arrives at another member's server, it waits in
+  their waiting pile until a member they already know vouches for your
+  address.  **The island whose member vouches is the island it is filed
+  in.**  Messages no one vouches for are dropped after a set time.
+- **Members spread.**  When a new member is noticed, the members share
+  their contact lists for the room; anyone may also ask for them, the way
+  the licence obliges source code to be sent on request.  Being in a room
+  is consent to your address being passed to its members.
+- **Leaving** is a message: "I'm not in this room anymore."  An address is
+  removed from a room only by its own say-so or by going silent; a leave
+  notice is confirmed by asking that address.  Speaking again brings you
+  back.  Addresses are added freely: a move adds the new address beside
+  the old.
+- **Signatures.**  The sender of a message is unknowable by design: an
+  address can change or pass through Tor.  The signature is what a
+  message says about itself.  Owner: "If this turns out to be a stupid
+  design decision, we'll catch it and update."
+- **Edits.**  Anything may be edited.  An edit is its own message naming the
+  one it changes; your server keeps the original beside it, so your own
+  copy is the record ("nothing can be trusted unless you make local copies
+  yourself").
+- **Order.**  Messages carry the time they were written (whole seconds
+  since 1970).  A room shows them in that order, and a message that
+  arrives late is placed where it belongs.  Ties are broken by message id,
+  so every reader sees the same order.
+- **Checking each other.**  Members periodically compare what they have
+  received.  A missing message is normal, since everyone chooses whom they
+  send to.  The same message id with different contents is an error,
+  raised to the person, not quietly corrected.
+
+#### Trees
+
+A room's place in the tree is its name.  `coffee-shop/games` sits inside
+`coffee-shop` in the same island.  Knowing a room's name tells you every
+name above it, and that is accepted: rooms below the top are for
+organising, not secrecy.  Owner: "an organizational [convenience, but
+pronounced hazard] since there's no servers and everything is push-to-talk
+only."  Privacy lives at the top: a random top-level name
+(`x7q9kw…/games`) cannot be guessed, and a client may hide the random part
+on screen.
+
+Being in `coffee-shop/games` does not make you a member of `coffee-shop`;
+you are a member of a room only when someone vouches for you in it.  If
+you hold a room but not the one above it, it is a top room for you.
+
+Because the name is the key, a room cannot be renamed or moved: a
+different name is a different room.
+
+
+
+### B.4 Rooms on disk
+
+Rooms are stored flat, each in a folder named by a random tag of your own.
+The tag is what lets two islands with the same name sit side by side; it is
+never sent.  The room's name, and the folder's own path, are kept inside,
+side by side.  Owner: "we keep the actual file-path of the file on our disk
+right next to the file, easily accessible as easily as accessing the
+name."
+
+```
+rao-home/
+  config                      settings (rmail's config format)
+  contacts                    people you have named, own devices (rmail's format)
+  ignore                      one address per line, with its level (hide | mark)
+  rooms/
+    <local tag>/
+      name                    the room's full name ("coffee-shop/games"); its key
+      island                  the local tag of the island this room belongs to
+      members                 addresses known to be in this room, one per line
+                              (address, port, who vouched, when)
+      withheld                members you do not send to here, one per line
+      where                   this folder's path, and the room's name
+      log                     the messages, appended to, never rewritten
+  waiting/
+    <room name, escaped>/     messages from unvouched addresses, one file each,
+                              opened but not parsed, kept a set time
+  people/
+    <contact>/
+      <link name> -> ../../rooms/<local tag>
+                              one link per top room this contact is a member
+                              of, as you see it
+```
+
+- **`people/`** answers "what do I share with this person?" with an `ls`.
+  The links are rebuilt from the rooms' member lists whenever one changes;
+  the lists are the truth, the links are the view.
+- **`log`** is plain text, one record per message: message id, the address
+  it arrived from (or `me`), time written, time arrived, and the text.  A
+  person can read a room with `cat` or `less`, back it up by copying the
+  folder, and search it with `grep`.
+- **Ids make delivery safe to repeat.**  A message delivered twice is
+  recognised by its id and not filed again; the same id with different
+  contents is an error.  rmail learned this in September 2026, when two
+  daemons dialling each other at once filed one message eight times.
+
+
+### Answers, 2026-09-25 (after the rewrite for this model)
+
+1. **Filing a room under another without it being a child.**  Owner: "I
+   guess so? There isn't anything structurally to prevent it in rmail...
+   What do you think?"  Yes: filing is like putting a mail folder inside
+   another in a mail client — it changes nothing for anyone else, so there
+   is nothing to enforce.  **A room is either a declared child (the
+   parent-membership rule applies) or filed under another on your own
+   screen only (the entry's `filed-under`; no rule).**  Both show in one
+   tree.  The owner's first example is filing.
+2. **Someone leaving a parent room.**  Owner: "This is UI work, I think
+   it'll make the most sense to users if we do it that way, but it's not
+   technically required in a technical sense."  Read as: the client also
+   removes them from the parent's child rooms; the server only refuses them
+   as new members.  (Reading to be confirmed.)
+3. **A key hint in front of each frame.**  Owner: "no way. If we need more
+   speed, we make the decoding multithreaded. If there's just wayyyyy too
+   many rooms, then users should just have multiple rooms instead of
+   cramming them all into the same room. Multiple rooms means multiple
+   mailboxes, right? Which means fewer keys to check. Right?"  No hint.
+   Correction recorded: the cost grows with the number of rooms a server
+   holds (one key each), not the people in a room, so splitting a room adds
+   keys.  What does cut the keys tried is a **separate listening port** per
+   group of rooms (a "mailbox"): a frame arriving on one port is tried only
+   against that port's rooms; the port is already visible on every packet.
+   Each key's attempt is independent, so trial opening splits across
+   threads cleanly; roughly a microsecond per attempt on a 1 KB frame with
+   AES instructions, so about a millisecond per frame at 1,000 rooms on one
+   thread.
+4. *(still open)* Suggested token length and word list.
+5. **Silent members.**  Owner: "no but we can add something in the UI to
+   automatically prune users who've been silent for a while, according to
+   their specifications."  The server never removes a silent member; the
+   client may offer pruning after a time the person chooses.
+
+### Answers from the tally, 2026-09-25 (round 2)
+
+- **Words in a suggested token** (`rooms.suggested-token-words`): **6**.
+  Owner: "okay" to the builder's suggestion.  (Measured: two SHA-256 per
+  guess, about 775,000 guesses a second on one CPU core; at an assumed
+  5 billion a second on one graphics card, 4 words ≈ 4 days, 5 ≈ 90 years,
+  6 ≈ 700,000 years.)
+- **The same message arriving from a second address**
+  (`log.same-id-new-address`): **duplicate**.  Owner: "duplicate.
+  Sometimes people say things like "okay" or "duplicate" or "duplicate" or
+  "duplicate" or "duplicate" or... teehee I'm being silly :)"
+- **Ignoring an address** (`ignore.match`): **the whole IP address**, every
+  port.  Owner: "IP. Sucks to suck, don't room with hackers or spammers I
+  guess. Does make VPNs harder though..."  Consequence recorded: ignoring
+  a VPN's exit address ignores everyone using that exit.
+- **Record shape of the log** (`log.record-shape`): owner "okay" —
+  read as the builder's leaning, **tsv** (to be confirmed).

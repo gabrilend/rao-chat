@@ -1,0 +1,12 @@
+# 004-rmail-formats.lua
+
+Turns rmail's two text formats into tables and back.  Handles text only;
+`where` is a label (usually the file path) used in error messages.
+
+| function / value | takes | gives | what it does |
+|---|---|---|---|
+| `parse_config(text, where)` | string, string | table key (string) → value (string) | `key = value` lines; `#` comments and blanks skipped; `key =` gives `""`.  Errors (with line number) on a non-setting line or a key set twice. |
+| `config_with(text, key, value)` | string, string, string | string | The config text with `key` set: its line replaced in place, or appended.  Refuses keys outside `[A-Za-z0-9_.-]+`, and values that are not one-line strings without edge spaces. |
+| `parse_contacts(text, where)` | string, string | table name → table field → value (all strings) | `name.field = value` and `name.field[N] = value` lines (field kept as `"ip[2]"`), bare `name` lines, `//` and `#` comments.  Strips double quotes.  Repeated plain `ip` lines become `ip[1]`, `ip[2]`… as rmail does; any other repeat is an error.  Refuses rmail's old JSON format. |
+| `CONFIG_KEY_PATTERN` | — | string | Lua pattern a config key must match. |
+| `CONTACT_NAME_PATTERN` | — | string | Lua pattern a contact name must match (`^[%w_%-]+$`). |

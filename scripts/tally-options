@@ -1,0 +1,71 @@
+#!/usr/bin/env luajit
+-- tally-options — lists every choice the owner has not made yet, across all modules.
+--
+-- Phase 1 was built with every variant of every undecided choice, each module
+-- noting its choices in a file of its own (src/<module>/<index>-options.lua).
+-- This script reads all of those files and shows them together: a table of
+-- every choice, how many wait on the owner and how many wait on something
+-- else, and — with --walk — one choice at a time with everything building
+-- each variant showed, so the owner can decide them one by one.
+--
+-- Usage (from any folder):
+--   scripts/tally-options                     the summary table
+--   scripts/tally-options --walk              one choice per page, Enter for the next
+--   scripts/tally-options --walk --no-pause   every page, straight through
+--   scripts/tally-options <project folder> [--walk] [--no-pause]
+--
+-- Reading the files is done by src/phase-1-demo/100-gather-options.lua and
+-- the showing by 101-show-options.lua; this script only joins them.
+
+local DIR = "/home/ritz/programs/rao-chat"
+
+-- {{{ local function read_arguments
+-- The project folder may be given as the first argument; flags may follow.
+-- An unknown flag is refused rather than ignored, so a typo is noticed.
+local function read_arguments(args)
+    local settings = { dir = DIR, walk = false, pause = true }
+    local flag_effects = {
+        ["--walk"]     = function() settings.walk = true end,
+        ["--no-pause"] = function() settings.pause = false end,
+    }
+    for position, argument in ipairs(args) do
+        if flag_effects[argument] then
+            -- a known flag: switch its setting on
+            flag_effects[argument]()
+        elseif position == 1 and argument:sub(1, 1) ~= "-" then
+            -- the first argument, not a flag: the project folder
+            settings.dir = argument
+        else
+            -- anything else is a mistake worth stopping for
+            io.stderr:write("tally-options: unknown argument: " .. argument .. "\n")
+            os.exit(2)
+        end
+    end
+    return settings
+end
+-- }}}
+
+-- {{{ local function main
+local function main(args)
+    local settings = read_arguments(args)
+    package.path = settings.dir .. "/src/phase-1-demo/?.lua;" .. package.path
+    local gather = require("100-gather-options")
+    local show = require("101-show-options")
+
+    local record = gather.gather(settings.dir .. "/src")
+    if settings.walk then
+        -- one choice at a time
+        show.walk(record,
+                  function() return io.read("*l") end,
+                  function(line) io.write(line, "\n") end,
+                  settings.pause)
+    else
+        -- the summary table
+        for _, line in ipairs(show.summary_lines(record, gather.counts(record))) do
+            io.write(line, "\n")
+        end
+    end
+end
+-- }}}
+
+main(arg)

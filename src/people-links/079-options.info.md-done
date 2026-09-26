@@ -1,0 +1,11 @@
+# 079-options.lua
+
+The people-links module's undecided choices, as plain data for the options
+tally (`scripts/tally-options`, issue 106).  `dofile` it; it returns a list
+of choice tables in the contract's shape: `{id, question, waits_on
+("owner" or "state"), detail, config_key, variants = list of {name, summary,
+built_in, tests, findings}, leaning}`, all strings except `variants`.
+
+Choices listed: `people-link-collision`, `people-own-devices`,
+`people-split-records` (owner), `people-slash-in-link-name` and
+`people-rebuild-scope` (state).

@@ -1,0 +1,92 @@
+-- 082-message-ids.lua — makes message ids, and checks that a given id is
+-- safe to write into a log.
+--
+-- Every message gets a name no other message will ever have: 16 random bytes
+-- read from the computer's own source of randomness (/dev/urandom), written
+-- out as 32 hexadecimal letters, the same shape as a room id.  Because the
+-- name is chosen when the message is written and travels with it, a copy of
+-- the message that arrives twice carries the same name, and the log can say
+-- "I already have this one".  The name is also the message's anchor: a
+-- notice or search result can point straight at it.
+--
+-- Ids that come from elsewhere (another home server, a copied log) are not
+-- required to be 32 hex letters, only to be made of letters, digits, '-' and
+-- '_'.  That narrow alphabet is load-bearing: it keeps an id from ever
+-- containing a tab, a newline, a colon or a '{', which is what lets each
+-- record shape find a record's id with a plain text search (see
+-- 083-record-codecs.lua, id_marker) and lets a reader tell the three shapes
+-- apart by a record's first characters.
+
+local ids = {}
+
+-- {{{ local function read_random_bytes
+local function read_random_bytes(count)
+    local source = assert(io.open("/dev/urandom", "rb"))
+    local bytes = source:read(count)
+    source:close()
+    -- A short read from /dev/urandom does not happen on Linux; if it ever
+    -- did, the id would be shorter than promised, so it is an error rather
+    -- than something to pad.
+    if #bytes ~= count then
+        error("message-ids: /dev/urandom gave " .. #bytes .. " bytes, wanted " .. count)
+    end
+    return bytes
+end
+-- }}}
+
+-- {{{ function ids.new_message_id
+-- Gives: string, 32 lower-case hexadecimal characters.
+function ids.new_message_id()
+    local bytes = read_random_bytes(16)
+    return (bytes:gsub(".", function(byte)
+        return string.format("%02x", byte:byte())
+    end))
+end
+-- }}}
+
+-- {{{ function ids.check_id
+-- Raises an error naming `what` (for example "message id") when `value` is
+-- not a usable id.  Used for message ids and correction targets.
+function ids.check_id(value, what)
+    -- Path: not a string at all — the caller built the message wrongly.
+    if type(value) ~= "string" then
+        error("message-log: " .. what .. " must be a string, got " .. type(value), 0)
+    end
+    -- Path: a string with a character outside the id alphabet (or empty) —
+    -- refused, because it could break a record's layout or its search marker.
+    if not value:match("^[%w%-_]+$") then
+        error("message-log: " .. what .. " '" .. value
+            .. "' may hold only letters, digits, '-' and '_'", 0)
+    end
+end
+-- }}}
+
+-- {{{ function ids.check_author
+-- An author is "me" or a contact name.  Contact names are keys in rmail's
+-- contacts format (name.field = value), so they never hold whitespace, '.'
+-- or '='; here only the characters that would break a record are refused:
+-- tab, newline, carriage return, and an empty name.
+function ids.check_author(value)
+    -- Path: not a string — caller error.
+    if type(value) ~= "string" then
+        error("message-log: author must be a string, got " .. type(value), 0)
+    end
+    -- Path: empty, or holding a record-breaking character — refused.
+    if value == "" or value:find("[\t\n\r]") then
+        error("message-log: author '" .. value .. "' is empty or holds a tab or line break", 0)
+    end
+end
+-- }}}
+
+-- {{{ function ids.check_time
+-- Times are whole seconds since 1970 (integer).
+function ids.check_time(value, what)
+    -- Path: a number with no fraction — accepted.  Anything else — refused.
+    if type(value) ~= "number" or value ~= math.floor(value) or value < 0 then
+        error("message-log: " .. what .. " must be a whole number of seconds since 1970, got "
+            .. tostring(value), 0)
+    end
+end
+-- }}}
+
+return ids

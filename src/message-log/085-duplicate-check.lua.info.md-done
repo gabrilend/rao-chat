@@ -1,0 +1,13 @@
+# 085-duplicate-check.lua — "is this id already in the log?"
+
+| function | takes | gives |
+|---|---|---|
+| `contains(path, id, strategy, mixing, shape)` | log path (string), id (string), `"scan"` or `"remembered"`, `log.shape-mixing` value, `log.record-shape` value | bool; error on an unknown strategy or a missing file |
+| `forget(path)` | a log path or `"all"` | — ; drops remembered ids |
+
+- **scan** reads the whole file and searches it for the id marker(s) of the
+  configured shape (all three shapes under per-record).  Nothing kept.
+- **remembered** keeps per log path `{offset (integer bytes read), head
+  (string, first ≤64 bytes), tail (string, ≤64 bytes before offset), ids
+  (table id → true)}` in memory and reads only new bytes; starts over if the
+  file shrank or its head/tail no longer match.

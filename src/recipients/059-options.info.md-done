@@ -1,0 +1,12 @@
+# 059-options.lua
+
+The recipients module's undecided choices, for the options tally
+(`scripts/tally-options`, issue 106).  `dofile` it; it returns a list of
+tables in the shape given in `docs/phase-1-module-contract.md` ("The options
+tally"): `id`, `question`, `waits_on` (`"owner"` or `"state"`), `detail`,
+`config_key` (`""` when not switchable), `variants` (each `name`, `summary`,
+`built_in`, `tests`, `findings`, all strings) and `leaning`.
+
+Choices listed: reply list on arrival (open question 2), split shape, split
+room's parent, split of a room of two, name of a room made on arrival, and
+where a room made on arrival goes in the tree (waits on phase 2).

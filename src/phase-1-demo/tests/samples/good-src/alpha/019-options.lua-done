@@ -1,0 +1,6 @@
+-- A retired options file (round 1's, kept for one commit as <name>-done).
+-- The tally must not read it: if it did, "must-not-appear-done" would show.
+return {
+    { id = "must-not-appear-done", question = "retired", waits_on = "owner", detail = "", config_key = "",
+      variants = { { name = "x", summary = "", built_in = "", tests = "", findings = "" } }, leaning = "" },
+}

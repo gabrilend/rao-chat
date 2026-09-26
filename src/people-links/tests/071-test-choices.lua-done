@@ -1,0 +1,204 @@
+-- 071-test-choices.lua — the two smaller undecided choices (own devices,
+-- split records), the config keys failing loudly, what the bell does for
+-- each kind of change, and the odd tree states people-links must survive.
+--
+-- Run: luajit 071-test-choices.lua [DIR] <stand-in|real>
+
+local DIR = arg[1] or "/home/ritz/programs/rao-chat"
+local H = dofile(DIR .. "/src/people-links/tests/065-test-harness.lua")
+H.setup(DIR, arg[2])
+local rooms, people, disk = H.rooms, H.people, H.disk
+
+-- {{{ local function write_file
+local function write_file(path, text)
+    local file = assert(io.open(path, "w"))
+    file:write(text)
+    file:close()
+end
+-- }}}
+
+-- {{{ local function sorted
+local function sorted(list)
+    local copy = {}
+    for i, v in ipairs(list) do
+        copy[i] = v
+    end
+    table.sort(copy)
+    return copy
+end
+-- }}}
+
+-- {{{ local function owners_tree
+local function owners_tree(home)
+    local home_id = H.room(home, "home", "", { "girlfriend", "housemate" })
+    local ritz_id = H.room(home, "ritz", home_id, {})
+    local prog_id = H.room(home, "programming", ritz_id, { "girlfriend", "friend" })
+    return home_id, ritz_id, prog_id
+end
+-- }}}
+
+-- own devices ---------------------------------------------------------------
+do
+    local home = H.fresh_home("own-none", "numbered", "none", "show")
+    owners_tree(home)
+    H.check(not disk.exists(home.dir .. "/people/phone"), "own-devices none: no folder for the phone")
+end
+do
+    local home = H.fresh_home("own-all-tops", "numbered", "all-tops", "show")
+    local home_id, ritz_id, prog_id = owners_tree(home)
+    local lone_id = H.room(home, "lone", "", { "friend" })
+    H.same(people.top_rooms_for(home, "phone"), sorted({ home_id, lone_id }),
+           "own-devices all-tops: the phone's tops are every tree's top")
+    people.rebuild_all(home)
+    H.same(H.view(home, "phone"), sorted({ "home -> ../../rooms/" .. home_id, "lone -> ../../rooms/" .. lone_id }),
+           "own-devices all-tops: people/phone/ lists every tree")
+    -- switch back to none: the phone's folder is swept away
+    rooms.set_config(home, "people.own-devices", "none")
+    people.rebuild_all(home)
+    H.check(not disk.exists(home.dir .. "/people/phone"), "own-devices none after all-tops: folder removed")
+end
+do
+    local home = H.fresh_home("own-on-list", "numbered", "none", "show")
+    H.fails(function() H.room(home, "odd", "", { "phone" }) end, "own device phone is on the list",
+            "an own device on a recipient list is an error")
+end
+
+-- split records -------------------------------------------------------------
+-- 103 marks a room kept as the record of a split with rooms/<id>/split.
+-- This test writes the marker itself, in 103's key = value shape, so it
+-- runs without 103.
+for _, records in ipairs({ "show", "hide" }) do
+    local home = H.fresh_home("records-" .. records, "numbered", "none", records)
+    local old_id = H.room(home, "programming", "", { "girlfriend", "friend" })
+    local child_id = H.room(home, "bugs", old_id, { "friend" })
+    local new_id = H.room(home, "programming", "", { "friend" })
+    write_file(rooms.room_dir(home, old_id) .. "/split",
+               "into = " .. new_id .. "\nremover = girlfriend\nshape = fork\n")
+    people.rebuild_all(home)
+    local friend_tops = people.top_rooms_for(home, "friend")
+    local gf_tops = people.top_rooms_for(home, "girlfriend")
+    -- show: the record is still a shared room; hide: it is not, so the
+    -- child under it becomes a top
+    if records == "show" then
+        H.same(friend_tops, sorted({ old_id, new_id }), "split-records show: friend sees record and new room")
+        H.same(gf_tops, { old_id }, "split-records show: the removed person keeps the record")
+        H.check(#H.view(home, "friend") == 2, "split-records show: two programming links (numbered)")
+    else
+        H.same(friend_tops, sorted({ child_id, new_id }), "split-records hide: record gone, its child becomes a top")
+        H.same(gf_tops, {}, "split-records hide: the removed person shares nothing here")
+        H.check(not disk.exists(home.dir .. "/people/girlfriend"), "split-records hide: removed person's folder gone")
+    end
+end
+
+-- config keys fail loudly ---------------------------------------------------
+for _, key in ipairs({ "people.link-collision", "people.own-devices", "people.split-records" }) do
+    local home = H.fresh_home("missing-" .. key, "numbered", "none", "show")
+    local text = io.open(home.dir .. "/config"):read("*a")
+    local without = {}
+    for line in text:gmatch("[^\n]+") do
+        -- keep every line except the key under test
+        if not line:find(key, 1, true) then
+            without[#without + 1] = line
+        end
+    end
+    write_file(home.dir .. "/config", table.concat(without, "\n") .. "\n")
+    H.fails(function() people.rebuild_all(home) end, key, "missing " .. key .. " is an error")
+    rooms.set_config(home, key, "whatever")
+    H.fails(function() people.rebuild_all(home) end, "unknown " .. key, "unknown value of " .. key .. " is an error")
+end
+
+-- recipients who are not contacts ------------------------------------------
+do
+    local home = H.fresh_home("not-a-contact", "numbered", "none", "show")
+    H.fails(function() H.room(home, "odd", "", { "stranger" }) end, "stranger is on the list",
+            "a recipient who is not a contact is an error")
+end
+
+-- the bell -------------------------------------------------------------------
+do
+    local home = H.fresh_home("bell", "numbered", "none", "show")
+    local home_id = H.room(home, "home", "", { "housemate" })
+    local link = home.dir .. "/people/housemate/home"
+    disk.remove_link(link)
+    rooms.notify(home, home_id, "log")
+    H.check(not disk.exists(link), "bell: a new message does not rebuild")
+    rooms.notify(home, home_id, "name")
+    H.check(disk.is_link(link), "bell: a name change rebuilds")
+    H.fails(function() rooms.notify(home, home_id, "weather") end, "weather",
+            "bell: an unknown kind of change is an error")
+    for _, what in ipairs({ "created", "parent", "recipients", "removed-room", "split" }) do
+        disk.remove_link(link)
+        rooms.notify(home, home_id, what)
+        H.check(disk.is_link(link), "bell: " .. what .. " rebuilds")
+    end
+end
+
+-- a parent that names no room held here (101's rooms.unknown-parent) ---------
+do
+    local home = H.fresh_home("unheld-parent-keep", "numbered", "none", "show")
+    rooms.set_config(home, "rooms.unknown-parent", "keep")
+    local child_id = H.room(home, "bugs", string.rep("d", 32), { "friend" })
+    H.same(people.top_rooms_for(home, "friend"), { child_id }, "unknown-parent keep: the room is a top")
+    H.check(disk.is_link(home.dir .. "/people/friend/bugs"), "unknown-parent keep: linked")
+end
+do
+    local home = H.fresh_home("unheld-parent-refuse", "numbered", "none", "show")
+    rooms.set_config(home, "rooms.unknown-parent", "refuse")
+    -- the real 101 refuses the write itself (its own words); the stand-in
+    -- writes it, and people-links refuses to read it
+    local fragment = (H.mode == "stand-in") and "rooms.unknown-parent = refuse" or ""
+    H.fails(function() H.room(home, "bugs", string.rep("d", 32), { "friend" }) end, fragment,
+            "unknown-parent refuse: an error")
+end
+
+-- a circular parent chain cannot hang the rebuild ---------------------------
+do
+    local home = H.fresh_home("circle", "numbered", "none", "show")
+    local a = H.room(home, "a", "", { "friend" })
+    local b = H.room(home, "b", a, { "friend" })
+    local wrote = pcall(rooms.write_parent, home, a, b)
+    -- the stand-in writes the circle; the real 101 refuses loops on write
+    if H.mode == "stand-in" then
+        H.check(wrote, "stand-in lets a circle be written")
+        H.same(people.top_rooms_for(home, "friend"), {}, "a circle has no top (and does not loop)")
+    else
+        H.check(not wrote, "the real 101 refuses a circle")
+    end
+end
+
+-- room names holding "/" ------------------------------------------------------
+for _, shape in ipairs({ { "percent", "home%2Fritz" }, { "division-slash", "home\226\136\149ritz" } }) do
+    local home = H.fresh_home("slash-" .. shape[1], "numbered", "none", "show")
+    rooms.set_config(home, "rooms.slash-in-name", "allow")
+    rooms.set_config(home, "people.slash-in-link-name", shape[1])
+    local id = H.room(home, "home/ritz", "", { "friend" })
+    H.same(H.view(home, "friend"), { shape[2] .. " -> ../../rooms/" .. id },
+           "slash-in-link-name " .. shape[1] .. ": link named " .. shape[2])
+end
+do
+    local home = H.fresh_home("slash-clash", "numbered", "none", "show")
+    rooms.set_config(home, "rooms.slash-in-name", "allow")
+    rooms.set_config(home, "people.slash-in-link-name", "percent")
+    local low = H.room(home, "a/b", "", { "friend" })
+    local high = H.room(home, "a%2Fb", "", { "friend" })
+    local first, second = low, high
+    -- ids are random: the lower one takes the bare name under numbered
+    if high < low then
+        first, second = high, low
+    end
+    H.same(H.view(home, "friend"), { "a%2Fb -> ../../rooms/" .. first, "a%2Fb-2 -> ../../rooms/" .. second },
+           "slash: an escaped name clashing with a real one is numbered like any clash")
+end
+do
+    local home = H.fresh_home("slash-missing-key", "numbered", "none", "show")
+    rooms.set_config(home, "rooms.slash-in-name", "allow")
+    H.fails(function() H.room(home, "home/ritz", "", { "friend" }) end, "people.slash-in-link-name",
+            "slash: people.slash-in-link-name missing is an error once a '/' name exists")
+end
+do
+    local home = H.fresh_home("no-slash-no-key", "numbered", "none", "show")
+    H.room(home, "home", "", { "friend" })
+    H.check(disk.is_link(home.dir .. "/people/friend/home"), "no '/' in any name: the slash keys are never read")
+end
+
+H.finish()

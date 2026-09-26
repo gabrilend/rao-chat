@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# 018-run-tests — runs every room-folders test file and adds up the results.
+#
+# Each test file in this folder (the numbered *-test-*.lua files; retired
+# *-done files are never matched, so never run) is run
+# with luajit, one after another.  Each prints a PASS or FAIL line per
+# check and ends with "counts <passed> <failed>"; this script shows the
+# failures, adds the counts up, prints the totals, and exits non-zero if
+# anything failed, so it can stop a build.  Test homes are made in RAM
+# under tmp/shared-memory/room-folders/.
+#
+# Usage: 018-run-tests [project folder]   (default below)
+
+DIR="/home/ritz/programs/rao-chat"
+if [ -n "$1" ]; then
+    DIR="$1"
+fi
+
+TESTS="$DIR/src/room-folders/tests"
+SCRATCH="$DIR/tmp/shared-memory/room-folders"
+mkdir -p "$SCRATCH"
+
+total_passed=0
+total_failed=0
+broken_files=0
+
+for test_file in "$TESTS"/*-test-*.lua; do
+    output=$(luajit "$test_file" "$DIR" 2>&1)
+    counts=$(printf '%s\n' "$output" | grep '^counts ' | tail -n 1)
+    # no counts line: the file crashed before finishing; count it as broken
+    # and show everything it printed.
+    if [ -z "$counts" ]; then
+        echo "BROKEN $(basename "$test_file"):"
+        printf '%s\n' "$output"
+        broken_files=$((broken_files + 1))
+        continue
+    fi
+    passed=$(echo "$counts" | cut -d' ' -f2)
+    failed=$(echo "$counts" | cut -d' ' -f3)
+    total_passed=$((total_passed + passed))
+    total_failed=$((total_failed + failed))
+    echo "$(basename "$test_file"): $passed passed, $failed failed"
+    printf '%s\n' "$output" | grep -E '^(FAIL|SKIP|NOTE) ' | sed 's/^/    /'
+done
+
+echo "room-folders total: $total_passed passed, $total_failed failed, $broken_files files broken"
+# any failure or crash: exit 1 so a build stops.
+if [ "$total_failed" -ne 0 ] || [ "$broken_files" -ne 0 ]; then
+    exit 1
+fi
+exit 0

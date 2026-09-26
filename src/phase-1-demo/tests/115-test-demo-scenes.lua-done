@@ -1,0 +1,183 @@
+-- 115-test-demo-scenes.lua — builds every demo scene on the REAL phase 1 modules
+-- and checks the figures the demo exists to show.
+--
+-- The demo normally takes its settings from the options files.  So that the
+-- scenes can be checked even while a module has not written its options file
+-- yet, this test hands the scenes a fixed list of every choice's variants
+-- (a stand-in for the options files, the same idea as the stand-in modules
+-- other builders keep).  Then it checks, on the real modules:
+--   flat       three room folders side by side, the tree home → ritz → programming
+--   people     girlfriend: two top rooms, then one after joining ritz
+--   collision  three differently named link pairs for two rooms of one name
+--   reader     her two separate trees become one, in both disclosure modes
+--   log        a late message placed second, a repeat refused, per shape
+--   edits      never refuses, corrections files, window refuses the late one
+--   split      a room of six becomes two rooms of five, in both shapes
+-- Each scene and each view also has to draw without error.
+
+-- Every undecided choice's variants, first one used as the baseline.  Kept
+-- in step with the contract's choices table by hand.
+local STAND_IN_VARIANTS = {
+    ["rooms.unknown-parent"]    = { "refuse", "keep" },
+    ["rooms.slash-in-name"]     = { "refuse", "allow" },
+    ["tree.parent-disclosure"]  = { "always", "shared-only" },
+    ["recipients.split-shape"]  = { "fork", "rekey" },
+    ["recipients.arrival-list"] = { "adder-only", "heard-from", "adder-list" },
+    ["recipients.split-parent"] = { "keep", "top" },
+    ["recipients.split-alone"]  = { "keep-empty", "record-only" },
+    ["people.link-collision"]   = { "suffix-id", "numbered", "id-folder" },
+    ["people.own-devices"]      = { "none", "all-tops" },
+    ["people.split-records"]    = { "show", "hide" },
+    ["log.record-shape"]        = { "tsv", "block", "jsonl" },
+    ["log.shape-mixing"]        = { "fixed", "per-record" },
+    ["log.duplicate-check"]     = { "scan", "remembered" },
+    ["log.edits"]               = { "never", "corrections", "window" },
+}
+
+return function(DIR, harness)
+    local check = harness.check
+    local probes = require("102-demo-probes")
+    local sections = require("103-demo-sections")
+    local view = require("104-demo-view")
+    dofile(DIR .. "/src/room-folders/001-load-path.lua")(DIR)
+    local m = {
+        rooms = require("002-room-folders"), tree = require("021-room-tree"),
+        forest_text = require("024-forest-text"), recipients = require("041-recipients"),
+        people = require("061-people-links"), log = require("081-message-log"),
+    }
+    local baseline = {}
+    for key, names in pairs(STAND_IN_VARIANTS) do
+        baseline[#baseline + 1] = { key = key, value = names[1] }
+    end
+    local scratch = DIR .. "/tmp/shared-memory/phase-1-demo-tests/scenes"
+    probes.must_run("mkdir -p '" .. scratch .. "'")
+    local ctx = { dir = DIR, scratch = scratch, m = m, probes = probes, baseline = baseline,
+                  variants_by_key = STAND_IN_VARIANTS }
+
+    -- {{{ local function scene
+    -- Builds and draws one scene; gives its record, or nil after a failed check.
+    local function scene(key)
+        local built, record = pcall(sections[key], ctx)
+        check(key .. " scene builds", built, record)
+        if not built then
+            -- nothing to check further
+            return nil
+        end
+        -- (built: it must also draw)
+        local drawn, lines = pcall(view[key], record)
+        check(key .. " scene draws", drawn and #lines > 0, lines)
+        return record
+    end
+    -- }}}
+
+    local flat = scene("flat")
+    if flat then
+        check("flat: three room folders", #flat.folder == 3, #flat.folder)
+        check("flat: every folder name is a 32-hex room id", (function()
+            for _, name in ipairs(flat.folder) do
+                if not name:match("^" .. string.rep("[0-9a-f]", 32) .. "$") then return false end
+            end
+            return true
+        end)())
+        check("flat: 15 files (5 per room)", #flat.files == 15, #flat.files)
+        check("flat: the tree is home/ritz/programming",
+              table.concat(flat.tree_lines, "|") == "home|└── ritz|    └── programming",
+              table.concat(flat.tree_lines, "|"))
+        check("flat: programming's where names its path",
+              flat.rooms[3].where:find("home/ritz/programming", 1, true) ~= nil, flat.rooms[3].where)
+        check("flat: home has no parent", flat.rooms[1].parent == "")
+    end
+
+    local people = scene("people")
+    if people then
+        check("people: girlfriend has two tops before", #people.before.per_contact[2].tops == 2)
+        check("people: girlfriend has one top after", #people.after.per_contact[2].tops == 1
+              and people.after.per_contact[2].tops[1] == "home")
+        check("people: 4 links before, 3 after", #people.before.links == 4 and #people.after.links == 3,
+              #people.before.links .. " / " .. #people.after.links)
+        check("people: coder unchanged", #people.after.per_contact[3].tops == 1)
+    end
+
+    local collision = scene("collision")
+    if collision then
+        check("collision: one result per variant", #collision.variants == 3)
+        local distinct = {}
+        for _, variant in ipairs(collision.variants) do
+            check("collision " .. variant.variant .. ": two links", #variant.links == 2,
+                  table.concat(variant.links, " / "))
+            distinct[variant.links[1] .. variant.links[2]] = true
+        end
+        local count = 0
+        for _ in pairs(distinct) do count = count + 1 end
+        check("collision: the variants name the links differently", count == 3)
+    end
+
+    local reader = scene("reader")
+    if reader then
+        check("reader: one result per mode", #reader.modes == 2)
+        for _, mode in ipairs(reader.modes) do
+            local before = mode.girlfriend_before.lines
+            local after = mode.girlfriend_after.lines
+            check("reader " .. mode.mode .. ": two trees before", #before == 2
+                  and before[1]:sub(1, 4) == "home" and before[2]:sub(1, 11) == "programming",
+                  table.concat(before, " | "))
+            check("reader " .. mode.mode .. ": one joined tree after", #after == 3
+                  and after[1] == "home", table.concat(after, " | "))
+        end
+        local always, shared = reader.modes[1], reader.modes[2]
+        check("reader always: she learns a parent exists above programming",
+              always.girlfriend_before.lines[2]:find("not in", 1, true) ~= nil)
+        check("reader shared-only: she learns nothing above programming",
+              shared.girlfriend_before.lines[2] == "programming")
+    end
+
+    local log = scene("log")
+    if log then
+        check("log: one result per shape", #log.shapes == 3)
+        for _, shape in ipairs(log.shapes) do
+            check("log " .. shape.shape .. ": the repeat is refused",
+                  shape.results[5].answer == "duplicate", shape.results[5].answer)
+            check("log " .. shape.shape .. ": four records filed", #shape.file_order == 4)
+            check("log " .. shape.shape .. ": the late message is last in the file",
+                  shape.file_order[4].written == 30)
+            check("log " .. shape.shape .. ": and second on screen",
+                  shape.screen_order[2].written == 30 and shape.screen_order[2].author == "girlfriend")
+            for _, bulk in ipairs(shape.bulk) do
+                check("log " .. shape.shape .. "/" .. bulk.check .. ": lookups answer right",
+                      bulk.found_last == true and bulk.found_unfiled == false)
+            end
+        end
+    end
+
+    local edits = scene("edits")
+    if edits then
+        local by_rule = {}
+        for _, rule in ipairs(edits.rules) do by_rule[rule.rule] = rule end
+        check("edits never: all three refused", not by_rule.never.results[1].accepted
+              and not by_rule.never.results[2].accepted and not by_rule.never.results[3].accepted)
+        check("edits corrections: all three filed", by_rule.corrections.results[1].accepted
+              and by_rule.corrections.results[2].accepted and by_rule.corrections.results[3].accepted)
+        check("edits window: 60 s filed, 3600 s refused", by_rule.window.results[1].accepted
+              and not by_rule.window.results[2].accepted)
+    end
+
+    local split = scene("split")
+    if split then
+        check("split: one result per shape", #split.shapes == 2)
+        for _, shape in ipairs(split.shapes) do
+            check("split " .. shape.shape .. ": six people before", shape.p1_before.people == 6
+                  and shape.p2_before.people == 6)
+            check("split " .. shape.shape .. ": two rooms of five after", shape.p1_after.people == 5
+                  and shape.p2_after.people == 5)
+            check("split " .. shape.shape .. ": p2 now talks in a new id", shape.talk_in ~= shape.shared_id
+                  and shape.talk_in ~= "")
+            check("split " .. shape.shape .. ": every message kept", shape.p2_after.messages == 3)
+            check("split " .. shape.shape .. ": p1 is on neither five-list",
+                  table.concat(shape.p2_after.recipients, ","):find("p1", 1, true) == nil)
+        end
+        local fork, rekey = split.shapes[1], split.shapes[2]
+        check("split fork: old id kept as a record", fork.p2_old ~= nil and fork.p2_old.marker ~= "")
+        check("split fork: the old id leads to the new room", fork.live_for_old_id == fork.talk_in)
+        check("split rekey: the old id is gone", rekey.p2_old == nil and rekey.live_for_old_id == "")
+    end
+end

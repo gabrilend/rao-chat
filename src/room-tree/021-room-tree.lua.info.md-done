@@ -1,0 +1,45 @@
+# 021-room-tree.lua
+
+The room tree: rooms inside rooms, worked out from each room's `parent`
+file.  Load with `require("021-room-tree")` after
+`dofile(DIR .. "/src/room-folders/001-load-path.lua")(DIR)`.  Loading it
+registers a listener on room-folders' change bell that keeps every room's
+`where` file current.
+
+Types: **home** = `{ dir = string }`; **room id** = string of 32 lower-case
+hex characters; "no parent" = `""`.
+
+## The sender's own tree
+
+| function | takes | gives | purpose |
+|---|---|---|---|
+| `ancestors(home, id)` | home, room id | list of room ids | the rooms from the top of the tree down to `id`, ending with `id`.  Errors on parents in a ring.  A parent not held here: `rooms.unknown-parent` = `keep` ends the chain (the room is a top), `refuse` errors. |
+| `children_of(home, id)` | home, room id | list of room ids | the rooms directly inside `id`, in room-id order.  Reads every room's parent. |
+| `path_of_names(home, id)` | home, room id | string | `"home/ritz/programming"`: the ancestors' names joined with `/`.  A `/` inside a name (only possible under `rooms.slash-in-name = allow`) is written `\/`, a `\` as `\\`. |
+| `write_where(home, id)` | home, room id | — | rewrites `where` for `id` and every room below it. |
+| `write_all_where(home)` | home | — | rewrites `where` for every room, walking down from each top. |
+| `read_where(home, id)` | home, room id | `{ folder = string, names = string }` | the room's `where` file; errors if it is missing or damaged. |
+| `move_room(home, id, new_parent_id)` | home, room id, room id or `""` | — | puts a room inside another (or at the top).  Refuses: a missing room, a missing new parent, the room itself, any room below it.  Rings the bell (through room-folders), which rewrites `where`. |
+
+## What a reader is told (open question 3)
+
+| function | takes | gives | purpose |
+|---|---|---|---|
+| `disclosure_mode(home)` | home | `"always"` or `"shared-only"` | the config value `tree.parent-disclosure`; errors when absent or unknown. |
+| `parent_to_disclose(home, id, contact, mode)` | home, room id, contact name, mode | room id or `""` | the parent id sent with room `id`'s messages to `contact`.  `always`: the parent id.  `shared-only`: the parent id only if `contact` is on the parent's recipient list.  Errors if `contact` is not a recipient of `id`, or the mode is unknown. |
+| `what_contact_receives(home, contact, mode)` | home, contact name, mode | list of `{ room_id, name, disclosed_parent_id }` (all strings) | what `contact` would hold if every room they are in spoke now; names are the sender's own. |
+
+## The reader's side (from 023)
+
+| function | takes | gives |
+|---|---|---|
+| `visible_forest(received)` | list of `{ room_id, name, disclosed_parent_id }` | list of top nodes `{ room_id, name, disclosed_parent_id, parent_unseen = bool, children = list of nodes }` |
+| `forest_paths(forest)` | a forest | list of path strings, drawing order |
+
+## The bell
+
+| kind rung | what 021 does |
+|---|---|
+| `created`, `name`, `parent` | `write_where` for that room and everything below |
+| `recipients`, `log`, `removed-room`, `split` | nothing |
+| anything else | error |

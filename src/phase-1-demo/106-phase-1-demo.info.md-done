@@ -1,0 +1,31 @@
+# 106-phase-1-demo.lua
+
+The phase 1 demo program.  Run, not loaded:
+
+    luajit src/phase-1-demo/106-phase-1-demo.lua [project folder]
+
+(normally through `issues/completed/demos/phase-1-demo`, or
+`run-phase-demo 1`).
+
+What it does, in order:
+
+1. Lists `input/` (each file's name, bytes, first line) — read first.  If
+   `input/phase-1-demo.config` is there, its `key = value` lines are kept
+   for step 3.
+2. Loads the six phase 1 modules, reporting any that fail to load.
+3. Gathers every options file; sets each config key to the first variant
+   its builder listed, replaced by any value from
+   `input/phase-1-demo.config` (see `105-demo-baseline.info.md`), and prints
+   every key with where its value came from.
+4. Runs each scene in `103-demo-sections.ORDER`: skipped with the reason if
+   a needed module did not load; otherwise built, drawn and timed.  A scene
+   that fails prints "COULD NOT RUN" with the error, and the rest go on.
+5. Prints which scenes ran (with milliseconds) and which could not (why).
+6. Writes `output/phase-1-demo.goodbye` (rewritten each run): run time, one
+   line per scene, "N of M scenes ran.", "goodbye." — written last.
+
+Scratch homes: `tmp/shared-memory/phase-1-demo/<scene>-<variant>/rao-home`.
+
+Exit status: 0 when every scene ran, 1 otherwise.
+
+No outward functions.

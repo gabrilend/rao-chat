@@ -1,0 +1,272 @@
+-- 104-demo-view.lua — turns each measured demo scene into lines of text.
+--
+-- 103-demo-sections.lua builds the scenes and hands back records of what is
+-- on disk; this file only draws them: listings indented under the command
+-- that would show them, figures in columns, variants side by side.  Every
+-- function takes one record and gives a list of lines, printing nothing, so
+-- a later HTML page could draw the same records its own way.
+
+local view = {}
+
+-- {{{ local function short
+-- A room or message id shortened to its first 8 characters for tables; the
+-- full id is always printed once nearby, so nothing is lost.
+local function short(id)
+    return id:sub(1, 8)
+end
+-- }}}
+
+-- {{{ local function add
+local function add(lines, more, indent)
+    for _, line in ipairs(more) do
+        lines[#lines + 1] = indent .. line
+    end
+end
+-- }}}
+
+-- {{{ local function one_line
+-- A file's text shown on one line: line breaks drawn as " | ", so a
+-- two-line file reads as two parts and an empty file as (empty).
+local function one_line(text)
+    if text == "" then
+        -- nothing in the file at all
+        return "(empty)"
+    end
+    -- (some text: flatten it)
+    return (text:gsub("\n$", ""):gsub("\n", " | "))
+end
+-- }}}
+
+-- {{{ local function milliseconds
+local function milliseconds(seconds)
+    return string.format("%.2f ms", seconds * 1000)
+end
+-- }}}
+
+-- {{{ local function joined
+local function joined(list)
+    if #list == 0 then
+        -- an empty list: say so rather than print nothing
+        return "(nobody)"
+    end
+    -- (names: comma-separated)
+    return table.concat(list, ", ")
+end
+-- }}}
+
+-- {{{ function view.flat
+function view.flat(record)
+    local lines = {}
+    lines[#lines + 1] = "home folder: " .. record.home_dir
+    lines[#lines + 1] = "3 rooms made in " .. milliseconds(record.seconds_to_make)
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = "$ ls rooms/                    (" .. #record.folder .. " entries, flat: no room inside another)"
+    add(lines, record.folder, "  ")
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = "$ find rooms -type f           (every file, with its size)"
+    add(lines, record.files, "  ")
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = "the tree those parent files record:"
+    add(lines, record.tree_lines, "  ")
+    for _, room in ipairs(record.rooms) do
+        lines[#lines + 1] = ""
+        lines[#lines + 1] = "rooms/" .. room.id .. "/"
+        lines[#lines + 1] = "  name        " .. one_line(room.name)
+        lines[#lines + 1] = "  parent      " .. one_line(room.parent)
+        lines[#lines + 1] = "  recipients  " .. one_line(room.recipients)
+        lines[#lines + 1] = "  where       " .. one_line(room.where)
+        lines[#lines + 1] = "  (path of names asked of the tree module: " .. room.path_of_names .. ")"
+    end
+    return lines
+end
+-- }}}
+
+-- {{{ local function people_block
+local function people_block(listing, lines)
+    for _, row in ipairs(listing.per_contact) do
+        lines[#lines + 1] = string.format("  %-11s %d top room(s): %s", row.contact, #row.tops,
+                                          joined(row.tops))
+    end
+    lines[#lines + 1] = "  $ find people -type l"
+    add(lines, listing.links, "    ")
+end
+-- }}}
+
+-- {{{ function view.people
+function view.people(record)
+    local lines = { "before (girlfriend is in home and programming, not ritz):" }
+    people_block(record.before, lines)
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = "the owner adds girlfriend to ritz (" .. milliseconds(record.seconds_to_add)
+                        .. ", links rebuilt by the change bell)"
+    lines[#lines + 1] = "  ritz recipients now: " .. joined(record.ritz_recipients)
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = "after (the gap is closed: one tree for her):"
+    people_block(record.after, lines)
+    return lines
+end
+-- }}}
+
+-- {{{ function view.collision
+function view.collision(record)
+    local lines = { "coder is in two top rooms, both named programming:" }
+    for _, variant in ipairs(record.variants) do
+        lines[#lines + 1] = ""
+        lines[#lines + 1] = "people.link-collision = " .. variant.variant
+        lines[#lines + 1] = "  $ find people/coder -type l"
+        add(lines, variant.links, "    ")
+    end
+    return lines
+end
+-- }}}
+
+-- {{{ local function reader_block
+local function reader_block(label, seen, lines)
+    lines[#lines + 1] = "  " .. label
+    for _, told in ipairs(seen.told) do
+        lines[#lines + 1] = string.format("      told: %-12s parent id sent: %s", told.room, told.parent)
+    end
+    lines[#lines + 1] = "      trees on the reader's screen:"
+    add(lines, seen.lines, "        ")
+end
+-- }}}
+
+-- {{{ function view.reader
+function view.reader(record)
+    local lines = {}
+    for _, mode in ipairs(record.modes) do
+        lines[#lines + 1] = "tree.parent-disclosure = " .. mode.mode
+        reader_block("girlfriend, before (in home and programming):", mode.girlfriend_before, lines)
+        reader_block("girlfriend, after she is added to ritz:", mode.girlfriend_after, lines)
+        reader_block("coder (in programming only):", mode.coder, lines)
+        lines[#lines + 1] = ""
+    end
+    lines[#lines] = nil
+    return lines
+end
+-- }}}
+
+-- {{{ local function message_rows
+local function message_rows(list, lines)
+    for position, m in ipairs(list) do
+        lines[#lines + 1] = string.format("    %d. written +%-4d %-11s %s", position, m.written,
+                                          m.author, m.text)
+    end
+end
+-- }}}
+
+-- {{{ function view.log
+function view.log(record)
+    local lines = { "scripted times are seconds after " .. record.t0
+                    .. " (2026-09-23 12:00 UTC); message 4 was written at +30 but arrives at +200." }
+    local summary = { "", "size of each shape (same 4 messages):" }
+    for _, shape in ipairs(record.shapes) do
+        lines[#lines + 1] = ""
+        lines[#lines + 1] = "log.record-shape = " .. shape.shape
+        local answers = {}
+        for _, result in ipairs(shape.results) do
+            answers[#answers + 1] = result.label .. ": " .. result.answer
+        end
+        lines[#lines + 1] = "  append answers: " .. table.concat(answers, ";  ")
+        lines[#lines + 1] = "  in the file (arrival order):"
+        message_rows(shape.file_order, lines)
+        lines[#lines + 1] = "  on screen (written order):"
+        message_rows(shape.screen_order, lines)
+        lines[#lines + 1] = string.format("  $ cat log   (%d bytes, %d records, %.1f bytes per record)",
+                                          shape.bytes, #shape.file_order,
+                                          shape.bytes / #shape.file_order)
+        for line in (shape.raw:gsub("\n$", "") .. "\n"):gmatch("(.-)\n") do
+            lines[#lines + 1] = "    " .. line
+        end
+        for _, bulk in ipairs(shape.bulk) do
+            lines[#lines + 1] = string.format(
+                "  %d messages filed, log.duplicate-check = %s: %d bytes (%.1f per message)",
+                bulk.count, bulk.check, bulk.bytes, bulk.bytes / bulk.count)
+            lines[#lines + 1] = string.format(
+                "      %.3f ms per append, %.3f ms per lookup; last id found: %s, unfiled id found: %s",
+                bulk.append_seconds * 1000 / bulk.count, bulk.lookup_seconds * 1000,
+                tostring(bulk.found_last), tostring(bulk.found_unfiled))
+        end
+        summary[#summary + 1] = string.format("  %-6s %4d bytes   %6.1f bytes per message",
+                                              shape.shape, shape.bytes, shape.bytes / #shape.file_order)
+    end
+    add(lines, summary, "")
+    return lines
+end
+-- }}}
+
+-- {{{ function view.edits
+function view.edits(record)
+    local lines = { "the window variant is run with log.edit-window-seconds = " .. record.window }
+    for _, rule in ipairs(record.rules) do
+        lines[#lines + 1] = ""
+        lines[#lines + 1] = "log.edits = " .. rule.rule .. "   (" .. rule.records_in_file
+                            .. " records in the file, " .. rule.bytes .. " bytes)"
+        for _, result in ipairs(rule.results) do
+            local shown = result.accepted and result.answer or ("refused: " .. result.answer)
+            lines[#lines + 1] = string.format("  %-22s %s", result.label, shown)
+        end
+        lines[#lines + 1] = "  on screen:"
+        for _, m in ipairs(rule.screen) do
+            if m.deleted then
+                -- a deleted message keeps its place but has no text to show
+                lines[#lines + 1] = "    (deleted)"
+            else
+                -- a live message: its text, marked if a correction changed it
+                lines[#lines + 1] = "    " .. m.text .. (m.edited and "   [edited]" or "")
+            end
+        end
+    end
+    return lines
+end
+-- }}}
+
+-- {{{ local function room_row
+local function room_row(label, room)
+    return string.format("  %-16s %s  %d people  %d messages  list: %s", label, short(room.id),
+                         room.people, room.messages, joined(room.recipients))
+end
+-- }}}
+
+-- {{{ function view.split
+function view.split(record)
+    local lines = {}
+    for _, shape in ipairs(record.shapes) do
+        lines[#lines + 1] = "recipients.split-shape = " .. shape.shape
+                            .. "   (shared room id " .. shape.shared_id .. ")"
+        lines[#lines + 1] = room_row("p1 before", shape.p1_before)
+        lines[#lines + 1] = room_row("p2 before", shape.p2_before)
+        lines[#lines + 1] = "  p1 removes p2; p2's server splits its copy ("
+                            .. string.format("%.2f ms", shape.seconds * 1000) .. ")"
+        lines[#lines + 1] = room_row("p1 after", shape.p1_after)
+        lines[#lines + 1] = room_row("p2 after", shape.p2_after)
+        if shape.p2_old then
+            -- the old id is still on p2's disk as a record
+            lines[#lines + 1] = room_row("p2 old record", shape.p2_old)
+            lines[#lines + 1] = "    split marker: " .. one_line(shape.p2_old.marker)
+        end
+        -- (no old record: the old id is gone)
+        lines[#lines + 1] = "  a message still addressed to the old id is filed in: "
+                            .. (shape.live_for_old_id == "" and "(nowhere: made anew on arrival)"
+                                or short(shape.live_for_old_id))
+        lines[#lines + 1] = "  p2's rooms/ before: " .. joined(shape.p2_rooms_before)
+        lines[#lines + 1] = "  p2's rooms/ after:  " .. joined(shape.p2_rooms_after)
+        lines[#lines + 1] = "  $ find rooms -type f   (p2's home)"
+        add(lines, shape.p2_files_after, "    ")
+        lines[#lines + 1] = "  $ find people/p3 -type l   (p2's home)"
+        add(lines, shape.p2_links_for_p3, "    ")
+        lines[#lines + 1] = ""
+    end
+    lines[#lines] = nil
+    return lines
+end
+-- }}}
+
+-- {{{ function view.tally
+-- Drawn by the tally's own showing half, so the demo and the script agree.
+function view.tally(record, show)
+    return show.summary_lines(record.record, record.counts)
+end
+-- }}}
+
+return view

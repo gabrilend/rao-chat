@@ -1,0 +1,111 @@
+-- 008-test-home-and-config.lua — tests for opening a home and its settings.
+--
+-- Makes fresh homes in RAM and checks the layout appears, that opening
+-- twice changes nothing, that bad paths are refused, that settings are
+-- written and read back, that an absent setting is an error naming the
+-- fix, and that contacts are read from the home.
+-- Run: luajit 008-test-home-and-config.lua [project folder]
+
+local DIR = arg[1] or "/home/ritz/programs/rao-chat"
+local kit = dofile(DIR .. "/src/room-folders/tests/006-kit-for-tests.lua")
+local rooms = kit.setup(DIR)
+local check, same, fails = kit.check, kit.same, kit.fails
+
+check("open_home makes the layout", function()
+    local path = kit.fresh_home_dir("layout")
+    local home = rooms.open_home(path)
+    same(home.dir, path)
+    local disk = require("003-disk")
+    same(disk.is_file(path .. "/config"), true, "config")
+    same(disk.is_file(path .. "/contacts"), true, "contacts")
+    same(disk.is_dir(path .. "/rooms"), true, "rooms/")
+    same(disk.is_dir(path .. "/people"), true, "people/")
+end)
+
+check("open_home strips trailing slashes", function()
+    local path = kit.fresh_home_dir("slashes")
+    same(rooms.open_home(path .. "//").dir, path)
+end)
+
+check("open_home twice keeps what is there", function()
+    local path = kit.fresh_home_dir("twice")
+    local home = rooms.open_home(path)
+    rooms.set_config(home, "name", "kept")
+    local id = rooms.create_room(home, { name = "a", parent_id = "", recipients = {} })
+    home = rooms.open_home(path)
+    same(rooms.config_value(home, "name"), "kept")
+    same(rooms.room_exists(home, id), true)
+end)
+
+check("open_home refuses a relative path", function()
+    fails(function() rooms.open_home("relative/home") end, "absolute path")
+end)
+
+check("open_home refuses a missing parent folder", function()
+    fails(function() rooms.open_home(kit.scratch .. "/no-such-parent/home") end, "folder above the home does not exist")
+end)
+
+check("open_home refuses a plain file", function()
+    local path = kit.fresh_home_dir("is-a-file")
+    kit.write_file(path, "x")
+    fails(function() rooms.open_home(path) end, "is a file")
+    os.remove(path)
+end)
+
+check("a new config has no settings, only comments", function()
+    local home = rooms.open_home(kit.fresh_home_dir("empty-config"))
+    same(next(rooms.read_config(home)), nil)
+end)
+
+check("set_config then config_value", function()
+    local home = rooms.open_home(kit.fresh_home_dir("config-rw"))
+    rooms.set_config(home, "tree.parent-disclosure", "always")
+    rooms.set_config(home, "port", "7777")
+    rooms.set_config(home, "tree.parent-disclosure", "shared-only")
+    same(rooms.config_value(home, "tree.parent-disclosure"), "shared-only")
+    same(rooms.config_value(home, "port"), "7777")
+    local text = kit.read_file(home.dir .. "/config")
+    local _, count = text:gsub("tree%.parent%-disclosure", "")
+    same(count, 1, "key appears once in the file")
+end)
+
+check("config_value on an absent key errors and names the fix", function()
+    local home = rooms.open_home(kit.fresh_home_dir("config-absent"))
+    fails(function() rooms.config_value(home, "log.edits") end, "add a line: log.edits = <value>")
+end)
+
+check("set_config refuses to edit a damaged config", function()
+    local home = rooms.open_home(kit.fresh_home_dir("config-damaged"))
+    kit.write_file(home.dir .. "/config", "a = 1\na = 2\n")
+    fails(function() rooms.set_config(home, "b", "1") end, "set twice")
+end)
+
+check("a hand-edited config is read", function()
+    local home = rooms.open_home(kit.fresh_home_dir("config-hand"))
+    kit.write_file(home.dir .. "/config", "# mine\nname=ritz\n")
+    same(rooms.config_value(home, "name"), "ritz")
+end)
+
+check("set_config leaves no temporary files", function()
+    local home = rooms.open_home(kit.fresh_home_dir("config-tmp"))
+    for n = 1, 20 do rooms.set_config(home, "k" .. n, tostring(n)) end
+    local entries = require("003-disk").list_dir(home.dir)
+    same(table.concat(entries, ","), "config,contacts,people,rooms")
+end)
+
+check("read_contacts reads the home's contacts", function()
+    local home = rooms.open_home(kit.fresh_home_dir("contacts"))
+    same(next(rooms.read_contacts(home)), nil, "new home has no contacts")
+    kit.write_file(home.dir .. "/contacts", 'sorelu.ip = 1.2.3.4\nsorelu.token = "t"\nphone.own = true\n')
+    local c = rooms.read_contacts(home)
+    same(c.sorelu.ip, "1.2.3.4")
+    same(c.sorelu.token, "t")
+    same(c.phone.own, "true")
+end)
+
+check("functions refuse a missing or wrong home", function()
+    fails(function() rooms.read_config(nil) end, "expected a home")
+    fails(function() rooms.config_value("/a/path", "x") end, "expected a home")
+end)
+
+kit.finish()

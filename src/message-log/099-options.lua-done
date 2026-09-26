@@ -1,0 +1,335 @@
+-- 099-options.lua — the undecided choices in the message-log module,
+-- written down for the options tally (scripts/tally-options, issue 106).
+--
+-- Each entry is one question the owner (or some later state of the project)
+-- has to settle.  Every variant listed is built and tested; the home's
+-- config file picks the one in use.  The findings are what building,
+-- testing and measuring each variant showed.  Plain data: nothing here runs.
+--
+-- Measurements come from tests/095-measure.lua (run it for fresh numbers:
+-- luajit src/message-log/tests/095-measure.lua "" real 10000).  The figures
+-- quoted below are from 2026-09-25 on the owner's machine, logs in RAM
+-- (tmp/shared-memory), against the real room-folders module (issue 101;
+-- with the test stand-in, remembered filing is about 25% faster because
+-- its config reading is simpler), 10,000 messages averaging 44.6 bytes of text (short
+-- chat lines, some multi-line, some with tabs, some non-ASCII), every
+-- seventh one arriving late.  "append" = filing all 10,000 one at a time,
+-- each with its duplicate check and config reads; "read" = reading the
+-- whole log back; "repeat" = delivering all 10,000 a second time (all
+-- refused as duplicates).
+
+return {
+    {
+        id = "log-record-shape",
+        question = "How is one message written in a room's log file: one tab-separated line, "
+            .. "a small labelled block, or one JSON object per line?",
+        waits_on = "owner",
+        detail = "open question 8",
+        config_key = "log.record-shape",
+        variants = {
+            {
+                name = "tsv",
+                summary = "One line per message: id, author, written, arrived, kind, target, text, "
+                    .. "separated by tabs; tabs, line breaks, CR and backslashes in the text written "
+                    .. "as \\t \\n \\r \\\\.",
+                built_in = "src/message-log/083-record-codecs.lua (codecs.tsv)",
+                tests = { "src/message-log/tests/091-test-codecs.lua", "src/message-log/tests/092-test-log.lua",
+                    "src/message-log/tests/095-measure.lua" },
+                findings = {
+                    "Smallest: 115.7 bytes per message (71 bytes over the text: a 32-letter id, two "
+                        .. "10-digit times, kind, an empty target, 6 tabs, the newline).",
+                    "Fastest to read: 10,000 messages in 0.03 s (read) / 0.04 s (ordered).",
+                    "Filing 10,000: 0.81 s with the remembered duplicate check, 5.7 s with scan.",
+                    "grep shows one whole message per hit, but multi-line text shows as \\n and a "
+                        .. "literal backslash as \\\\, so grep for 'line one\\nline two' needs the escape.",
+                    "Round-trips every byte value, random bytes, invalid UTF-8, NUL, empty text "
+                        .. "(229 texts in the codec test).",
+                },
+            },
+            {
+                name = "block",
+                summary = "Labelled lines (id:, author:, written:, arrived:, kind:, target:, text:), "
+                    .. "the text's lines each indented two spaces, a blank line after each message.",
+                built_in = "src/message-log/083-record-codecs.lua (codecs.block)",
+                tests = { "src/message-log/tests/091-test-codecs.lua", "src/message-log/tests/092-test-log.lua",
+                    "src/message-log/tests/095-measure.lua" },
+                findings = {
+                    "167.4 bytes per message, 45% more than tsv (the labels).",
+                    "Reads 10,000 in 0.05 s (ordered 0.06 s).",
+                    "Scan duplicate check is slowest here: 9.6 s to file 10,000 (the id marker "
+                        .. "starts with a line break and a block record has about nine lines, so "
+                        .. "the plain search stops at nine times as many candidate places); 0.83 s with remembered.",
+                    "Easiest to read in less: multi-line text looks like itself.  grep hits only "
+                        .. "the matching line, not the whole message (grep -B needed for the author).",
+                    "Empty text is written as no text lines; text \"\\n\" as two indented empty "
+                        .. "lines ('  '), which are whitespace-only lines in the file.",
+                    "Text lines are always indented, so no text can pose as a label or end a "
+                        .. "record early; tested with text 'id: fake\\n\\nid: other'.",
+                },
+            },
+            {
+                name = "jsonl",
+                summary = "One JSON object per line, keys in the fixed order id, author, written, "
+                    .. "arrived, kind, target, text (dkjson 2.5, bundled in libs/).",
+                built_in = "src/message-log/083-record-codecs.lua (codecs.jsonl), libs/dkjson.lua",
+                tests = { "src/message-log/tests/091-test-codecs.lua", "src/message-log/tests/092-test-log.lua",
+                    "src/message-log/tests/095-measure.lua" },
+                findings = {
+                    "Largest: 184.7 bytes per message (quoted key names on every line).",
+                    "Slowest to read: 0.10 s for 10,000 (ordered 0.14 s), about 3x tsv, even with "
+                        .. "dkjson using lpeg (installed on this machine; without it dkjson falls "
+                        .. "back to plain Lua and would be slower still).",
+                    "Filing 10,000: 1.01 s remembered, 8.4 s scan.",
+                    "Any JSON tool (jq) can read it; non-ASCII text stays readable, but control "
+                        .. "characters show as \\u0000 and U+2028 as \\u2028.",
+                    "Bytes that are not valid UTF-8 pass through dkjson unchanged, so round trips "
+                        .. "hold, but the file is then not strictly valid JSON for other tools.",
+                    "Brings a 715-line library into the project (MIT licence).",
+                },
+            },
+        },
+        leaning = "tsv: smallest and fastest, one message per grep hit, and the escapes are the "
+            .. "only thing a reader has to learn; block if reading logs in less matters more than "
+            .. "grep.  jsonl buys tool compatibility the project does not need yet.",
+    },
+    {
+        id = "log-shape-mixing",
+        question = "If the record shape is changed on a home that already has logs, may one log hold "
+            .. "records of more than one shape?",
+        waits_on = "owner",
+        detail = "issue 105: found while writing (open question 8's follow-on)",
+        config_key = "log.shape-mixing",
+        variants = {
+            {
+                name = "per-record",
+                summary = "Each record is recognised by its first characters ('{' = jsonl, 'id:' = "
+                    .. "block, anything else = tsv); a log may hold all three.",
+                built_in = "src/message-log/084-log-reader.lua (SHAPE_PICKERS), "
+                    .. "src/message-log/083-record-codecs.lua (codecs.detect)",
+                tests = "src/message-log/tests/094-test-mixing-and-memory.lua",
+                findings = {
+                    "Works because ids may hold only letters, digits, '-' and '_' (no ':' or '{'), "
+                        .. "so the three shapes cannot be confused.",
+                    "Changing log.record-shape just changes how new records are written; nothing "
+                        .. "is ever rewritten, all 6 shape pairs tested in both directions.",
+                    "Duplicate scan must search for all three id markers: 16.9 s vs 9.6 s to file "
+                        .. "10,000 block records; no measurable cost with remembered.",
+                    "A person reading the file with cat sees a change of shape part-way down.",
+                },
+            },
+            {
+                name = "fixed",
+                summary = "Every record must be in the configured shape; a record in another shape "
+                    .. "makes the log unreadable with an error naming both shapes.",
+                built_in = "src/message-log/084-log-reader.lua (SHAPE_PICKERS)",
+                tests = "src/message-log/tests/094-test-mixing-and-memory.lua",
+                findings = {
+                    "Changing log.record-shape on a home with messages makes every existing room "
+                        .. "unreadable until it is changed back; there is no converter built.",
+                    "copy_log re-encodes into the configured shape, so a converter would be a "
+                        .. "copy into a fresh room — but that changes the room id.",
+                },
+            },
+        },
+        leaning = "per-record: the file stays append-only through a change of mind, and the "
+            .. "detection is exact, not a guess.",
+    },
+    {
+        id = "log-duplicate-check",
+        question = "To refuse a repeated delivery, does the log search the whole file each time, "
+            .. "or keep the ids it has seen in memory?",
+        waits_on = "state",
+        detail = "issue 105: 'whether the duplicate check needs an index of ids is a measurement'; "
+            .. "waits on phase 2's delivery rate and on whether the server is one long-running "
+            .. "program (memory lasts) or started per delivery (memory is empty each time)",
+        config_key = "log.duplicate-check",
+        variants = {
+            {
+                name = "remembered",
+                summary = "Keep each log's ids in the program's memory with how far the file has been "
+                    .. "read; each check reads only what was added since.  Nothing on disk.",
+                built_in = "src/message-log/085-duplicate-check.lua (remembered)",
+                tests = { "src/message-log/tests/092-test-log.lua",
+                    "src/message-log/tests/094-test-mixing-and-memory.lua", "src/message-log/tests/095-measure.lua" },
+                findings = {
+                    "Filing 10,000: 0.81 s tsv, 0.83 s block, 1.01 s jsonl (about 0.08-0.1 ms a message, "
+                        .. "much of it reading the config file three times per filing); does not "
+                        .. "grow with log size.  Delivering all 10,000 again: 0.63-0.68 s, all refused.",
+                    "Sees records another program appended (reads the new tail each time).",
+                    "Notices a replaced or emptied file by checking the first 64 bytes and the 64 "
+                        .. "bytes before where it stopped; then starts over.  A replacement that "
+                        .. "matched both would fool it (ids are random, so not in practice).",
+                    "Only helps a long-running program: a program started per delivery would "
+                        .. "read the whole log on its first check, the same as scan.",
+                },
+            },
+            {
+                name = "scan",
+                summary = "Read the whole log each time and search it for the id's marker text, "
+                    .. "which can only occur where that record starts.",
+                built_in = "src/message-log/085-duplicate-check.lua (scan)",
+                tests = { "src/message-log/tests/092-test-log.lua", "src/message-log/tests/095-measure.lua" },
+                findings = {
+                    "Nothing kept, nothing can go stale.",
+                    "Cost grows with the log: filing 10,000 one by one took 5.7 s (tsv), 9.6 s "
+                        .. "(block), 8.4 s (jsonl) — about 1 ms per message once a log holds "
+                        .. "10,000 (a 1.2-1.8 MB file read each time).",
+                    "At chat speed (a few messages a minute) 1 ms is nothing; it matters for bulk "
+                        .. "copies (copy_log of a big room) and catch-up after being offline.",
+                },
+            },
+        },
+        leaning = "remembered for the home server if it is one long-running program; the number "
+            .. "says no on-disk index is needed at 10,000 messages either way.",
+    },
+    {
+        id = "log-edits",
+        question = "May a sent message be corrected or deleted: never, any time by its author, or "
+            .. "only for a short time after writing?",
+        waits_on = "owner",
+        detail = "open question 12",
+        config_key = "log.edits",
+        variants = {
+            {
+                name = "never",
+                summary = "No corrections or deletions can be filed.",
+                built_in = "src/message-log/086-edits.lua (RULES.never)",
+                tests = "src/message-log/tests/093-test-edits.lua",
+                findings = {
+                    "Simplest; matches 'the log is append-only' literally.",
+                    "Edits already in a file (filed before the switch, or copied in) are still "
+                        .. "shown: the rule governs filing, not reading.",
+                },
+            },
+            {
+                name = "corrections",
+                summary = "The author may file a correction (new text) or deletion naming the "
+                    .. "message's id, at any time; the original stays in the file, the room "
+                    .. "shows the latest.",
+                built_in = "src/message-log/086-edits.lua (RULES.corrections, edits.apply), "
+                    .. "src/message-log/081-message-log.lua (correct, delete)",
+                tests = "src/message-log/tests/093-test-edits.lua",
+                findings = {
+                    "Stays append-only: the original is always in the file (cat shows every version).",
+                    "'Latest' is by written time then id, not by file order, so corrections that "
+                        .. "arrive out of order settle the same way everywhere (tested).",
+                    "A deleted message stays in the room view as empty and marked deleted, so a "
+                        .. "link to its anchor still lands somewhere; its text is still in the file, "
+                        .. "so deletion hides, it does not erase.",
+                    "Only the author may edit; a forged edit found in a file makes the room refuse "
+                        .. "to show rather than choose a side.",
+                    "Phase 1 refuses an edit whose message is not in the log; in phase 2 an edit "
+                        .. "may arrive before its message, which this refusal would lose.",
+                },
+            },
+            {
+                name = "window",
+                summary = "As corrections, but refused once log.edit-window-seconds have passed "
+                    .. "between the message's written time and the edit's.",
+                built_in = "src/message-log/086-edits.lua (RULES.window)",
+                tests = "src/message-log/tests/093-test-edits.lua",
+                findings = {
+                    "Needs a second key, log.edit-window-seconds (whole seconds; absent or not a "
+                        .. "number is an error).",
+                    "The edge is inclusive: exactly the window is allowed, one second more refused.",
+                    "Measured with the authors' own clocks (both written times), so a wrong clock "
+                        .. "on the author's device moves the window.",
+                },
+            },
+        },
+        leaning = "corrections: it keeps the file append-only and history visible; window only "
+            .. "adds a clock to trust.",
+    },
+    {
+        id = "log-pictures",
+        question = "What a message can hold: text only, with pictures and files left to rmail, "
+            .. "or small pictures in chat too?",
+        waits_on = "owner",
+        detail = "open question 9",
+        config_key = "",
+        variants = {
+            {
+                name = "text-only",
+                summary = "The only thing built: a message's text is any bytes, nothing else.",
+                built_in = "src/message-log/083-record-codecs.lua",
+                tests = "src/message-log/tests/091-test-codecs.lua",
+                findings = {
+                    "Every shape already carries arbitrary bytes, so a small picture could ride in "
+                        .. "the text field, but tsv would escape it and jsonl would bloat it; a "
+                        .. "picture would more likely be a file beside the log, named by message id.",
+                },
+            },
+        },
+        leaning = "text only in phase 1; decide with the owner before phase 2's wire format.",
+    },
+    {
+        id = "log-deleted-view",
+        question = "When a message is deleted, does the room still show a place for it "
+            .. "(empty, marked deleted), or does it vanish from the room?",
+        waits_on = "owner",
+        detail = "issue 105: found while building log.edits",
+        config_key = "",
+        variants = {
+            {
+                name = "marked-empty",
+                summary = "The deleted message stays in the room view with no text and deleted = true.",
+                built_in = "src/message-log/086-edits.lua (edits.apply)",
+                tests = "src/message-log/tests/093-test-edits.lua",
+                findings = {
+                    "A link to the message's anchor (a notice, a search result) still lands on it.",
+                    "Either way the original text stays in the log file (append-only), so "
+                        .. "deleting hides a message, it does not erase it; cat still shows it.",
+                },
+            },
+            {
+                name = "vanish",
+                summary = "Not built: leave deleted messages out of read_ordered.",
+                built_in = "",
+                tests = "",
+                findings = "One line in edits.apply; not built because anchors pointing at it would break.",
+            },
+        },
+        leaning = "marked-empty, and tell the owner plainly that deletion is not erasure.",
+    },
+    {
+        id = "log-early-edits",
+        question = "What happens to a correction or deletion that arrives before the message it changes?",
+        waits_on = "state",
+        detail = "issue 105: needs phase 2 (delivery between home servers), where arrival order is not "
+            .. "written order",
+        config_key = "",
+        variants = {
+            {
+                name = "refuse",
+                summary = "Phase 1: an edit naming an id not in the log is refused.",
+                built_in = "src/message-log/086-edits.lua (find_target)",
+                tests = "src/message-log/tests/093-test-edits.lua",
+                findings = "Correct while all edits are made locally; in phase 2 it would drop an edit "
+                    .. "whose message is still on its way.  Reading already skips such an edit "
+                    .. "quietly, so filing it early would be safe for readers.",
+            },
+        },
+        leaning = "in phase 2, file edits that arrive early (the author check then happens when "
+            .. "reading, where it is already done).",
+    },
+    {
+        id = "log-repeated-id-different-content",
+        question = "A delivery whose id is already in the log but whose text or author differ: "
+            .. "answer 'duplicate' as now, or raise an error?",
+        waits_on = "owner",
+        detail = "issue 105: found while building the duplicate check",
+        config_key = "",
+        variants = {
+            {
+                name = "duplicate",
+                summary = "Only the id is compared; the second copy is not filed, whatever it says.",
+                built_in = "src/message-log/081-message-log.lua (file_record)",
+                tests = "src/message-log/tests/092-test-log.lua",
+                findings = "Random 128-bit ids make an honest collision unthinkable, so a differing "
+                    .. "copy means a faulty or dishonest sender; comparing would need the old record "
+                    .. "decoded, which the marker search avoids.",
+            },
+        },
+        leaning = "duplicate for phase 1; revisit with phase 2's sender checks.",
+    },
+}

@@ -1,0 +1,54 @@
+-- 119-options.lua — the undecided choices found while building the phase 1 demo,
+-- written down for the options tally (scripts/tally-options).
+--
+-- Plain data in the contract's shape ("The options tally" in
+-- docs/phase-1-module-contract.md); nothing here runs.
+
+return {
+    {
+        id = "demo-baseline",
+        question = "When a demo scene shows one choice's variants, what should every OTHER choice be set to "
+            .. "in that scene's homes?",
+        waits_on = "owner",
+        detail = "issue 106: found while building; every module refuses to run with any choice unset, "
+            .. "so the demo must pick something for the choices a scene is not about",
+        config_key = "",
+        variants = {
+            {
+                name = "first-listed",
+                summary = "The first variant each builder listed in their options file, replaced key by key "
+                    .. "by any line in input/phase-1-demo.config.",
+                built_in = "src/phase-1-demo/105-demo-baseline.lua (from_options, parse_input, apply_input)",
+                tests = { "src/phase-1-demo/tests/117-test-demo-baseline.lua",
+                          "src/phase-1-demo/tests/116-test-demo-run.lua" },
+                findings = {
+                    "Needs nothing from the builders beyond the options files they already keep; a new "
+                        .. "choice reaches the demo with no edit to it.",
+                    "The first-listed variant is often not the builder's leaning: on 2026-09-25 "
+                        .. "tree.parent-disclosure starts at always (leaning shared-only) and "
+                        .. "recipients.split-alone at keep-empty (leaning record-only). So the demo's "
+                        .. "unvaried settings are an accident of listing order unless input/ says otherwise.",
+                    "Seen in the split scene under people.split-records = show (first listed): p3's "
+                        .. "people/ folder in p2's home holds two links, the-six~<old> and the-six~<new>, "
+                        .. "because the fork's read-only record still counts as a shared room.",
+                    "An input line naming an unknown key or an unbuilt value stops the demo before any "
+                        .. "scene runs, naming the line.",
+                },
+            },
+            {
+                name = "builder-leaning",
+                summary = "Each builder's leaning. Not built: `leaning` is prose, so the contract would need "
+                    .. "a machine-readable field (for example leaning_variant = \"shared-only\") in every "
+                    .. "options file.",
+                built_in = "not built",
+                tests = "none",
+                findings = "Would need a contract change and an edit to all five options files; "
+                    .. "input/phase-1-demo.config already lets the owner run the demo under any set of "
+                    .. "variants without it.",
+            },
+        },
+        leaning = "first-listed, with the owner's picks written into input/phase-1-demo.config as they "
+            .. "are made; the demo then shows the decided project, and only the undecided keys fall back "
+            .. "to listing order.",
+    },
+}

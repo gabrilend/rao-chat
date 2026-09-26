@@ -1,0 +1,187 @@
+-- 009-test-rooms.lua — tests for making, reading, changing and listing rooms.
+--
+-- Builds the owner's example tree (home > ritz > programming) in a fresh
+-- RAM home and checks every file room-folders writes, the refusals
+-- (bad names, bad recipients, loops, missing rooms), and that listing
+-- ignores half-built rooms but complains about strangers.
+-- Run: luajit 009-test-rooms.lua [project folder]
+
+local DIR = arg[1] or "/home/ritz/programs/rao-chat"
+local kit = dofile(DIR .. "/src/room-folders/tests/006-kit-for-tests.lua")
+local rooms = kit.setup(DIR)
+local check, same, same_list, fails = kit.check, kit.same, kit.same_list, kit.fails
+
+check("new_room_id: 32 lower-case hex, different each time", function()
+    local seen = {}
+    for _ = 1, 200 do
+        local id = rooms.new_room_id()
+        same(rooms.is_room_id(id), true, "shape of " .. id)
+        same(seen[id], nil, "repeat")
+        seen[id] = true
+    end
+end)
+
+check("is_room_id refuses near misses", function()
+    same(rooms.is_room_id(("a"):rep(31)), false, "31 chars")
+    same(rooms.is_room_id(("A"):rep(32)), false, "upper case")
+    same(rooms.is_room_id(("g"):rep(32)), false, "not hex")
+    same(rooms.is_room_id(nil), false, "nil")
+end)
+
+local home = rooms.open_home(kit.fresh_home_dir("rooms"))
+local top, middle, bottom
+
+check("create the owner's example tree", function()
+    top = rooms.create_room(home, { name = "home", parent_id = "", recipients = { "girlfriend", "housemate" } })
+    middle = rooms.create_room(home, { name = "ritz", parent_id = top, recipients = {} })
+    bottom = rooms.create_room(home, { name = "programming", parent_id = middle, recipients = { "girlfriend", "coder" } })
+end)
+
+check("the files on disk are plain lines", function()
+    local dir = rooms.room_dir(home, bottom)
+    same(dir, home.dir .. "/rooms/" .. bottom)
+    same(kit.read_file(dir .. "/name"), "programming\n")
+    same(kit.read_file(dir .. "/parent"), middle .. "\n")
+    same(kit.read_file(dir .. "/recipients"), "girlfriend\ncoder\n")
+    same(kit.read_file(rooms.room_dir(home, top) .. "/parent"), "", "top room's parent file")
+    same(kit.read_file(rooms.room_dir(home, middle) .. "/recipients"), "", "empty recipients file")
+end)
+
+check("read_room gives the room back", function()
+    local room = rooms.read_room(home, bottom)
+    same(room.id, bottom)
+    same(room.name, "programming")
+    same(room.parent_id, middle)
+    same_list(room.recipients, { "girlfriend", "coder" })
+    same(rooms.read_room(home, top).parent_id, "")
+    same_list(rooms.read_room(home, middle).recipients, {})
+end)
+
+check("log_path sits in the room folder", function()
+    same(rooms.log_path(home, top), home.dir .. "/rooms/" .. top .. "/log")
+end)
+
+check("every new room has an empty log from the start", function()
+    for _, id in ipairs({ top, middle, bottom }) do
+        same(kit.read_file(rooms.log_path(home, id)), "", "log of " .. id)
+    end
+end)
+
+check("a listener hearing 'created' already finds the log", function()
+    local found
+    rooms.on_change(function(h, id, what)
+        -- only the ring for this check's room matters.
+        if what == "created" and found == nil then
+            local handle = io.open(rooms.log_path(h, id), "rb")
+            found = handle ~= nil
+            if handle then handle:close() end
+        end
+    end)
+    local own_home = rooms.open_home(kit.fresh_home_dir("rooms-log-at-ring"))
+    rooms.create_room(own_home, { name = "logged", parent_id = "", recipients = {} })
+    same(found, true, "log present at the ring")
+end)
+
+check("list_rooms is sorted and complete", function()
+    local want = { top, middle, bottom }
+    table.sort(want)
+    same_list(rooms.list_rooms(home), want)
+end)
+
+check("two rooms may share a name", function()
+    local other = rooms.create_room(home, { name = "programming", parent_id = "", recipients = { "coder" } })
+    same(rooms.read_room(home, other).name, "programming")
+    same(other ~= bottom, true, "different ids")
+end)
+
+check("a given room id is used", function()
+    local id = rooms.new_room_id()
+    same(rooms.create_room(home, { name = "arrived", parent_id = "", recipients = { "sorelu" }, room_id = id }), id)
+    same(rooms.room_exists(home, id), true)
+end)
+
+check("create refuses a room id already used", function()
+    fails(function() rooms.create_room(home, { name = "x", parent_id = "", recipients = {}, room_id = top }) end, "already exists")
+end)
+
+check("create refuses bad specs", function()
+    fails(function() rooms.create_room(home, nil) end, "spec table")
+    fails(function() rooms.create_room(home, { name = "", parent_id = "", recipients = {} }) end, "non-empty string")
+    fails(function() rooms.create_room(home, { name = "a\nb", parent_id = "", recipients = {} }) end, "one line")
+    fails(function() rooms.create_room(home, { name = "a", parent_id = nil, recipients = {} }) end, "parent_id must be a string")
+    fails(function() rooms.create_room(home, { name = "a", parent_id = "nope", recipients = {} }) end, "not a room id")
+    fails(function() rooms.create_room(home, { name = "a", parent_id = "", recipients = nil }) end, "list of contact names")
+    fails(function() rooms.create_room(home, { name = "a", parent_id = "", recipients = { "has space" } }) end, "not a contact name")
+    fails(function() rooms.create_room(home, { name = "a", parent_id = "", recipients = { "x", "x" } }) end, "listed twice")
+    fails(function() rooms.create_room(home, { name = "a", parent_id = "", recipients = { "me" } }) end, "'me' is refused")
+    fails(function() rooms.create_room(home, { name = "a", parent_id = "", recipients = { "x", nil, "y" } }) end, "no gaps")
+    fails(function() rooms.create_room(home, { name = "a", parent_id = "", recipients = {}, room_id = "ABC" }) end, "not a room id")
+end)
+
+check("a refused create leaves nothing behind", function()
+    local before = #require("003-disk").list_dir(home.dir .. "/rooms")
+    pcall(rooms.create_room, home, { name = "", parent_id = "", recipients = {} })
+    same(#require("003-disk").list_dir(home.dir .. "/rooms"), before)
+end)
+
+check("write_name, write_recipients, write_parent", function()
+    rooms.write_name(home, bottom, "code")
+    same(rooms.read_room(home, bottom).name, "code")
+    rooms.write_recipients(home, bottom, { "coder" })
+    same_list(rooms.read_room(home, bottom).recipients, { "coder" })
+    rooms.write_recipients(home, bottom, {})
+    same(kit.read_file(rooms.room_dir(home, bottom) .. "/recipients"), "")
+    rooms.write_parent(home, bottom, top)
+    same(rooms.read_room(home, bottom).parent_id, top)
+    rooms.write_parent(home, bottom, "")
+    same(rooms.read_room(home, bottom).parent_id, "")
+    rooms.write_parent(home, bottom, middle)
+end)
+
+check("write_parent refuses loops", function()
+    fails(function() rooms.write_parent(home, top, top) end, "its own parent")
+    fails(function() rooms.write_parent(home, top, middle) end, "inside itself")
+    fails(function() rooms.write_parent(home, top, bottom) end, "inside itself")
+    same(rooms.read_room(home, top).parent_id, "", "unchanged after refusal")
+end)
+
+check("writes to a missing room are refused", function()
+    local ghost = rooms.new_room_id()
+    fails(function() rooms.read_room(home, ghost) end, "no such room")
+    fails(function() rooms.write_name(home, ghost, "x") end, "no such room")
+    fails(function() rooms.write_parent(home, ghost, "") end, "no such room")
+    fails(function() rooms.write_recipients(home, ghost, {}) end, "no such room")
+    same(rooms.room_exists(home, ghost), false)
+end)
+
+check("room_dir refuses a name passed as an id", function()
+    fails(function() rooms.room_dir(home, "programming") end, "not a room id")
+end)
+
+check("list_rooms skips a half-built room and refuses strangers", function()
+    local disk = require("003-disk")
+    local count = #rooms.list_rooms(home)
+    disk.make_dir(home.dir .. "/rooms/.new-" .. rooms.new_room_id())
+    same(#rooms.list_rooms(home), count, "half-built room skipped")
+    kit.write_file(home.dir .. "/rooms/notes.txt", "x")
+    fails(function() rooms.list_rooms(home) end, "unexpected entry")
+    os.remove(home.dir .. "/rooms/notes.txt")
+end)
+
+check("damaged room files are refused, not guessed at", function()
+    local id = rooms.create_room(home, { name = "fragile", parent_id = "", recipients = {} })
+    local dir = rooms.room_dir(home, id)
+    kit.write_file(dir .. "/name", "two\nlines\n")
+    fails(function() rooms.read_room(home, id) end, "damaged name file")
+    kit.write_file(dir .. "/name", "fragile\n")
+    kit.write_file(dir .. "/parent", "garbage\n")
+    fails(function() rooms.read_room(home, id) end, "damaged parent file")
+end)
+
+check("writes leave no temporary files in the room", function()
+    for n = 1, 10 do rooms.write_name(home, top, "home" .. n) end
+    local entries = require("003-disk").list_dir(rooms.room_dir(home, top))
+    same(table.concat(entries, ","), "log,name,parent,recipients")
+end)
+
+kit.finish()

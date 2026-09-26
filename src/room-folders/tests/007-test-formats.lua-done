@@ -1,0 +1,120 @@
+-- 007-test-formats.lua — tests for reading and writing rmail's formats.
+--
+-- Feeds sample config and contacts text (including a copy of the shape
+-- rmail's own files use) through 004-rmail-formats and checks the tables
+-- that come out, and that broken lines are refused with their line
+-- number.  Run: luajit 007-test-formats.lua [project folder]
+
+local DIR = arg[1] or "/home/ritz/programs/rao-chat"
+local kit = dofile(DIR .. "/src/room-folders/tests/006-kit-for-tests.lua")
+kit.setup(DIR)
+local formats = require("004-rmail-formats")
+local check, same, fails = kit.check, kit.same, kit.fails
+
+check("config: plain lines, comments, blanks, spaces", function()
+    local c = formats.parse_config("# hi\n\nname = ritz-home\n  port=7777  \nempty =\n", "t")
+    same(c.name, "ritz-home")
+    same(c.port, "7777")
+    same(c.empty, "")
+end)
+
+check("config: true/false stay strings", function()
+    same(formats.parse_config("upnp = false\n", "t").upnp, "false")
+end)
+
+check("config: last line without newline still read", function()
+    same(formats.parse_config("a = 1\nb = 2", "t").b, "2")
+end)
+
+check("config: dotted keys", function()
+    same(formats.parse_config("tree.parent-disclosure = always\n", "t")["tree.parent-disclosure"], "always")
+end)
+
+check("config: a key set twice is refused with its line", function()
+    fails(function() formats.parse_config("a = 1\nb = 2\na = 3\n", "cfg") end, "cfg line 3: 'a' is set twice")
+end)
+
+check("config: a non-setting line is refused", function()
+    fails(function() formats.parse_config("a = 1\njust words\n", "cfg") end, "cfg line 2: not a 'key = value' line")
+end)
+
+check("config_with: replaces in place, keeps comments and order", function()
+    local text = "# top\nname = a\n# mid\nport = 1\n"
+    same(formats.config_with(text, "name", "b"), "# top\nname = b\n# mid\nport = 1\n")
+end)
+
+check("config_with: adds a new key at the end", function()
+    same(formats.config_with("# top\nname = a\n", "port", "9"), "# top\nname = a\nport = 9\n")
+end)
+
+check("config_with: does not replace a commented-out key", function()
+    same(formats.config_with("#name = old\n", "name", "new"), "#name = old\nname = new\n")
+end)
+
+check("config_with: empty text", function()
+    same(formats.config_with("", "a", "1"), "a = 1\n")
+end)
+
+check("config_with: refuses bad key and bad values", function()
+    fails(function() formats.config_with("", "has space", "x") end, "config key must be")
+    fails(function() formats.config_with("", "a", "two\nlines") end, "must be one line")
+    fails(function() formats.config_with("", "a", " padded") end, "leading or trailing spaces")
+    fails(function() formats.config_with("", "a", 5) end, "must be a string")
+end)
+
+check("config_with: result reads back to the same value", function()
+    local text = formats.config_with("x = 1\n", "rooms.unknown-parent", "keep")
+    same(formats.parse_config(text, "t")["rooms.unknown-parent"], "keep")
+end)
+
+-- The shape of an rmail contacts file as rmail writes it.
+local RMAIL_SAMPLE = table.concat({
+    "// rmail contacts",
+    "",
+    "sorelu.ip       = 203.0.113.9",
+    "sorelu.ip[2]    = sorelu.example.org",
+    "sorelu.port[2]  = 7777",
+    "sorelu.local-ip = 192.168.1.20",
+    'sorelu.token    = "a shared secret"',
+    "# a hash comment too",
+    "phone.own       = true",
+    'phone.token     = "p"',
+    "lonely",
+}, "\n") .. "\n"
+
+check("contacts: rmail sample reads into name -> field -> string", function()
+    local c = formats.parse_contacts(RMAIL_SAMPLE, "t")
+    same(c.sorelu.ip, "203.0.113.9")
+    same(c.sorelu["ip[2]"], "sorelu.example.org")
+    same(c.sorelu["port[2]"], "7777")
+    same(c.sorelu["local-ip"], "192.168.1.20")
+    same(c.sorelu.token, "a shared secret")
+    same(c.phone.own, "true")
+    same(type(c.lonely), "table")
+    same(next(c.lonely), nil, "lonely has no fields")
+end)
+
+check("contacts: repeated plain ip lines are numbered as rmail does", function()
+    local c = formats.parse_contacts("a.ip = 1.1.1.1\na.ip = 2.2.2.2\na.ip = 3.3.3.3\n", "t")
+    same(c.a.ip, "1.1.1.1")
+    same(c.a["ip[1]"], "2.2.2.2")
+    same(c.a["ip[2]"], "3.3.3.3")
+end)
+
+check("contacts: other repeated fields are refused", function()
+    fails(function() formats.parse_contacts("a.token = x\na.token = y\n", "ct") end, "ct line 2: a.token is set twice")
+end)
+
+check("contacts: old JSON format refused with advice", function()
+    fails(function() formats.parse_contacts('{"a": {"ip": "1"}}', "ct") end, "old JSON contacts format")
+end)
+
+check("contacts: a junk line is refused", function()
+    fails(function() formats.parse_contacts("a.ip = 1\nthis is not a contact line\n", "ct") end, "ct line 2")
+end)
+
+check("contacts: empty text is no contacts", function()
+    same(next(formats.parse_contacts("", "t")), nil)
+end)
+
+kit.finish()

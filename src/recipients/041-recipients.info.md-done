@@ -1,0 +1,36 @@
+# 041-recipients.lua
+
+Who your messages in a room go to, what happens when someone takes you off
+theirs, and how a room is set up when a message arrives in a room you have
+never seen.  Loaded with `require("041-recipients")` after the load path
+(`src/room-folders/001-load-path.lua`).  Needs `002-room-folders` (issue 101)
+at load and `081-message-log` (issue 105) when a split or a heard-from room
+needs the log.
+
+Types: **home** is `{dir = string}`; a **room id** is a string of 32
+lower-case hex characters; a **contact** is a string, a name from the
+contacts file.
+
+## Outward functions
+
+| function | takes | gives | purpose |
+|---|---|---|---|
+| `add(home, room_id, contact)` | home, string, string | nothing | Your messages in the room reach `contact` from now on.  Errors if the room is missing or a split record, the name is not a contact, is one of your own devices (`own = true`), or is already on the list.  Lifts any heard-from "declined" mark on them.  Rings the bell with `"recipients"`. |
+| `remove(home, room_id, contact)` | home, string, string | nothing | Your messages stop reaching `contact`.  Errors if they are not on the list or are the last one (a room is at least two people).  Marks them declined in a heard-from room so hearing them again does not re-add them. |
+| `split_on_removal(home, room_id, remover, shape)` | home, string, string, string `"fork"` or `"rekey"` | string: the room id you now talk in, or `""` | Your server was told `remover` took you off their list.  Your copy becomes a room of its own with every message kept, minus the remover.  Reads config `recipients.split-parent` (`keep` or `top`) and, when nobody would be left, `recipients.split-alone` (`keep-empty` or `record-only`; the latter gives `""`).  Child rooms are moved under the new room. |
+| `live_room_for(home, room_id)` | home, string | string: room id, or `""` | Where a message addressed to `room_id` should be filed: follows fork records to the room you now talk in; `""` means there is no room here for it (never seen, rekeyed away, or a record-only split). |
+| `room_from_arrival(home, room_id, sender, mode, carried)` | home, string, string, string `"adder-only"`/`"heard-from"`/`"adder-list"`, table `{recipients = list of string}` or nil | string room id, list of string (carried names left out because they are not contacts) | Makes a top room named `from-<sender>` for a message that arrived in an unknown room.  The reply list: the sender; the sender then everyone heard from; or the carried list (reader's names, reader written `"me"`) minus you plus the sender.  Errors if the room exists, the sender is not a contact or is your own device, or adder-list has no carried list. |
+| `configured_split_shape(home)` | home | string | The `recipients.split-shape` config value; errors when absent. |
+| `configured_arrival_list(home)` | home | string | The `recipients.arrival-list` config value; errors when absent. |
+
+## Files it keeps inside a room folder
+
+- `rooms/<id>/split` — on a read-only record of a split: `into = <room id or
+  empty>`, `remover = <contact>`, `shape = fork|rekey`.
+- `rooms/<id>/arrival` — on a room made on arrival: `mode = ...`,
+  `sender = <contact>`, and any number of `declined = <contact>` lines.
+
+## What it listens for
+
+The change bell's `"log"`: in a heard-from room, every author in the log who
+is not you, not already listed, and not declined is added.

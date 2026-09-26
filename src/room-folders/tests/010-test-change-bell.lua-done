@@ -1,0 +1,105 @@
+-- 010-test-change-bell.lua — tests for the change bell.
+--
+-- Signs up a listener that writes down every ring, then makes and changes
+-- rooms and checks each change rang exactly once with the right room and
+-- kind, after the file was already written (so a listener reading the
+-- room sees the new value).  Also checks unknown kinds and failing
+-- listeners are loud.
+-- Run: luajit 010-test-change-bell.lua [project folder]
+
+local DIR = arg[1] or "/home/ritz/programs/rao-chat"
+local kit = dofile(DIR .. "/src/room-folders/tests/006-kit-for-tests.lua")
+local rooms = kit.setup(DIR)
+local check, same, same_list, fails = kit.check, kit.same, kit.same_list, kit.fails
+
+-- Every ring heard, as "kind room-id" strings; `seen_name` is what the
+-- listener read from disk at the moment of the ring.
+local heard = {}
+local seen_name = {}
+local failing = false
+rooms.on_change(function(home, room_id, what)
+    heard[#heard + 1] = what .. " " .. room_id
+    -- name and created rings on a real room: the new name must already
+    -- be on disk.  (Rings with made-up ids, from the notify tests, skip.)
+    if (what == "name" or what == "created") and rooms.room_exists(home, room_id) then
+        seen_name[#seen_name + 1] = rooms.read_room(home, room_id).name
+    end
+    -- a test switches this on to check that listener errors surface.
+    if failing then
+        error("listener broke on purpose")
+    end
+end)
+
+local home = rooms.open_home(kit.fresh_home_dir("bell"))
+
+check("one listener signed up", function()
+    same(rooms.listener_count(), 1)
+end)
+
+check("create rings 'created' once, after the room exists", function()
+    heard, seen_name = {}, {}
+    local id = rooms.create_room(home, { name = "home", parent_id = "", recipients = { "a" } })
+    same_list(heard, { "created " .. id })
+    same_list(seen_name, { "home" })
+end)
+
+check("each write rings its own kind, after writing", function()
+    local id = rooms.create_room(home, { name = "x", parent_id = "", recipients = {} })
+    local other = rooms.create_room(home, { name = "y", parent_id = "", recipients = {} })
+    heard, seen_name = {}, {}
+    rooms.write_name(home, id, "renamed")
+    rooms.write_parent(home, id, other)
+    rooms.write_recipients(home, id, { "b" })
+    same_list(heard, { "name " .. id, "parent " .. id, "recipients " .. id })
+    same_list(seen_name, { "renamed" })
+end)
+
+check("a refused write rings nothing", function()
+    local id = rooms.create_room(home, { name = "z", parent_id = "", recipients = {} })
+    heard = {}
+    pcall(rooms.write_name, home, id, "")
+    pcall(rooms.write_parent, home, id, id)
+    pcall(rooms.write_recipients, home, id, { "me" })
+    same(#heard, 0)
+end)
+
+check("other modules can ring every contract kind", function()
+    local id = rooms.new_room_id()
+    heard = {}
+    for _, what in ipairs({ "log", "removed-room", "split", "created", "name", "parent", "recipients" }) do
+        rooms.notify(home, id, what)
+    end
+    same(#heard, 7)
+    same(heard[1], "log " .. id)
+end)
+
+check("an unknown kind is refused", function()
+    fails(function() rooms.notify(home, rooms.new_room_id(), "renamed") end, "unknown kind of change 'renamed'")
+end)
+
+check("notify refuses a missing home or room id", function()
+    fails(function() rooms.notify(nil, rooms.new_room_id(), "log") end, "must be a home")
+    fails(function() rooms.notify(home, nil, "log") end, "room id must be a string")
+end)
+
+check("on_change refuses a non-function", function()
+    fails(function() rooms.on_change("not a function") end, "needs a function")
+end)
+
+check("a failing listener's error reaches the writer", function()
+    local id = rooms.create_room(home, { name = "w", parent_id = "", recipients = {} })
+    failing = true
+    fails(function() rooms.write_name(home, id, "v") end, "listener broke on purpose")
+    failing = false
+    same(rooms.read_room(home, id).name, "v", "the write itself happened")
+end)
+
+check("listeners hear in the order they signed up", function()
+    local order = {}
+    rooms.on_change(function() order[#order + 1] = "second" end)
+    rooms.on_change(function() order[#order + 1] = "third" end)
+    rooms.notify(home, rooms.new_room_id(), "log")
+    same_list(order, { "second", "third" })
+end)
+
+kit.finish()
