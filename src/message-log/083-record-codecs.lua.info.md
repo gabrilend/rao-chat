@@ -1,23 +1,20 @@
-# 083-record-codecs.lua — the three record shapes (open question 8)
+# 083-record-codecs.lua — the log's record shape (tsv)
 
-A codec is a table `{ record_ends = "line" | "blank-line", encode, decode,
-id_marker }`.  Records are as in `081-message-log.lua.info.md`.
+A codec is a table `{ encode, decode, id_marker }`.  Records are as in
+`081-message-log.lua.info.md`.  One shape, tsv (the owner's answer); the
+table is kept so a shape can be added back.  The block and jsonl shapes
+were retired in round 3 (git history).
 
 | name | takes | gives |
 |---|---|---|
-| `codecs.get(shape)` | `"tsv"`, `"block"` or `"jsonl"` | the codec; error on any other name |
-| `codecs.detect(first_line)` | string, a record's first line | shape name: `{` → jsonl, `id:` → block, else tsv |
-| `codecs.SHAPE_NAMES` | — | list `{ "tsv", "block", "jsonl" }` |
-| `codec.encode(record)` | record | string, the bytes to append, terminator included |
-| `codec.decode(raw)` | string, one record without its terminator | record; error naming the fault when damaged |
-| `codec.id_marker(id)` | id string | string starting with `"\n"` that occurs in a log only where that id's record begins |
+| `codecs.SHAPE` | — | string `"tsv"`, the shape every log is written and read in |
+| `codecs.SHAPES` | — | table shape name (string) → codec; only `tsv` |
+| `codecs.get(shape)` | shape name (string) | the codec; error on any name not in `SHAPES` |
+| `codec.encode(record)` | record | string, one line to append, newline included |
+| `codec.decode(raw)` | string, one line without its newline | record; error naming the fault when damaged (wrong field count, unknown escape, bad number, unknown kind) |
+| `codec.id_marker(id)` | id string | `"\n" .. id .. "\t"`, which occurs in a log only where that id's record begins |
 
-Shapes on disk:
-
-- **tsv** — `id\tfrom\twritten\tarrived\tkind\ttarget\ttext\n`; in text,
-  `\` `TAB` `LF` `CR` are written `\\` `\t` `\n` `\r`.
-- **block** — lines `id: …`, `from: …`, `written: …`, `arrived: …`,
-  `kind: …`, `target:` (value omitted when empty), `text:`, then each text
-  line indented two spaces (none for empty text), then a blank line.
-- **jsonl** — `{"id":…,"from":…,"written":…,"arrived":…,"kind":…,"target":…,"text":…}\n`
-  via dkjson (libs/dkjson.lua), keys in that order.
+On disk: `id\tfrom\twritten\tarrived\tkind\ttarget\ttext\n`; in text,
+`\` `TAB` `LF` `CR` are written `\\` `\t` `\n` `\r`.  A line in a retired
+shape (a block's `id: …`, a JSON object) has one field, not seven, and is
+refused.

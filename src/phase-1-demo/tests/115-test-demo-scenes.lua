@@ -8,39 +8,39 @@
 -- same idea as the stand-in modules other builders keep).  Each key filled
 -- in that way is reported, so a stand-in never hides silently.  Then, on
 -- the real modules, it checks:
---   entries   two folders; both entries read by one reader; unpaired refused
---   tokens    suggestions have the configured word count; typed token kept;
---             change keeps folder, label, members, message count
---   tree      three levels on two homes; fingerprints match, labels differ;
---             the coder refused in shopping, the housemate let in
---   members   six members; withholding one leaves five to send to, six members
---   leaving   unconfirmed leave changes nothing; confirmed removes; speaking re-adds
---   ignoring  mark shows a trace, hide shows nothing; hidden refused as member
---   people    one folder per direct message; the girlfriend's two machines
---             count once; each collision mode names two links differently
---   log       duplicate, conflict error, edit keeps the original, two homes agree
+--   entries    two folders; both entries read by one reader; unpaired refused
+--   tokens     suggestions have six words; typed token kept;
+--              change keeps folder, label, members, message count
+--   tree       three levels on two homes; fingerprints match, labels differ;
+--              the coder added flagged in shopping, off the send list until
+--              approved; a leaver from home flagged in kitchen and shopping;
+--              declining withholds; a parent not held gives cannot-check
+--   mailboxes  a top room and its children share one mailbox, direct
+--              messages another; a shared port found and reported; a room
+--              whose parent is not held, per mailboxes.unheld-parent variant
+--   members    six members; withholding one leaves five to send to, six members
+--   leaving    unconfirmed leave changes nothing; confirmed removes; speaking re-adds
+--   ignoring   mark shows a trace, hide shows nothing and files nothing; an
+--              ignore covers every port; ignored addresses refused as members
+--   people     one folder per direct message; the girlfriend's two machines
+--              count once; each collision mode names two links differently
+--   log        duplicate, conflict error, edit keeps the original, two homes agree
 -- Each scene and each view also has to draw without error.
 
--- Keys the modules announced on the board (2026-09-25 round 2) with their
+-- Keys the modules announced on the board (2026-09-25 round 3) with their
 -- variants, first = baseline.  Used only for a key no options file lists.
+-- Keys whose choice the owner answered are not here: no module reads them.
 local STAND_IN_VARIANTS = {
-    ["rooms.suggested-token-words"]     = { "6", "5", "4" },
-    ["tree.unheld-parent-join"]         = { "refuse", "accept" },
+    ["mailboxes.unheld-parent"]         = { "own-mailbox", "waiting-mailbox" },
     ["tree.filing-loop"]                = { "refuse", "unfile" },
-    ["ignore.hide-files"]               = { "filed", "not-filed" },
     ["ignore.scope"]                    = { "home", "home-and-room" },
-    ["ignore.match"]                    = { "pair", "host" },
     ["recipients.shared-address-label"] = { "all-labels", "address" },
     ["people.link-collision"]           = { "suffix-id", "numbered", "id-folder" },
     ["people.slash-in-link-name"]       = { "percent", "division-slash" },
     ["people.direct-message-link"]      = { "leave-out", "include" },
     ["people.members-without-dm"]       = { "leave-out", "address-folder" },
     ["people.person-folder-collision"]  = { "suffix-id", "numbered", "merge" },
-    ["log.record-shape"]                = { "tsv", "block", "jsonl" },
-    ["log.who-may-edit"]                = { "anyone", "same-address" },
-    ["log.shape-mixing"]                = { "per-record", "fixed" },
     ["log.duplicate-check"]             = { "remembered", "scan" },
-    ["log.same-id-new-address"]         = { "duplicate", "error" },
 }
 
 return function(DIR, harness)
@@ -57,6 +57,8 @@ return function(DIR, harness)
         ignore = require("042-ignore-list"), people = require("061-people-links"),
         log = require("081-message-log"),
     }
+    -- every module is loaded before any scene, as the demo does, so every
+    -- bell listener hears every home the scenes make
     local baseline, variants_by_key = baseline_tool.from_options(gather.gather(DIR .. "/src"))
     local stood_in = {}
     for key, names in pairs(STAND_IN_VARIANTS) do
@@ -136,17 +138,11 @@ return function(DIR, harness)
 
     local tokens = scene("tokens")
     if tokens then
-        check("tokens: one row per word-count variant",
-              #tokens.suggested == #variants_by_key["rooms.suggested-token-words"])
-        for _, row in ipairs(tokens.suggested) do
-            local ok = true
-            for _, token in ipairs(row.tokens) do
-                local _, dashes = token:gsub("-", "")
-                -- a word may itself hold a dash, so at least n-1 dashes
-                ok = ok and dashes >= tonumber(row.words) - 1
-            end
-            check("tokens: " .. row.words .. "-word suggestions have at least " .. row.words .. " parts", ok,
-                  table.concat(row.tokens, " "))
+        check("tokens: three suggestions", #tokens.suggested == 3)
+        for _, token in ipairs(tokens.suggested) do
+            -- no word in the EFF large list holds a dash, so six words = five dashes
+            local _, dashes = token:gsub("-", "")
+            check("tokens: a suggestion has six words", dashes == 5, token)
         end
         check("tokens: the typed token is read back unchanged", tokens.typed_back == tokens.typed)
         check("tokens: a second room with the same token is refused", not tokens.duplicate_token.ok,
@@ -161,8 +157,25 @@ return function(DIR, harness)
         check("tokens: log bytes unchanged", before.log_bytes == after.log_bytes)
     end
 
+    -- {{{ local function flag_state
+    -- The state word a room's flagged file gives one pair, or "" when the
+    -- file has no line for it ("<address> <port> <state>", 103's format).
+    local function flag_state(text, pair)
+        local found = ""
+        for line in text:gmatch("[^\n]+") do
+            local address, port, state = line:match("^(%S+) (%S+) (%S+)$")
+            if address and (address .. " " .. port) == pair then
+                found = state
+            end
+        end
+        return found
+    end
+    -- }}}
+
     local tree = scene("tree")
     if tree then
+        local coder = PEOPLE.coder[1].address .. " " .. PEOPLE.coder[1].port
+        local girlfriend = PEOPLE.girlfriend[1].address .. " " .. PEOPLE.girlfriend[1].port
         check("tree: home A drawn home/kitchen/shopping",
               table.concat(tree.lines_a, "|") == "home|└── kitchen|    └── shopping", table.concat(tree.lines_a, "|"))
         check("tree: home B drawn family/cooking/groceries",
@@ -176,16 +189,86 @@ return function(DIR, harness)
         end
         check("tree: shopping's where names its path of labels",
               tree.a[3].where:find("home/kitchen/shopping", 1, true) ~= nil, tree.a[3].where)
-        check("tree: may_join says no to the coder", tree.may_join_coder.answer == false,
-              tree.may_join_coder.reason)
-        check("tree: may_join says yes to the housemate", tree.may_join_housemate.answer == true,
-              tree.may_join_housemate.reason)
-        check("tree: adding the coder answers not-in-parent", tree.add_coder.ok
-              and tree.add_coder.answer == "not-in-parent", tree.add_coder.answer)
+        check("tree: the coder checks no in shopping", tree.check_coder.answer == "no", tree.check_coder.reason)
+        check("tree: the housemate checks yes in shopping", tree.check_housemate.answer == "yes",
+              tree.check_housemate.reason)
+        check("tree: adding the coder answers added-flagged", tree.add_coder.ok
+              and tree.add_coder.answer == "added-flagged", tree.add_coder.answer)
         check("tree: adding the housemate answers added", tree.add_housemate.ok
               and tree.add_housemate.answer == "added", tree.add_housemate.answer)
-        check("tree: the coder is not a member of shopping",
-              not has(tree.shopping_members, PEOPLE.coder[1].address .. " " .. PEOPLE.coder[1].port))
+        check("tree: the flagged coder IS a member of shopping", has(tree.shopping_flagged.members, coder))
+        check("tree: the flagged coder is not on the send list", not has(tree.shopping_flagged.send, coder))
+        check("tree: the flagged file says no for the coder", flag_state(tree.shopping_flagged.flagged, coder) == "no",
+              tree.shopping_flagged.flagged)
+        check("tree: approving the coder ran", tree.approve_coder.ok, tree.approve_coder.answer)
+        check("tree: approved, the coder is on the send list", has(tree.shopping_approved.send, coder))
+        check("tree: the flagged file now says approved",
+              flag_state(tree.shopping_approved.flagged, coder) == "approved", tree.shopping_approved.flagged)
+        check("tree: the girlfriend's leave from home is removed", tree.leave.ok and tree.leave.answer == "removed",
+              tree.leave.answer)
+        check("tree: after leaving home she is still a member of kitchen",
+              has(tree.kitchen_after_leave.members, girlfriend))
+        check("tree: ... flagged no in kitchen", flag_state(tree.kitchen_after_leave.flagged, girlfriend) == "no",
+              tree.kitchen_after_leave.flagged)
+        check("tree: ... flagged no in shopping (a grandchild)",
+              flag_state(tree.shopping_after_leave.flagged, girlfriend) == "no", tree.shopping_after_leave.flagged)
+        check("tree: ... and off both send lists", not has(tree.kitchen_after_leave.send, girlfriend)
+              and not has(tree.shopping_after_leave.send, girlfriend))
+        check("tree: declining ran", tree.decline.ok, tree.decline.answer)
+        check("tree: declined, her flag line is gone", flag_state(tree.kitchen_declined.flagged, girlfriend) == "",
+              tree.kitchen_declined.flagged)
+        check("tree: declined, she is withheld", tree.kitchen_withheld:find(girlfriend, 1, true) ~= nil,
+              tree.kitchen_withheld)
+        check("tree: declined, still off the send list", not has(tree.kitchen_declined.send, girlfriend))
+        check("tree: a parent not held checks cannot-check", tree.check_unheld.answer == "cannot-check",
+              tree.check_unheld.reason)
+        check("tree: adding there answers added-flagged", tree.add_unheld.ok
+              and tree.add_unheld.answer == "added-flagged", tree.add_unheld.answer)
+        check("tree: the flagged file says cannot-check",
+              flag_state(tree.orphan.flagged, coder) == "cannot-check", tree.orphan.flagged)
+    end
+
+    local mailboxes = scene("mailboxes")
+    if mailboxes then
+        local by_label = {}
+        for _, room in ipairs(mailboxes.rooms) do by_label[room.label] = room end
+        check("mailboxes: home, kitchen, shopping in one mailbox",
+              by_label.home.mailbox == by_label.kitchen.mailbox and by_label.home.mailbox == by_label.shopping.mailbox)
+        check("mailboxes: that mailbox is a tree mailbox", by_label.home.mailbox_kind == "tree")
+        check("mailboxes: both direct messages in one direct mailbox",
+              by_label.girlfriend.mailbox == by_label.coder.mailbox and by_label.coder.mailbox_kind == "direct")
+        check("mailboxes: programming has a mailbox of its own", by_label.programming.mailbox ~= by_label.home.mailbox
+              and by_label.programming.mailbox ~= by_label.coder.mailbox)
+        check("mailboxes: three mailboxes before games", #mailboxes.table == 3, #mailboxes.table)
+        check("mailboxes: no shared-port report before games", mailboxes.warnings_before == 0,
+              mailboxes.warnings_before)
+        check("mailboxes: the direct port tries two keys", #mailboxes.tried[1].rooms == 2,
+              table.concat(mailboxes.tried[1].rooms, ","))
+        check("mailboxes: home's port tries three keys", #mailboxes.tried[2].rooms == 3,
+              table.concat(mailboxes.tried[2].rooms, ","))
+        check("mailboxes: one shared port found", #mailboxes.shared.ports == 1
+              and mailboxes.shared.ports[1].port == mailboxes.shared.port
+              and #mailboxes.shared.ports[1].mailboxes == 2)
+        check("mailboxes: one read reports the shared port once", #mailboxes.shared.warnings == 1
+              and mailboxes.shared.warnings[1]:find(tostring(mailboxes.shared.port), 1, true) ~= nil,
+              table.concat(mailboxes.shared.warnings, " / "))
+        check("mailboxes: the shared port tries programming and games", #mailboxes.shared.tried == 2
+              and has(mailboxes.shared.tried, "programming") and has(mailboxes.shared.tried, "games"))
+        check("mailboxes: one row per mailboxes.unheld-parent variant",
+              #mailboxes.unheld == #variants_by_key["mailboxes.unheld-parent"])
+        local expect = {
+            ["own-mailbox"] = function(row)
+                return row.before.kind == "tree" and row.after.tag == row.before.tag and row.after.tag ~= row.loft.tag
+            end,
+            ["waiting-mailbox"] = function(row)
+                return row.before.kind == "waiting" and row.after.tag == row.loft.tag
+            end,
+        }
+        for _, row in ipairs(mailboxes.unheld) do
+            check("mailboxes " .. row.variant .. ": attic before and after loft as the variant says",
+                  expect[row.variant] ~= nil and expect[row.variant](row),
+                  row.before.kind .. " -> " .. row.after.kind)
+        end
     end
 
     local members = scene("members")
@@ -219,82 +302,45 @@ return function(DIR, harness)
 
     local ignoring = scene("ignoring")
     if ignoring then
-        check("ignoring: one result per ignore.hide-files variant",
-              #ignoring.variants == #variants_by_key["ignore.hide-files"])
-        for _, run in ipairs(ignoring.variants) do
-            local name = "ignoring " .. run.variant .. ": "
-            local marked, hidden = SIX[2].address .. " " .. SIX[2].port, SIX[3].address .. " " .. SIX[3].port
-            local levels = {}
-            for _, entry in ipairs(run.levels) do levels[entry.who] = entry.level end
-            check(name .. "levels none/mark/hide", levels[SIX[1].address .. " " .. SIX[1].port] == "none"
-                  and levels[marked] == "mark" and levels[hidden] == "hide")
-            local drawn = view.ignoring({ variants = { run } })
-            check(name .. "the marked one shows as a trace", harness.contains_line(drawn, "(someone you ignore spoke)"))
-            check(name .. "the hidden one's words never appear",
-                  not harness.contains_line(drawn, "(something you chose never to see)"))
-            check(name .. "the marked one's words never appear",
-                  not harness.contains_line(drawn, "(something you chose not to read)"))
-            check(name .. "the hidden address is refused as a member", run.readd_hidden.ok
-                  and run.readd_hidden.answer == "ignored", run.readd_hidden.answer)
-            check(name .. "the marked address is refused as a member", run.readd_marked.ok
-                  and run.readd_marked.answer == "ignored", run.readd_marked.answer)
-            check(name .. "after un-ignoring, the hidden one is added", run.readd_after_unignore.ok
-                  and run.readd_after_unignore.answer == "added", run.readd_after_unignore.answer)
-            local expected_filed = ({ filed = 5, ["not-filed"] = 4 })[run.variant]
-            check(name .. "messages filed = " .. tostring(expected_filed), run.filed == expected_filed, run.filed)
-        end
-    end
-
-    local people = scene("people")
-    if people then
-        check("people: one folder per direct message", #people.folders == 3
-              and has(people.folders, "girlfriend") and has(people.folders, "coder")
-              and has(people.folders, "housemate"), table.concat(people.folders, ","))
-        local girlfriend_links = {}
-        for _, line in ipairs(people.links) do
-            if line:match("^girlfriend/") then girlfriend_links[#girlfriend_links + 1] = line end
-        end
-        -- the girlfriend is in home (top) and programming (top); kitchen and
-        -- shopping are under home, so not tops for her
-        check("people: the girlfriend has two top rooms, counted once across two machines",
-              #girlfriend_links == 2, table.concat(girlfriend_links, " / "))
-        check("people: every link is relative", (function()
-            for _, line in ipairs(people.links) do
-                if not line:find(" %-> %.%./%.%./rooms/") then return false end
-            end
-            return true
-        end)())
-        check("people: one result per collision variant",
-              #people.collisions == #variants_by_key["people.link-collision"])
-        local distinct = {}
-        for _, run in ipairs(people.collisions) do
-            check("people " .. run.variant .. ": coder has three links (home, programming x2)",
-                  #run.links == 3, table.concat(run.links, " / "))
-            distinct[table.concat(run.links, "|")] = true
-        end
-        local count = 0
-        for _ in pairs(distinct) do count = count + 1 end
-        check("people: the collision variants name the links differently", count == #people.collisions)
+        local marked, hidden = SIX[2].address .. " " .. SIX[2].port, SIX[3].address .. " " .. SIX[3].port
+        local levels = {}
+        for _, entry in ipairs(ignoring.levels) do levels[entry.who] = entry.level end
+        check("ignoring: levels none/mark/hide", levels[SIX[1].address .. " " .. SIX[1].port] == "none"
+              and levels[marked] == "mark" and levels[hidden] == "hide")
+        local drawn = view.ignoring(ignoring)
+        check("ignoring: the marked one shows as a trace", harness.contains_line(drawn, "(someone you ignore spoke)"))
+        check("ignoring: the hidden one's words never appear",
+              not harness.contains_line(drawn, "(something you chose never to see)"))
+        check("ignoring: the marked one's words never appear",
+              not harness.contains_line(drawn, "(something you chose not to read)"))
+        check("ignoring: 4 of 5 filed (the hidden address's message is dropped)", ignoring.filed == 4,
+              ignoring.filed)
+        check("ignoring: the hidden machine on another port is hidden too",
+              ignoring.other_port.level == "hide" and ignoring.other_port.files == false,
+              ignoring.other_port.level .. " " .. tostring(ignoring.other_port.files))
+        check("ignoring: the hidden address is refused as a member", ignoring.readd_hidden.ok
+              and ignoring.readd_hidden.answer == "ignored", ignoring.readd_hidden.answer)
+        check("ignoring: the marked address is refused as a member", ignoring.readd_marked.ok
+              and ignoring.readd_marked.answer == "ignored", ignoring.readd_marked.answer)
+        check("ignoring: after un-ignoring, the hidden one is added", ignoring.readd_after_unignore.ok
+              and ignoring.readd_after_unignore.answer == "added", ignoring.readd_after_unignore.answer)
     end
 
     local log = scene("log")
     if log then
-        check("log: one result per shape", #log.shapes == #variants_by_key["log.record-shape"])
-        for _, shape in ipairs(log.shapes) do
-            local name = "log " .. shape.shape .. ": "
-            check(name .. "four filed", table.concat(shape.answers, ",") == "filed,filed,filed,filed",
-                  table.concat(shape.answers, ","))
-            check(name .. "the repeat is duplicate", shape.repeat_answer.ok
-                  and shape.repeat_answer.answer == "duplicate", shape.repeat_answer.answer)
-            check(name .. "the same id with new words is an error", not shape.conflict.ok, shape.conflict.answer)
-            check(name .. "the edit is filed", shape.edit.ok, shape.edit.answer)
-            check(name .. "five records in the file, original kept", #shape.in_file == 5
-                  and shape.in_file[3].text:find("parsre", 1, true) ~= nil)
-            check(name .. "the late message is second on screen", shape.shown[2].written == 30)
-            check(name .. "the edit shows on screen, marked", shape.shown[4].text:find("parser$") ~= nil
-                  and shape.shown[4].edited == true, shape.shown[4] and shape.shown[4].text)
-            check(name .. "the file's bytes were measured", shape.bytes > 0 and shape.bulk.bytes > 0)
-        end
+        check("log: four filed", table.concat(log.answers, ",") == "filed,filed,filed,filed",
+              table.concat(log.answers, ","))
+        check("log: the repeat is duplicate", log.repeat_answer.ok
+              and log.repeat_answer.answer == "duplicate", log.repeat_answer.answer)
+        check("log: the same id with new words is an error", not log.conflict.ok, log.conflict.answer)
+        check("log: the edit is filed", log.edit.ok, log.edit.answer)
+        check("log: five records in the file, original kept", #log.in_file == 5
+              and log.in_file[3].text:find("parsre", 1, true) ~= nil)
+        check("log: the late message is second on screen", log.shown[2].written == 30)
+        check("log: the edit shows on screen, marked", log.shown[4].text:find("parser$") ~= nil
+              and log.shown[4].edited == true, log.shown[4] and log.shown[4].text)
+        check("log: the raw file is tab-separated", log.raw:find("\t", 1, true) ~= nil)
+        check("log: the file's bytes were measured", log.bytes > 0 and log.bulk.bytes > 0)
         check("log: two homes show the same order", log.two_homes.identical == true)
         check("log: two homes use different local tags", log.two_homes.homes[1].tag ~= log.two_homes.homes[2].tag)
         check("log: the two files hold different arrival orders",
@@ -322,4 +368,126 @@ return function(DIR, harness)
         end
         -- (the tally makes no homes: nothing to vary)
     end
+
+    -- {{{ local function people_checks
+    -- The people scene's figures, checked against the options actually set
+    -- in its homes (`settings`: key -> value), so every variant is held to
+    -- an exact expectation rather than loosened:
+    --   people.direct-message-link  leave-out: a person's folder holds only
+    --     the top group rooms they share with you; include: also a link to
+    --     their own direct message (one more link each).
+    --   people.link-collision  suffix-id / numbered: links sit directly in
+    --     the person's folder, "<person>/<name> -> ../../rooms/<tag>";
+    --     id-folder: one folder deeper, "<person>/<tag>/<name> ->
+    --     ../../../rooms/<tag>", the middle folder named by the room's tag.
+    -- The collision homes set people.link-collision per run (run.variant).
+    local function people_checks(pass, people, settings)
+        local own_dm = ({ ["leave-out"] = 0, include = 1 })[settings["people.direct-message-link"]]
+        check(pass .. "people: people.direct-message-link is a value this test knows", own_dm ~= nil,
+              settings["people.direct-message-link"])
+        if own_dm == nil then
+            -- no expectation can be worked out: stop checking this pass
+            return
+        end
+        -- (known: each person's folder holds own_dm more links)
+
+        -- {{{ local function link_shape_ok
+        -- True when every "path -> target" line has the shape `mode` gives
+        -- and names one room tag in both the path (id-folder) and target.
+        local function link_shape_ok(lines, mode)
+            local hex = string.rep("[0-9a-f]", 32)
+            local shapes = {
+                ["suffix-id"] = "^[^/]+/[^/]+ %-> %.%./%.%./rooms/(" .. hex .. ")$",
+                numbered      = "^[^/]+/[^/]+ %-> %.%./%.%./rooms/(" .. hex .. ")$",
+                ["id-folder"] = "^[^/]+/(" .. hex .. ")/[^/]+ %-> %.%./%.%./%.%./rooms/(" .. hex .. ")$",
+            }
+            local shape = shapes[mode]
+            if shape == nil then
+                -- a collision mode this test does not know: not ok
+                return false
+            end
+            -- (known mode: every line must match it)
+            for _, line in ipairs(lines) do
+                local first, second = line:match(shape)
+                if first == nil then
+                    -- this line has another shape
+                    return false
+                end
+                if second ~= nil and first ~= second then
+                    -- id-folder: the middle folder must be the target's tag
+                    return false
+                end
+                -- (matches)
+            end
+            return true
+        end
+        -- }}}
+
+        check(pass .. "people: one folder per direct message", #people.folders == 3
+              and has(people.folders, "girlfriend") and has(people.folders, "coder")
+              and has(people.folders, "housemate"), table.concat(people.folders, ","))
+        local girlfriend_links = {}
+        for _, line in ipairs(people.links) do
+            if line:match("^girlfriend/") then girlfriend_links[#girlfriend_links + 1] = line end
+        end
+        -- the girlfriend is in home (top) and programming (top); kitchen and
+        -- shopping are under home, so not tops for her; her two machines
+        -- count once; plus her own direct message under `include`
+        check(pass .. "people: the girlfriend has " .. (2 + own_dm) .. " links (2 top rooms"
+              .. (own_dm == 1 and " + her direct message" or "") .. ")",
+              #girlfriend_links == 2 + own_dm, table.concat(girlfriend_links, " / "))
+        local mode = settings["people.link-collision"]
+        check(pass .. "people: every link has the " .. tostring(mode) .. " shape, relative",
+              link_shape_ok(people.links, mode), table.concat(people.links, " / "))
+        check(pass .. "people: one result per collision variant",
+              #people.collisions == #variants_by_key["people.link-collision"])
+        local distinct = {}
+        for _, run in ipairs(people.collisions) do
+            -- the coder: home and two rooms labelled programming, plus his
+            -- own direct message under `include`
+            check(pass .. "people " .. run.variant .. ": coder has " .. (3 + own_dm)
+                  .. " links (home, programming x2" .. (own_dm == 1 and ", his direct message" or "") .. ")",
+                  #run.links == 3 + own_dm, table.concat(run.links, " / "))
+            -- the coder's links are listed from inside people/coder, so put
+            -- the folder back in front before checking their shape
+            local whole = {}
+            for _, line in ipairs(run.links) do whole[#whole + 1] = "coder/" .. line end
+            check(pass .. "people " .. run.variant .. ": links have that mode's shape",
+                  link_shape_ok(whole, run.variant), table.concat(run.links, " / "))
+            distinct[table.concat(run.links, "|")] = true
+        end
+        local count = 0
+        for _ in pairs(distinct) do count = count + 1 end
+        check(pass .. "people: the collision variants name the links differently", count == #people.collisions)
+    end
+    -- }}}
+
+    -- {{{ local function settings_of
+    -- A baseline list as key -> value.
+    local function settings_of(list)
+        local map = {}
+        for _, setting in ipairs(list) do map[setting.key] = setting.value end
+        return map
+    end
+    -- }}}
+
+    -- The people scene, checked in full on both baselines: the first-listed
+    -- (ctx.baseline was that until the loop above) and the last-listed.
+    ctx.baseline, ctx.scratch = baseline, scratch .. "-people"
+    probes.must_run("mkdir -p '" .. ctx.scratch .. "'")
+    local people = scene("people")
+    if people then
+        -- built on the first-listed baseline
+        people_checks("", people, settings_of(baseline))
+    end
+    -- (did not build: scene() already recorded the failure)
+    ctx.baseline, ctx.scratch = last, scratch .. "-people-last"
+    probes.must_run("mkdir -p '" .. ctx.scratch .. "'")
+    local built, record = pcall(sections.people, ctx)
+    check("people scene builds for the checks with every key at its last variant", built, record)
+    if built then
+        -- built on the last-listed baseline: the same checks, its expectations
+        people_checks("[last] ", record, settings_of(last))
+    end
+    -- (did not build: already recorded)
 end

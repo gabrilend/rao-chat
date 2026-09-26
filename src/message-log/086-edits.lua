@@ -10,22 +10,16 @@
 -- message it changes (its target).  The original stays in the file,
 -- readable with cat; the room view shows the latest text.
 --
--- Who may edit a message is still open (issue 105, open question 2): the
+-- Anyone may edit any message (owner, 2026-09-25, answering who may edit
+-- or delete: "let's make the local copies part of the UI we build. That's
+-- the 'the room shows which address the change came from' part").  The
 -- writer of a message cannot be known, only the address its copy came
--- from.  Both answers are built, chosen by the config key log.who-may-edit:
---
---   anyone        any edit naming a message in the room is filed; the view
---                 says which address the change came from.
---   same-address  an edit is filed only when it came from the same address
---                 as the message it changes ("me" edits only "me").  This
---                 is not a proof of anything — an address can be shared,
---                 moved or borrowed — only a narrowing.
---
--- The rule governs filing new edits only.  When reading, every correction
--- or deletion already in the file is applied whatever the rule says now:
--- the file is the record of what happened, and a rule changed later does
--- not un-happen it.  Each view carries `changed_from` so a client can show
--- an edit that came from an address other than the message's.
+-- from, so a rule tying edits to an address would prove nothing.  Round 2
+-- also built "only from the message's own address" behind the key
+-- log.who-may-edit; round 3 fixed the answer in place and removed both.
+-- Every correction or deletion in the file is applied when reading, and
+-- each view carries `changed_from` so a client can show the original, the
+-- change, and the address the change came from.
 
 local edits = {}
 
@@ -60,39 +54,13 @@ local function find_target(records, edit)
 end
 -- }}}
 
--- One entry per log.who-may-edit value.  Each takes the message being
--- changed and the edit; it returns nothing when the edit may be filed and
--- raises an error when it may not.
-local WHO_MAY_EDIT = {
-    -- {{{ local function anyone
-    ["anyone"] = function(target, edit)
-    end,
-    -- }}}
-    -- {{{ local function same_address
-    ["same-address"] = function(target, edit)
-        -- Path: same address (or both "me") — allowed.  Different — refused,
-        -- naming both addresses.
-        if target.from ~= edit.from then
-            error("message-log: an edit from '" .. edit.from .. "' may not change message '"
-                .. target.id .. "' from '" .. target.from .. "' (log.who-may-edit = same-address)", 0)
-        end
-    end,
-    -- }}}
-}
-
 -- {{{ function edits.check
--- who:     string, log.who-may-edit value ("anyone" or "same-address").
 -- records: list, the room's records in file order.
 -- edit:    record of kind "correction" or "deletion".
--- Gives nothing; raises an error when the edit is refused.
-function edits.check(who, records, edit)
-    local rule = WHO_MAY_EDIT[who]
-    -- Path: known rule — apply it.  Unknown — refuse (config typo).
-    if not rule then
-        error("message-log: log.who-may-edit '" .. tostring(who)
-            .. "' is not one of anyone, same-address", 0)
-    end
-    rule(find_target(records, edit), edit)
+-- Gives nothing; raises an error when the edit cannot be filed (its
+-- message is not in the room, is itself an edit, or is already deleted).
+function edits.check(records, edit)
+    find_target(records, edit)
 end
 -- }}}
 
@@ -131,6 +99,11 @@ end
 --            deleted      = bool, a deletion applies,
 --            changed_from = string, the `from` of the deletion if deleted,
 --                           else of the latest correction, else "" }.
+-- A deleted message stays in the list, empty and marked, so links to it
+-- still land somewhere; whether a person sees a marked gap or nothing is
+-- their own setting in the client (owner, 2026-09-25: "This is a UI
+-- concern, the user should be able to choose. It doesn't matter to the
+-- backend, really.").  Its original text stays in the file.
 -- A correction or deletion whose message is not in the file is left out
 -- quietly: it may belong to a message that has not arrived yet (phase 2).
 function edits.apply(records)

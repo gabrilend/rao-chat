@@ -60,11 +60,16 @@ function H.setup(dir, mode)
     H.disk   = require("062-disk-links")
     H.names  = require("063-link-names")
     H.token_counter = 0
+    H.port_counter = 7700
 end
 -- }}}
 
 -- The settings every test home starts with unless a test says otherwise.
+-- mailboxes.unheld-parent is 101's key (round 3), read by make_room only
+-- for a room whose declared parent is not held here; own-mailbox gives
+-- such a room its own tree mailbox, so H.group passes it a port.
 local BASE_CONFIG = {
+    ["mailboxes.unheld-parent"]    = "own-mailbox",
     ["people.link-collision"]      = "suffix-id",
     ["people.direct-message-link"] = "leave-out",
     ["people.members-without-dm"]  = "leave-out",
@@ -92,6 +97,10 @@ function H.fresh_home(name, config)
             H.rooms.set_config(home, key, merged[key])
         end
     end
+    -- round 3: a direct room needs the home's one direct mailbox first
+    -- (101 refuses a direct room without it).  Making it rings 'mailbox',
+    -- which people-links must hear and ignore.
+    H.rooms.make_mailbox(home, { label = "direct messages", kind = "direct", port = 7700 })
     return home
 end
 -- }}}
@@ -133,6 +142,34 @@ function H.fingerprint_of(home, tag)
 end
 -- }}}
 
+-- {{{ local function next_port
+-- A port for a room that starts a new mailbox (any integer 1-65535 does;
+-- counting keeps them apart so 101 has no shared port to warn about).
+local function next_port()
+    H.port_counter = H.port_counter + 1
+    return H.port_counter
+end
+-- }}}
+
+-- {{{ local function mailbox_port_for
+-- make_room's mailbox_port (contract, "Mailboxes"): an integer when the
+-- room starts a new mailbox — a top room, or (under own-mailbox) a room
+-- whose declared parent is not held here — and "" when it joins its held
+-- parent's mailbox.
+local function mailbox_port_for(home, parent_fingerprint)
+    -- no declared parent: a top room, a new tree mailbox
+    if parent_fingerprint == "" then
+        return next_port()
+    end
+    -- the parent is held here: its mailbox
+    if H.rooms.find_by_fingerprint(home, parent_fingerprint) ~= "" then
+        return ""
+    end
+    -- the parent is not held here: own-mailbox, a new one
+    return next_port()
+end
+-- }}}
+
 -- {{{ function H.group
 -- A group room.  opts: { parent = tag of a declared parent held here, or
 -- nil; filed = tag to file it under, or nil }.  Members as "<addr> <port>".
@@ -143,10 +180,12 @@ function H.group(home, label, members, opts)
     if opts.parent then
         parent = H.fingerprint_of(home, opts.parent)
     end
+    local parent_fingerprint = opts.parent_fingerprint or parent
     return H.rooms.make_room(home, {
         label = label, token = next_token(), kind = "group",
-        parent = opts.parent_fingerprint or parent, filed_under = opts.filed or "",
+        parent = parent_fingerprint, filed_under = opts.filed or "",
         members = pairs_of(members),
+        mailbox_port = mailbox_port_for(home, parent_fingerprint),
     })
 end
 -- }}}
@@ -157,6 +196,7 @@ function H.direct(home, label, members)
     return H.rooms.make_room(home, {
         label = label, token = next_token(), kind = "direct",
         parent = "", filed_under = "", members = pairs_of(members),
+        mailbox_port = "",
     })
 end
 -- }}}

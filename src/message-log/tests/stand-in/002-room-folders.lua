@@ -2,8 +2,10 @@
 -- the room-folders module (issue 101) that the message log uses, so the log
 -- can be tested alone.  It keeps the same file layout (rao-home/config,
 -- rao-home/rooms/<local tag>/log) and the same function names as the
--- round-2 contract; it does not write an entry, check labels, tokens,
--- parents or members.  The message-log tests use it when asked to run
+-- round-3 contract; it does not write an entry or the mailboxes file, and
+-- does not check labels, tokens, parents or members.  It does insist on
+-- make_room's round-3 field mailbox_port, so a harness that forgets it
+-- fails here as it would against the real module.  The message-log tests use it when asked to run
 -- "stand-in", and the real module otherwise.
 
 local rooms = {}
@@ -92,9 +94,17 @@ end
 -- }}}
 
 -- {{{ function rooms.make_room
--- spec is accepted and not checked; only the folder and an empty log are
--- made, which is all the log needs.
+-- spec is not checked beyond mailbox_port (an integer when the room starts
+-- a new mailbox, "" when it joins one); only the folder and an empty log
+-- are made, which is all the log needs.
 function rooms.make_room(home, spec)
+    -- Path: an integer or "" — fine.  Anything else (absent) — the caller
+    -- is still on the round-2 shape; refuse as the real module does.
+    if not (spec.mailbox_port == "" or (type(spec.mailbox_port) == "number"
+        and spec.mailbox_port == math.floor(spec.mailbox_port))) then
+        error("stand-in make_room: mailbox_port must be an integer or \"\", got "
+            .. tostring(spec.mailbox_port), 0)
+    end
     local tag = rooms.new_local_tag()
     os.execute('mkdir -p "' .. rooms.room_dir(home, tag) .. '"')
     assert(io.open(rooms.log_path(home, tag), "wb")):close()

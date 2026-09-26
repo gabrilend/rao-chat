@@ -21,6 +21,8 @@
 --   token        the room's shared secret, any text but a line break
 --   kind         group | direct
 --   parent       the parent room's token fingerprint (64 hex), or empty
+--   mailbox      the local tag of the mailbox this room is in (014-mailboxes;
+--                never empty — every room listens somewhere)
 --   filed-under  the local tag of a room you filed this one under, or empty
 --   ip[N], port[N], heard[N]
 --                one member address: where to send, its own port (no
@@ -38,6 +40,7 @@ local SINGLE_FIELDS = {
     { file = "token",       lua = "token" },
     { file = "kind",        lua = "kind" },
     { file = "parent",      lua = "parent" },
+    { file = "mailbox",     lua = "mailbox" },
     { file = "filed-under", lua = "filed_under" },
 }
 
@@ -154,6 +157,18 @@ local function check_parent_shape(parent)
 end
 -- }}}
 
+-- {{{ local function check_mailbox_shape
+-- A local tag, never "": every room is in a mailbox.  Whether that
+-- mailbox is in the mailboxes file is checked by 002, which can see the
+-- disk, when it writes the field.
+local function check_mailbox_shape(mailbox)
+    -- not a local tag: an empty value or a port written by mistake.
+    if not is_local_tag(mailbox) then
+        error("mailbox must be the local tag of a mailbox (32 lower-case hex), got " .. tostring(mailbox), 3)
+    end
+end
+-- }}}
+
 -- {{{ local function check_filed_shape
 -- "" (not filed) or a local tag.  Whether that tag is held here is
 -- checked by 002, which can see the disk.
@@ -186,6 +201,7 @@ local function check_entry(entry)
     check_one_line_text("token", entry.token)
     check_kind(entry.kind)
     check_parent_shape(entry.parent)
+    check_mailbox_shape(entry.mailbox)
     check_filed_shape(entry.filed_under)
     check_members(entry.members)
 end
@@ -260,7 +276,7 @@ end
 
 -- {{{ local function parse_entry
 -- text of an entry file, the tag of the folder it is in, and a place name
--- for errors → entry table { tag, label, token, kind, parent, filed_under,
+-- for errors → entry table { tag, label, token, kind, parent, mailbox, filed_under,
 -- members = list of { address, port, heard } }.
 local function parse_entry(text, tag, where)
     local contacts = formats.parse_contacts(text, where)
@@ -317,6 +333,7 @@ return {
     check_members = check_members,
     check_kind = check_kind,
     check_parent_shape = check_parent_shape,
+    check_mailbox_shape = check_mailbox_shape,
     check_filed_shape = check_filed_shape,
     check_label = check_label,
     entry_text = entry_text,

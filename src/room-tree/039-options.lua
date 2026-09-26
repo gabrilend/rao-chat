@@ -12,50 +12,16 @@
 -- tree-where-per-recipient, tree-untell-on-removal (nothing is disclosed
 -- about a room to anyone without its token any more) and tree-slash-in-path
 -- (labels may hold "/" by issue 101; the path escapes it, as answered).
+--
+-- Round 3 fixed three answered choices in place and removed them here:
+-- tree-unheld-parent-join (config tree.unheld-parent-join, refuse /
+-- accept) went when the rule became detection — a parent not held gives
+-- the answer cannot-check; tree-rule-depth (parent-only was built) is
+-- answered every room above, now built; tree-leaving-the-parent
+-- (client-cleans-up was built, with its child_rooms_holding lookup) is
+-- answered "only flagged": the re-check lookup failing_below replaces it.
 
 return {
-    {
-        id = "tree-unheld-parent-join",
-        question = "A child room whose declared parent you do not hold (you were invited to the child "
-            .. "but not the parent): may anyone holding the child's token join it here, or nobody, since "
-            .. "this server cannot see the parent's members to apply the tiers-of-trust rule?",
-        waits_on = "owner",
-        detail = "issue 102, found while building the parent-membership rule; read only when the case happens",
-        config_key = "tree.unheld-parent-join",
-        variants = {
-            {
-                name = "refuse",
-                summary = "Nobody new is added to such a room on this server until the parent is held here.",
-                built_in = "src/room-tree/021-room-tree.lua (unheld_refuse, may_join)",
-                tests = { "tests/034-test-membership.lua", "tests/036-test-with-neighbours.lua" },
-                findings = {
-                    "Keeps 'lower rooms have only members that exist in higher rooms' true on this server "
-                        .. "without exception.",
-                    "The owner's programming friend (in programming, not in ritz or home) could never add "
-                        .. "anyone to programming from their own server: every hello would be refused there, "
-                        .. "though the others' servers accept it. Members' lists then differ by server.",
-                    "103's add_member passes the refusal on as 'not-in-parent' with the reason 'the parent "
-                        .. "of <label> is not held here'.",
-                },
-            },
-            {
-                name = "accept",
-                summary = "Anyone holding the child's token is added, as in a top room; the tier above is "
-                    .. "enforced only by servers that hold the parent.",
-                built_in = "src/room-tree/021-room-tree.lua (unheld_accept, may_join)",
-                tests = { "tests/034-test-membership.lua" },
-                findings = {
-                    "The room stays usable for someone invited to it alone (the friend in programming).",
-                    "The rule still holds on every server that holds the parent, so an outsider added here "
-                        .. "is still refused by the parent's members' servers: they would hear the outsider "
-                        .. "only through servers like this one.",
-                },
-            },
-        },
-        leaning = "accept: the invitation to the child is itself someone's judgement, and refusing makes "
-            .. "the room one-way for exactly the people the owner's first example describes. The servers "
-            .. "that can see the parent still hold the line.",
-    },
     {
         id = "tree-filing-loop",
         question = "You filed room A under room B. Later a declared parent arrives (you are invited to it) "
@@ -87,7 +53,7 @@ return {
                 findings = {
                     "The arrival of an invitation fails because of a filing on your own screen: the error "
                         .. "reaches whoever made the room (in phase 2, the joining code), not you.",
-                    "Until unfiled, tops(), forest() and may_join() all error on this home.",
+                    "Until unfiled, tops(), forest() and check_member() all error on this home.",
                 },
             },
         },
@@ -108,8 +74,8 @@ return {
                 built_in = "src/room-tree/021-room-tree.lua (holds_pair)",
                 tests = { "tests/034-test-membership.lua" },
                 findings = {
-                    "girlfriend.example.org 7777 is refused in a child whose parent holds 192.168.1.20 7777, "
-                        .. "even if one names the other.",
+                    "girlfriend.example.org 7777 is answered 'no' (and so flagged) in a child whose parent "
+                        .. "holds 192.168.1.20 7777, even if one names the other.",
                     "The same address at another port is another member (another home server), as the "
                         .. "contract says.",
                     "A port passed as text is an error, not a silent mismatch.",
@@ -123,81 +89,13 @@ return {
                 findings = {
                     "Would make the rule depend on the network at the moment of asking, and on DNS answers "
                         .. "that can differ by server; two servers could disagree about the same member.",
-                    "103a's ignore.match has a 'host' variant (same address, any port); the two rules "
-                        .. "should probably agree.",
+                    "Ignoring (103a) is now fixed at the whole IP address, every port (owner, round 2 "
+                        .. "tally); this check still compares the port. The two differ: ignoring is about "
+                        .. "a machine, membership about one home server on it.",
                 },
             },
         },
         leaning = "exact-pair: every server compares the same text, so every server reaches the same answer.",
-    },
-    {
-        id = "tree-leaving-the-parent",
-        question = "When a member leaves (or is shut out of) a parent room, who removes them from the "
-            .. "child rooms below it?",
-        waits_on = "owner",
-        detail = "issue 102 open question 2 (reading to be confirmed by the owner: 'This is UI work')",
-        config_key = "",
-        variants = {
-            {
-                name = "client-cleans-up",
-                summary = "The server only refuses them as new members of the children; the client asks "
-                    .. "which child rooms hold them and offers to remove them.",
-                built_in = "src/room-tree/021-room-tree.lua (child_rooms_holding)",
-                tests = { "tests/034-test-membership.lua", "tests/036-test-with-neighbours.lua" },
-                findings = {
-                    "child_rooms_holding walks declared children only (filing carries no rule), all levels, "
-                        .. "top-down, and also finds a grandchild holding someone the child no longer does.",
-                    "Until the client acts, a member who left the parent keeps receiving the child's "
-                        .. "messages from this server; members are removed only by their own confirmed leave "
-                        .. "(103), so the client's removal would be withholding.",
-                },
-            },
-            {
-                name = "server-withholds",
-                summary = "On a member leaving a parent, the server withholds them in every child room "
-                    .. "(not built).",
-                built_in = "not built",
-                tests = "none",
-                findings = {
-                    "Needs a leave to reach the tree (a bell kind for it, phase 2's confirmed leave).",
-                },
-            },
-        },
-        leaning = "client-cleans-up: it is what the owner said; the lookup the client needs is built.",
-    },
-    {
-        id = "tree-rule-depth",
-        question = "Does the parent-membership rule check only the direct parent, or every room above?",
-        waits_on = "owner",
-        detail = "issue 102, found while building",
-        config_key = "",
-        variants = {
-            {
-                name = "parent-only",
-                summary = "Only the declared parent's members are checked; its members were checked against "
-                    .. "its own parent when they joined.",
-                built_in = "src/room-tree/021-room-tree.lua (may_join)",
-                tests = { "tests/034-test-membership.lua" },
-                findings = {
-                    "The sister (in home, not ritz) is refused in programming because ritz does not hold "
-                        .. "her; after she joins ritz she is accepted, without programming consulting home.",
-                    "If someone leaves home but stays in ritz (nobody cleaned up), they can still be added "
-                        .. "to programming: the chain holds only as well as the clean-up above.",
-                },
-            },
-            {
-                name = "every-ancestor",
-                summary = "Every held declared ancestor must hold the member (not built).",
-                built_in = "not built",
-                tests = "none",
-                findings = {
-                    "Cheap to build (the snapshot has the chain), but an unheld room in the middle of the "
-                        .. "chain stops the walk, so it can only be as strict as the rooms you hold.",
-                },
-            },
-        },
-        leaning = "parent-only, until the clean-up question above is settled; every-ancestor is the answer "
-            .. "if the owner wants the server, not the client, to keep the tiers true.",
     },
     {
         id = "tree-removed-shelf",

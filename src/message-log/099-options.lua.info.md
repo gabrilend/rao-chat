@@ -6,9 +6,8 @@ built_in, tests, findings}`, `leaning`).  Read by `scripts/tally-options`
 and the phase 1 demo (issue 106), which start homes on the first variant
 listed.  Plain data.
 
-Choices: `log-record-shape` (log.record-shape), `log-who-may-edit`
-(log.who-may-edit), `log-shape-mixing` (log.shape-mixing),
-`log-duplicate-check` (log.duplicate-check, waits on state),
-`log-same-id-new-address` (log.same-id-new-address), and three that cannot
-be switched: `log-pictures`, `log-deleted-view`, `log-early-edits`.
-Figures come from `tests/095-measure.lua`.
+Choices: `log-duplicate-check` (log.duplicate-check, waits on state), and
+three that cannot be switched: `log-pictures`, `log-early-edits` (waits
+on state), `log-retired-keys-in-config`.  The header comment lists the
+choices removed in rounds 2 and 3 as answered.  Figures come from
+`tests/095-measure.lua`.

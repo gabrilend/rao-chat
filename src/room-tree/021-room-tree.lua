@@ -8,9 +8,13 @@
 --     holds a fingerprint of the parent's token (a one-way scramble, so
 --     naming the parent reveals nothing to anyone who does not already
 --     hold the parent's token).  Everyone in the child sees the same
---     parent, and every home server enforces one rule for it: an address
---     may join the child only if it is a member of the parent, as this
---     server sees it — the owner's "tiers of trust".
+--     parent.  Each home server checks one thing for it, and only
+--     detects, never refuses: is each member of the child also a member
+--     of every declared room above it, as this server sees it?  Members
+--     who are not are flagged (by 103) — the owner's "tiers of trust".
+--     A declared child also lives in its parent's mailbox (its listening
+--     port); 101 chooses and moves mailboxes, this module only hears the
+--     bell ring for it.
 --   * filed: you placed it there on your own screen.  Its entry's
 --     `filed-under` holds the local tag of the room it sits under.  Never
 --     sent, no rule applied; the owner's first example (the girlfriend in
@@ -56,6 +60,8 @@ local ask = {
 --   token        string, the room's shared secret
 --   kind         "group" | "direct"
 --   parent       string, 64 hex fingerprint of the parent's token, or ""
+--   mailbox      string, 32 hex, the mailbox it listens in (101's; not
+--                read here: mailboxes place nothing in the tree)
 --   filed_under  string, a local tag held here, or ""
 --   members      list of { address = string, port = integer,
 --                          heard = integer (seconds since 1970, 0 never) }
@@ -385,9 +391,32 @@ end
 -- }}}
 
 -- ---------------------------------------------------------------------
--- the parent-membership rule
+-- the parent-membership check (detected, never enforced)
 -- ---------------------------------------------------------------------
 
+-- Owner, 2026-09-25: "we can't control who gets to be in which room,
+-- because it's just a contact list on a person's computer ... however, we
+-- can *detect* when such things aren't true, and I believe we should."
+-- So nothing here refuses anyone.  The check answers one of three words,
+-- and 103 adds the address either way, flagging it on the last two:
+--
+--   yes           not a declared child (a top, or only filed: filing is
+--                 your own screen and carries no rule), or every declared
+--                 room above it holds the address;
+--   no            some declared room above it, held here, does not hold
+--                 the address (as this home server sees it);
+--   cannot-check  every held room above holds it, but the declared chain
+--                 goes up into a room this home does not hold, whose
+--                 members nobody here can see.
+--
+-- "Every room above" is the owner's answer to tree-rule-depth: not only
+-- the parent.  Only that way does someone dropped from `home` show up in
+-- `home`'s grandchildren while still sitting in the child between them.
+-- The walk follows declared parents only and stops at the first one not
+-- held here: the unheld room's own parent is written in an entry this
+-- home does not have.  `no` wins over `cannot-check`: one room that can
+-- be seen to lack the address is already a definite answer.
+--
 -- A member is an (address, port) pair, always together (issue 101).  Two
 -- pairs are the same member when the address is equal as written and the
 -- port is the same whole number: a hostname and the IP it points to are
@@ -397,8 +426,8 @@ end
 
 -- {{{ local function check_pair
 -- A caller passing a port as text ("7777") would never match the whole
--- number read from the entry, and every address would be refused for no
--- visible reason; so the shape is checked where the pair comes in.
+-- number read from the entry, and every address would come out `no` for
+-- no visible reason; so the shape is checked where the pair comes in.
 local function check_pair(address, port)
     -- not a non-empty string: a caller's mistake
     if type(address) ~= "string" or address == "" then
@@ -423,62 +452,96 @@ local function holds_pair(entry, address, port)
 end
 -- }}}
 
--- A child room whose declared parent is not held here: nobody on this
--- server can see the parent's members, so the rule cannot be checked.
--- The owner has not said what then; tree.unheld-parent-join decides, read
--- only in that case:
---   refuse: nobody new is accepted until the parent room is held here
---           (the tiers hold, at the price of a room nobody can join);
---   accept: anyone holding the token is accepted, as in a top room (the
---           room stays usable; the tier above is not enforced here).
-
--- {{{ local function unheld_refuse
-local function unheld_refuse(entry)
-    return false, "the parent of " .. entry.label .. " is not held here, so its members cannot be checked"
+-- {{{ local function declared_chain
+-- The declared rooms above `tag`, nearest first, as far as this home holds
+-- them, and whether the chain ran into a parent not held here.  Filing is
+-- not followed.  Rings of declared parents never reach here: the snapshot
+-- refuses them.
+local function declared_chain(snap, tag)
+    local chain = {}
+    local current = tag
+    while true do
+        local named = snap.entries[current].parent
+        -- names no parent: the chain has reached a declared top
+        if named == "" then
+            return chain, false
+        end
+        local held = snap.by_print[named]
+        -- names a parent not held here: the chain stops, unseen above
+        if held == nil then
+            return chain, true
+        end
+        chain[#chain + 1] = held
+        current = held
+    end
 end
 -- }}}
 
--- {{{ local function unheld_accept
-local function unheld_accept(entry)
-    return true, ""
+-- {{{ local function answer_for
+-- The three-way answer, from a snapshot.  `reason` is "" for `yes`; for
+-- `no` it names every held room above that lacks the pair, nearest first;
+-- for `cannot-check` it names the highest room held (whose parent is the
+-- unseen one).
+local function answer_for(snap, tag, address, port)
+    local chain, unseen = declared_chain(snap, tag)
+    local lacking = {}
+    for _, above in ipairs(chain) do
+        -- this room above holds the pair: fine; otherwise noted
+        if not holds_pair(snap.entries[above], address, port) then
+            lacking[#lacking + 1] = snap.entries[above].label
+        end
+    end
+    local pair_text = address .. " " .. tostring(port)
+    -- a held room above lacks it: definite, whatever lies beyond
+    if #lacking > 0 then
+        return "no", pair_text .. " is not a member of " .. table.concat(lacking, ", ")
+    end
+    -- all held rooms agree, but the chain goes on into a room not held
+    if unseen then
+        local highest = chain[#chain] or tag
+        return "cannot-check", "the room above " .. snap.entries[highest].label
+            .. " is not held here, so its members cannot be seen"
+    end
+    return "yes", ""
 end
 -- }}}
 
-local unheld_parent_join = {
-    ["refuse"] = unheld_refuse,
-    ["accept"] = unheld_accept,
-}
+-- {{{ function M.check_member_in
+-- The check against a snapshot the caller already took (103 re-checking
+-- many members at once takes one snapshot, not one per member).
+function M.check_member_in(snap, tag, address, port)
+    check_pair(address, port)
+    must_hold(snap, tag)
+    return answer_for(snap, tag, address, port)
+end
+-- }}}
 
--- {{{ function M.may_join
--- May the member (address, port) be added to room `tag`?  Gives a bool and
--- a reason (text; "" when allowed).  The rule looks only at the declared
--- parent, never at filing, and only one level up: the parent's own
--- members were checked against its parent when they joined.
-function M.may_join(home, tag, address, port)
+-- {{{ function M.check_member
+-- Does the member (address, port) belong in room `tag`, by the rooms
+-- declared above it?  Gives "yes" | "no" | "cannot-check", and a reason
+-- (text; "" for yes).  Never refuses anything: the caller adds the member
+-- and flags it on no / cannot-check.
+function M.check_member(home, tag, address, port)
     check_pair(address, port)
     local snap = M.snapshot(home)
     must_hold(snap, tag)
-    local entry = snap.entries[tag]
-    -- not a declared child: any address holding the token may join
-    if entry.parent == "" then
-        return true, ""
-    end
-    -- a declared parent not held here: the owner's setting decides
-    if snap.unheld[tag] then
-        local mode = ask.config_value(home, "tree.unheld-parent-join")
-        local decide = unheld_parent_join[mode]
-        -- a value that is neither: a typo in config
-        if decide == nil then
-            error("room-tree: tree.unheld-parent-join must be refuse or accept, got " .. mode)
+    return answer_for(snap, tag, address, port)
+end
+-- }}}
+
+-- {{{ local function failing_members_of
+-- Appends to `out` every member of `tag` whose answer is not yes.
+local function failing_members_of(snap, tag, out)
+    for _, pair in ipairs(snap.entries[tag].members) do
+        local answer, reason = answer_for(snap, tag, pair.address, pair.port)
+        -- yes: nothing to report; no or cannot-check: listed for flagging
+        if answer ~= "yes" then
+            out[#out + 1] = {
+                room = tag, address = pair.address, port = pair.port,
+                answer = answer, reason = reason,
+            }
         end
-        return decide(entry)
     end
-    local parent = snap.entries[snap.declared[tag]]
-    -- a member of the parent: welcome; otherwise refused, saying why
-    if holds_pair(parent, address, port) then
-        return true, ""
-    end
-    return false, address .. " " .. tostring(port) .. " is not a member of the parent room " .. parent.label
 end
 -- }}}
 
@@ -486,7 +549,7 @@ end
 local function declared_children_in(snap, tag)
     local out = {}
     for _, other in ipairs(snap.tags) do
-        -- declared under this room: a child for the rule; otherwise not
+        -- declared under this room: a child for the check; otherwise not
         if snap.declared[other] == tag then
             out[#out + 1] = other
         end
@@ -496,33 +559,43 @@ local function declared_children_in(snap, tag)
 end
 -- }}}
 
--- {{{ local function collect_holding
-local function collect_holding(snap, tag, address, port, found)
+-- {{{ local function collect_failing_below
+local function collect_failing_below(snap, tag, out)
     for _, child in ipairs(declared_children_in(snap, tag)) do
-        -- the child holds the member: listed; its own children are
-        -- searched either way (a grandchild may hold them when the child
-        -- no longer does, after someone withdrew them by hand)
-        if holds_pair(snap.entries[child], address, port) then
-            found[#found + 1] = child
-        end
-        collect_holding(snap, child, address, port, found)
+        failing_members_of(snap, child, out)
+        collect_failing_below(snap, child, out)
     end
 end
 -- }}}
 
--- {{{ function M.child_rooms_holding
--- Every declared child room below `tag` (all levels, top-down, siblings by
--- label then tag) whose members include (address, port).  For the client:
--- when a member leaves a parent room, it also removes them from these
--- (owner: "This is UI work"); the server itself only refuses them as new
--- members.  Filed rooms are not included: filing carries no rule.
-function M.child_rooms_holding(home, tag, address, port)
-    check_pair(address, port)
+-- {{{ function M.failing_members
+-- Every member of room `tag` itself whose answer is not yes: a list of
+-- { room = tag, address = string, port = integer,
+--   answer = "no" | "cannot-check", reason = string }, in the entry's
+-- member order.  For re-checking one room (a declared parent arriving
+-- turns its children's cannot-check into yes or no).
+function M.failing_members(home, tag)
     local snap = M.snapshot(home)
     must_hold(snap, tag)
-    local found = {}
-    collect_holding(snap, tag, address, port, found)
-    return found
+    local out = {}
+    failing_members_of(snap, tag, out)
+    return out
+end
+-- }}}
+
+-- {{{ function M.failing_below
+-- Re-checking after room `tag`'s members change: every member of every
+-- declared descendant of `tag` (all levels, top-down, siblings by label
+-- then tag) whose answer is not yes, same shape as failing_members.
+-- Filed rooms are not included: filing carries no rule.  It lists every
+-- failing member, not only the newly failing: 103 knows which it has
+-- already flagged (flags are 103's, private, never sent).
+function M.failing_below(home, tag)
+    local snap = M.snapshot(home)
+    must_hold(snap, tag)
+    local out = {}
+    collect_failing_below(snap, tag, out)
+    return out
 end
 -- }}}
 
@@ -708,7 +781,13 @@ end
 --     "parent") before this ring, so only the refresh is left;
 --   removed-room: rooms filed under it are unfiled, then as above;
 --   members, heard, withheld, log, ignore: nothing about placement or
---     labels ("ignore" rings with the tag "", the whole home).
+--     labels ("ignore" rings with the tag "", the whole home).  Re-checking
+--     members against the rooms above after "members" is 103's listener's
+--     job (it asks failing_below); the tree only answers;
+--   mailbox: a mailbox was made, its port changed, or a room moved to
+--     another mailbox (101 moves children to follow their declared
+--     parent).  Mailboxes group rooms for listening; they place nothing in
+--     the tree and change no label.
 -- Every `where` is rewritten rather than only the changed room's subtree:
 -- a joined parent or a changed token can move rooms anywhere in the home,
 -- and phase 1 homes hold tens of rooms, not thousands.
@@ -724,6 +803,7 @@ local bell_actions = {
     ["withheld"] = ignore,
     ["log"] = ignore,
     ["ignore"] = ignore,
+    ["mailbox"] = ignore,
 }
 
 -- {{{ local function on_bell

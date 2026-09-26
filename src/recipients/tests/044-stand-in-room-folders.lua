@@ -3,10 +3,12 @@
 -- one lands.
 --
 -- It offers the handful of 101's functions the recipients module uses, in
--- the shapes docs/phase-1-module-contract.md gives (round 2): a home with
+-- the shapes docs/phase-1-module-contract.md gives (round 3): a home with
 -- config and an empty ignore file; rooms made in a folder per local tag
--- holding an entry, an empty withheld file and an empty log; members as
--- {address, port, heard}; and the change bell with the contract's kinds.
+-- holding an entry, an empty withheld file, an empty flagged file and an
+-- empty log; members as {address, port, heard}; and the change bell with
+-- the contract's kinds.  Mailboxes are only accepted and remembered by
+-- label, not listened on: nothing in the recipients module reads them.
 -- The entry here is kept in a simpler text shape than rmail's contacts
 -- format, since nothing outside 101 reads the entry file directly.
 -- The runner loads the real module instead when told "real".
@@ -20,6 +22,7 @@ local listeners = {}
 M.BELL_KINDS = {
     created = "", label = "", token = "", members = "", heard = "", parent = "",
     filed = "", withheld = "", log = "", ignore = "", ["removed-room"] = "",
+    mailbox = "",
 }
 
 -- {{{ local function hex_of
@@ -101,6 +104,9 @@ function M.room_dir(home, tag) return home.dir .. "/rooms/" .. tag end
 -- {{{ function M.withheld_path
 function M.withheld_path(home, tag) return M.room_dir(home, tag) .. "/withheld" end
 -- }}}
+-- {{{ function M.flagged_path
+function M.flagged_path(home, tag) return M.room_dir(home, tag) .. "/flagged" end
+-- }}}
 -- {{{ function M.ignore_path
 function M.ignore_path(home) return home.dir .. "/ignore" end
 -- }}}
@@ -148,8 +154,8 @@ function M.notify(home, tag, what)
     if M.BELL_KINDS[what] == nil then
         error("notify: unknown kind " .. tostring(what))
     end
-    -- ignore rings on "" or a tag; everything else on a tag only
-    if tag == "" and what ~= "ignore" then
+    -- ignore and mailbox ring on "" or a tag; everything else on a tag only
+    if tag == "" and what ~= "ignore" and what ~= "mailbox" then
         error("notify: kind " .. what .. " with tag '" .. tostring(tag) .. "'")
     end
     for _, listener in ipairs(listeners) do
@@ -167,7 +173,7 @@ function M.listener_count() return #listeners end
 
 -- {{{ function M.make_room
 function M.make_room(home, spec)
-    for _, field in ipairs({ "label", "token", "kind", "parent", "filed_under", "members" }) do
+    for _, field in ipairs({ "label", "token", "kind", "parent", "filed_under", "members", "mailbox_port" }) do
         -- every field is required by the contract
         if spec[field] == nil then
             error("make_room: missing " .. field)
@@ -180,10 +186,21 @@ function M.make_room(home, spec)
         filed_under = spec.filed_under, members = spec.members }
     disk.write_atomic(hidden .. "/entry", entry_text(e))
     disk.write_atomic(hidden .. "/withheld", "")
+    disk.write_atomic(hidden .. "/flagged", "")
     disk.write_atomic(hidden .. "/log", "")
     disk.rename(hidden, M.room_dir(home, tag))
     M.notify(home, tag, "created")
     return tag
+end
+-- }}}
+
+-- {{{ function M.make_mailbox
+-- Remembers that a mailbox of this kind was made (the real one writes
+-- rao-home/mailboxes); rings "mailbox" on "" as the real one does.
+function M.make_mailbox(home, spec)
+    disk.write_atomic(home.dir .. "/mailbox-" .. spec.kind, spec.label .. " " .. spec.port .. "\n")
+    M.notify(home, "", "mailbox")
+    return M.new_local_tag()
 end
 -- }}}
 

@@ -744,7 +744,15 @@ end
 --            did not list it; found while building.)
 --   heard    a last-heard time changed; membership did not (contract)
 --   withheld, ignore  do not change membership (owner's design: withholding
---            is who you send to, ignoring is what you see), so no link moves
+--            is who you send to, ignoring is what you see), so no link moves.
+--            Since round 3, withheld also rings when 103's flagged file
+--            changes: a flagged member (awaiting review, held off the send
+--            list) is still in the entry's members, so still counts toward
+--            the person's rooms here (079-options: people-flagged-members).
+--   mailbox  (round 3) a mailbox was made or its port changed ("" tag), or
+--            one room moved to another mailbox.  Mailboxes are listening
+--            ports; they change no label, member or tree parent, so no
+--            link moves.
 --   log      a new message changes none of this
 local on_bell = {
     ["created"]      = M.rebuild_all,
@@ -758,6 +766,7 @@ local on_bell = {
     ["withheld"]     = changes_no_links,
     ["ignore"]       = changes_no_links,
     ["log"]          = changes_no_links,
+    ["mailbox"]      = changes_no_links,
 }
 
 -- {{{ local function hear_bell

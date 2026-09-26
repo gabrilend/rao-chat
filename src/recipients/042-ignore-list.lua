@@ -6,7 +6,8 @@
 -- something, or hide them entirely from me."  So each ignored address is
 -- kept with a level:
 --
---   hide  their messages never reach your eyes at all;
+--   hide  their messages are dropped on arrival: not written to the room's
+--         log, not shown, and nothing is sent back (ignoring is quiet);
 --   mark  their messages are not shown, but the room shows that they spoke.
 --
 -- Ignoring is not withholding.  Withholding (041-recipients) decides whether
@@ -15,6 +16,13 @@
 -- room it is ignored in, so another member sharing their list with you
 -- cannot undo your choice.  Nothing tries to follow a person to a new
 -- address: the owner, "That'll stay valid until they change IP addresses."
+--
+-- An entry covers the whole IP address (or hostname): every port there, not
+-- only the port written on its line.  That is the owner's "until they
+-- change IP addresses" taken at its word (answered 2026-09-25): changing
+-- only a port does not escape the list.  The price, accepted: everyone
+-- else behind that same public address is covered too.  The port is still
+-- written on the line, because an address is always kept as a pair.
 --
 -- The list is one file for the whole home, rao-home/ignore, one line per
 -- ignored address:
@@ -28,15 +36,16 @@
 --   scope          "*" for the whole home, or a room's local tag for that
 --                  room only (allowed only under ignore.scope = home-and-room)
 --
--- Three things the owner has not settled are built every way and chosen in
+-- One thing the owner has not settled is built both ways and chosen in
 -- rao-home/config (read every time, no default):
 --
 --   ignore.scope       home | home-and-room — may an address be ignored in
 --                      one room only?  (103a open question 2)
---   ignore.match       pair | host — does an entry match only its exact
---                      (address, port), or every port at that address?
---   ignore.hide-files  filed | not-filed — is a hidden message still written
---                      to your log?  (103a open question 1)
+--
+-- Two earlier switches were answered and are fixed in place: a hidden
+-- address's messages are not filed (ignore.hide-files was filed |
+-- not-filed), and an entry covers every port at its address (ignore.match
+-- was pair | host).  Their config keys are no longer read.
 --
 -- Every change rings the bell with "ignore": on "" for a whole-home entry,
 -- on the room's tag for a one-room entry (101's bell accepts both for this
@@ -50,8 +59,9 @@ local pairs_ = require("040-address-pairs")
 
 local M = {}
 
--- Which level wins when two entries match the same message (possible under
--- ignore.match = host, or a whole-home entry beside a one-room entry): the
+-- Which level wins when two entries match the same message (two lines at
+-- one address with different ports, or a whole-home entry beside a
+-- one-room entry): the
 -- stronger one.  Hiding entirely is stronger than marking, and "none" is
 -- weakest.  A rule, written down here, so the answer never depends on the
 -- order of lines in the file.
@@ -66,12 +76,10 @@ end
 -- }}}
 
 -- {{{ local function setting
--- Reads one of this file's three keys and refuses any value it does not
--- know, so a typo in config is caught at the first use.
+-- Reads this file's one open key and refuses any value it does not know,
+-- so a typo in config is caught at the first use.
 local KNOWN = {
     ["ignore.scope"] = { home = true, ["home-and-room"] = true },
-    ["ignore.match"] = { pair = true, host = true },
-    ["ignore.hide-files"] = { filed = true, ["not-filed"] = true },
 }
 local function setting(home, key)
     local value = rooms.config_value(home, key)
@@ -225,19 +233,15 @@ end
 -- }}}
 
 -- {{{ local function entry_matches
--- Does entry e cover a message from (address, port) in room tag?
-local MATCHERS = {
-    -- exact place and port
-    pair = function(e, address, port) return e.address == address and e.port == port end,
-    -- the place, whatever port (the owner: "until they change IP addresses")
-    host = function(e, address, port) return e.address == address end,
-}
-local function entry_matches(e, tag, address, port, match)
+-- Does entry e cover a message from (address, port) in room tag?  The port
+-- plays no part: an entry covers every port at its address (see the top of
+-- this file).  The parameter is kept so every caller passes the full pair.
+local function entry_matches(e, tag, address, port)
     -- a one-room entry covers only its own room
     if e.scope ~= "*" and e.scope ~= tag then
         return false
     end
-    return MATCHERS[match](e, address, port)
+    return e.address == address
 end
 -- }}}
 
@@ -247,7 +251,6 @@ end
 -- (041-recipients) asks it before adding.
 function M.how_ignored(home, tag, address, port)
     pairs_.check(address, port, "how_ignored")
-    local match = setting(home, "ignore.match")
     local scope_setting = setting(home, "ignore.scope")
     local best = "none"
     for _, e in ipairs(read_entries(home)) do
@@ -256,7 +259,7 @@ function M.how_ignored(home, tag, address, port)
             error("ignore list: a one-room entry (" .. e.scope .. ") but ignore.scope = home")
         end
         -- covering and stronger than what we have: it wins
-        if entry_matches(e, tag, address, port, match) and STRENGTH[e.level] > STRENGTH[best] then
+        if entry_matches(e, tag, address, port) and STRENGTH[e.level] > STRENGTH[best] then
             best = e.level
         end
     end
@@ -266,16 +269,19 @@ end
 
 -- {{{ function M.files_message
 -- Should a message from this address be written to the room's log at all?
--- Everything is filed except, under ignore.hide-files = not-filed, messages
--- from a hidden address.  "mark" is always filed: the room must show that
--- they spoke, so something has to be there to show.
+-- Everything is filed except messages from a hidden address, which are
+-- dropped on arrival (owner, 2026-09-25: "Not saved").  Nothing is sent
+-- back, and no cross-check summaries go to it (issue 209), so it cannot
+-- tell; un-ignoring lets its server fill the gaps on the next cycle.
+-- "mark" is always filed: the room must show that they spoke, so something
+-- has to be there to show.
 local FILES = {
-    none = function() return true end,
-    mark = function() return true end,
-    hide = function(home) return setting(home, "ignore.hide-files") == "filed" end,
+    none = true,
+    mark = true,
+    hide = false,
 }
 function M.files_message(home, tag, address, port)
-    return FILES[M.how_ignored(home, tag, address, port)](home)
+    return FILES[M.how_ignored(home, tag, address, port)]
 end
 -- }}}
 

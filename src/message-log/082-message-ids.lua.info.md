@@ -7,5 +7,5 @@
 | `check_from(value)` | any | — ; error unless `"me"` or `"<host> <port>"`: host a non-empty run of non-whitespace, one space, port a whole number 1–65535 without leading zero |
 | `check_time(value, what)` | any, string label | — ; error unless a whole number ≥ 0 |
 
-The narrow id alphabet is what lets each record shape find an id by plain
-text search and lets a reader tell the shapes apart (see 083).
+The narrow id alphabet (no tab, no newline) is what lets the log find an
+id by plain text search (see 083, `id_marker`).

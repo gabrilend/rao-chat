@@ -8,13 +8,12 @@
 
 ## Current Behavior
 
-Rebuilt for "a room is a contact" (round 2, 2026-09-25) and tested: 121
-checks pass against a stand-in room-folders module and 142 against the
-real round-2 modules (`src/room-tree/tests/038-run-tests.sh`), 21 of them
-with the real members module (103) and people-links module (104) loaded.
-The phase 1 demo's tree scene runs on it.  The contract's 102 section
-describes it.  Round 1's files are kept beside the new ones as
-`<name>-done` until one commit has carried them.
+Round 3 (2026-09-25) is built on top of round 2's "a room is a contact"
+tree.  The runner (`src/room-tree/tests/038-run-tests.sh`) gives 132
+checks passing against the stand-in room-folders module and 181
+against the real round-3 modules.  The contract's 102 section describes
+it.  Round 1's and round 2's `-done` files are deleted (git history holds
+them).
 
 What exists in `src/room-tree/` (each source file with a `.info.md`):
 
@@ -29,58 +28,83 @@ What exists in `src/room-tree/` (each source file with a `.info.md`):
   first), the path of your own labels, the whole forest as nested nodes,
   filing and unfiling (refusing itself, an unheld room, or a ring), and
   the snapshot itself (104 reads it once per rebuild).
-- **The parent-membership rule**: "may this (address, port) join this
-  room?" — yes for a top or a merely filed room; for a declared child,
-  only if that exact pair is a member of the declared parent here; for a
-  child whose parent is not held here, the new setting
-  `tree.unheld-parent-join` (`refuse` / `accept`).  103's `add_member`
-  asks it and passes the refusal on as `not-in-parent` with the reason.
-- **"Which child rooms hold this address?"** — every declared child below
-  a room (all levels, top-down) whose members include the pair, for the
-  client's clean-up when someone leaves a parent (open question 2).
+- **The parent-membership check, detected, never enforced.**  "Does this
+  (address, port) belong in this room, by the rooms declared above it?"
+  answers one of three words: `yes` (a top or merely filed room, or every
+  declared room above holds that exact pair); `no` (some declared room
+  above, held here, lacks it — the reason names each such room, nearest
+  first); `cannot-check` (every held room above holds it, but the chain of
+  declared parents runs into one this home does not hold).  It walks
+  **every** declared room above, not only the parent (the owner's answer
+  to how far up to look), and stops at the first room not held: that
+  room's own parent is written in an entry this home does not have.  `no`
+  wins over `cannot-check`.  Filing is never followed.  Nothing is
+  refused: 103 adds the member either way and flags it on `no` or
+  `cannot-check`.  A second form takes a snapshot already made, for
+  checking many members at once.
+- **Re-checking** — "which members below this room now fail the check?":
+  every member of every declared descendant (all levels, top-down) whose
+  answer is not `yes`, each row naming the room, the address, the port,
+  the answer and the reason; and the same for one room's own members
+  (for when a declared parent arrives and a room's `cannot-check` members
+  can now be answered).  It lists every failing member, not only newly
+  failing ones: 103 keeps the flags and knows which it has already
+  raised.  Dropping someone from `home` shows them failing in `home`'s
+  children and grandchildren.
 - **Keeping `where` true**: a bell listener rewrites every room's `where`
   on `created`, `label`, `parent`, `filed` and `token`; on `removed-room`
   it first unfiles rooms filed under the removed one; member, last-heard,
-  withheld, log and ignore changes are ignored.  A ring closed by a
-  declared parent arriving above a room you filed is settled by the new
-  setting `tree.filing-loop` (`unfile` / `refuse`); a ring of declared
-  parents alone is always an error.  A token changed by hand needs nothing
-  here: room-folders re-points held children before it rings.
+  withheld, log, ignore and **mailbox** changes are ignored (mailboxes
+  group rooms by listening port and place nothing in the tree).  A ring
+  closed by a declared parent arriving above a room you filed is settled
+  by `tree.filing-loop` (`unfile` / `refuse`); a ring of declared parents
+  alone is always an error.
+- **Mailboxes** are 101's: a top group room starts a mailbox, a declared
+  child joins its parent's, a child made while its parent is not held
+  goes where `mailboxes.unheld-parent` says (`own-mailbox`: a mailbox and
+  port of its own, kept when the parent arrives; `waiting-mailbox`: the
+  one waiting mailbox, and moved into the parent's mailbox when the
+  parent arrives, repeated until nothing moves).  Agreed with 101 on the
+  board that the choice lives in 101's `make_room` and 101's options file,
+  since the code that picks a mailbox is 101's.  The tree's
+  `tests/028-test-mailboxes.lua` builds `home > ritz > programming`
+  bottom-up under both answers and checks mailboxes, tree and check agree
+  at each step: under `waiting-mailbox` the whole chain ends in home's
+  mailbox (programming, two levels down, moves too); under `own-mailbox`
+  one tree drawn is three mailboxes listening on three ports.
 - `022-where-file.lua` — `where` as two lines, `folder = …` and
-  `labels = …`; a `/` inside a label is written `\/` (labels may hold
-  any text but a line break), and the path splits back exactly.
+  `labels = …`; a `/` inside a label is written `\/`.
 - `024-forest-text.lua` — draws the forest as text with box-drawing
   branches and the marks `(filed)` and `(parent not held here)`.
-- `039-options.lua` — six choices: `tree.unheld-parent-join`,
-  `tree.filing-loop` (switchable), and four not switchable, each found
-  while building: what counts as the same member (`exact-pair` built;
-  a hostname is not matched to its IP), who cleans up child rooms when
-  someone leaves a parent (`client-cleans-up` built, open question 2),
-  whether the rule checks only the direct parent (`parent-only` built),
-  and where rooms filed under a removed room go (`unfile` built; waits on
-  phase 2's leaving).  Retired with the first model: parent disclosure,
-  disclosure refresh, where per recipient, untelling on removal, slash in
-  path.
-- Retired to `-done`: `023-reader-forest.lua`, `move_room`, parent
-  disclosure, `what_contact_receives`, and their tests (033, 034, 035 of
-  round 1).
+- `039-options.lua` — three choices left: `tree.filing-loop` (switchable),
+  what counts as the same member (`exact-pair` built), and where rooms
+  filed under a removed room go (`unfile` built; waits on phase 2's
+  leaving).  Removed in round 3 as answered: `tree.unheld-parent-join`
+  (with its `refuse` / `accept` code — replaced by `cannot-check`), the
+  rule's depth (`parent-only` code replaced by every room above), and who
+  cleans up after someone leaves a parent (the `client-cleans-up` lookup
+  "which child rooms hold this address?" is gone; they are only flagged,
+  found by the re-check).
 
 Tests (`tests/`): a three-level tree on one home with relabelling,
 filing, a late-arriving parent, a token change and a removed room (58);
 the same tree on two homes with different labels and tags, arriving
-bottom-up on one (15); the rule, including a stranger refused in a child,
-a grandchild refused someone only in the grandparent, both
-`tree.unheld-parent-join` answers, and the child-rooms lookup (27); both
-`tree.filing-loop` answers (10); the forest and its drawing (11); and with
-the real 103 and 104 (21).  `029-measure-tree.lua` times it: at 200
-rooms a snapshot takes about 0.01 s and making a room (every `where`
-rewritten) about 0.04 s.  Measuring showed 104 calling the tree once per
-room made each rebuild read the home rooms × rooms times (2.6 s per new
-room at 200 rooms); 104 now takes one snapshot per rebuild.
+bottom-up on one (15); the check — a stranger `no` in a child, someone in
+the child but missing from the grandparent `no`, a member at another port
+and a hostname `no`, filed and top rooms `yes`, a parent not held
+`cannot-check`, a held parent with an unheld grandparent `cannot-check`
+turning into `yes` when the grandparent arrives, and the re-check after
+someone is dropped from `home` (38); both `tree.filing-loop` answers
+(10); the forest and its drawing (11); mailboxes under both
+`mailboxes.unheld-parent` answers (25, real only); and with the real 103
+and 104 (24: 103 adds and flags by the check, 103's own listener flags the sister in ritz and programming after she is dropped from `home`, and 104's tops agree with the tree — the friend, flagged in ritz rather than refused, now has ritz as a top too).  `029-measure-tree.lua` times it: at 200 rooms a
+snapshot takes about 0.014 s, one check about the same, a re-check down a
+nine-deep chain about 0.012 s, and making a room (every `where`
+rewritten) about 0.04 s.
 
 Not done here: nothing in phase 1 removes a room, so the `removed-room`
-path is tested by removing a folder and ringing the bell by hand.  The
-owner's confirmation of open question 2 is still wanted.
+path is tested by removing a folder and ringing the bell by hand.
+104's own tests (not changed this round) fail against the real modules only where their test rooms are made without 101's new `mailbox_port` field; 102's snapshot, which 104 reads, did not change shape.
 
 ## Intended Behavior
 
@@ -122,10 +146,14 @@ view the contents in the tree. Very Microsoft Windows Explorer core."
 1. Parent by token fingerprint (101 gives the lookup); children, ancestors,
    top rooms.
 2. The parent-membership check, for 103, answering `yes` / `no` /
-   `cannot-check` (replacing the refusal and `tree.unheld-parent-join`),
-   and "which members of this room's children now fail the check?" for
-   re-checking when a parent's members change.
-3. `where` rewritten on `created`, `label`, `parent`, `filed`.
+   `cannot-check`, looking at every declared room above (not only the
+   parent), and "which members of this room's declared descendants now
+   fail the check?" for 103 to re-check when a room's members change.
+3. `where` rewritten on `created`, `label`, `parent`, `filed`; the bell
+   kind `mailbox` changes nothing in the tree.
+3a. A room's mailbox follows its declared parent — chosen and moved by
+   101; this module's tests check the tree and the mailboxes agree when a
+   chain arrives bottom-up, under both answers to open question 3.
 4. Keep `024-forest-text.lua`, fed from the new tree.
 5. Retire `move_room`, parent disclosure, `what_contact_receives`, the
    reader's forest (`023`), and their choices.
@@ -133,27 +161,10 @@ view the contents in the tree. Very Microsoft Windows Explorer core."
    with different labels (the fingerprints match, the labels do not); an
    address answered `no` in a child room when not in the parent, and
    `cannot-check` when the parent is not held; a child whose
-   parent is not held is a top room.
-
-### Round 3 (2026-09-25)
-
-1. **Detection, not refusal.**  The check answers `yes` / `no` /
-   `cannot-check`; `tree.unheld-parent-join` goes.
-2. **Every room above** (owner's answer to `tree-rule-depth`): an address
-   is `yes` only if it is a member of every declared ancestor this home
-   holds; a declared ancestor not held gives `cannot-check`.
-3. **Re-checking**: "which members of this room's declared descendants now
-   fail the check?", for 103 to flag when a room's members change.
-4. **A room's mailbox** follows its declared parent (101 stores it); a
-   child made while its parent is not held — see open question below.
-5. Delete this module's `-done` files.
-6. Tests: a grandchild member missing from the grandparent is `no`; an
-   unheld ancestor is `cannot-check`; dropping someone from `home` shows
-   them failing in `home`'s grandchildren.
-
-**Open (found while writing):** a child room whose declared parent is not
-held here — which mailbox?  Its own new one (needs a port), or held in a
-waiting mailbox until the parent arrives?  Build both, switched.
+   parent is not held is a top room; a grandchild member
+   missing from the grandparent is `no`; an unheld ancestor further up is
+   `cannot-check`; dropping someone from `home` shows them failing in
+   `home`'s grandchildren.
 
 ## Blockers that are not the owner's
 
@@ -177,9 +188,19 @@ them one at a time.  An issue with any of them unanswered is in progress.
    They won't know they're flagged for you - it's a personal setting.");
    nothing removes them, and a flag is never sent.  Earlier reading, kept
    for the record: the client also removes them from
-   the parent's child rooms; the server flags them in the children (detection, not refusal)
-   (owner: "This is UI work").  This module offers "which child rooms hold
-   this address?" for the client.  Reading to be confirmed by the owner.
+   the parent's child rooms (owner: "This is UI work"); the lookup "which
+   child rooms hold this address?" built for it was removed in round 3.
+
+3. **A child room whose declared parent is not held here — which
+   mailbox?**  Found while writing round 3.  Its own new mailbox (needs a
+   port; stays there when the parent arrives, so one tree drawn can listen
+   on several ports), or the one waiting mailbox until the parent arrives
+   (then moved into the parent's mailbox, changing its listening port,
+   which phase 2 must announce)?  Both built in 101's `make_room`,
+   switched by `mailboxes.unheld-parent` (`own-mailbox` /
+   `waiting-mailbox`), listed in 101's options file as
+   `rooms-unheld-parent-mailbox`; tested here in
+   `tests/028-test-mailboxes.lua`.
 
 ## Earlier designs
 

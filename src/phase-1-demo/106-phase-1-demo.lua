@@ -53,14 +53,21 @@ local MODULES = {
 }
 
 -- Which modules each scene cannot run without.  Every scene that makes
--- rooms needs all of them loaded, because 102's and 104's bell listeners
--- keep `where` and people/ current and a scene without them would show a
--- half-built home as if it were the design.
+-- rooms needs all of them loaded, and all of them are loaded before the
+-- first scene: each module's bell listener keeps its own derived files
+-- (`where`, flags, people/) current, and a home built with one of them
+-- missing would be shown as if it were the design.  Loading every module
+-- first also means every scene exercises every listener, so a fault in any
+-- of them shows up in every scene it touches rather than only in the scene
+-- about that module.  (Round 3 briefly loaded 104 only for the people
+-- scene, while 104's listener refused 101's new bell kind `mailbox`; once
+-- 104 was fixed that containment was dropped, since it hid how the
+-- modules work together.)
 local ALL_ROOM_MODULES = { "rooms", "tree", "forest_text", "members", "ignore", "people", "log" }
 local NEEDS = {
     entries = ALL_ROOM_MODULES, tokens = ALL_ROOM_MODULES, tree = ALL_ROOM_MODULES,
-    members = ALL_ROOM_MODULES, leaving = ALL_ROOM_MODULES, ignoring = ALL_ROOM_MODULES,
-    people = ALL_ROOM_MODULES, log = ALL_ROOM_MODULES, tally = {},
+    mailboxes = ALL_ROOM_MODULES, members = ALL_ROOM_MODULES, leaving = ALL_ROOM_MODULES,
+    ignoring = ALL_ROOM_MODULES, people = ALL_ROOM_MODULES, log = ALL_ROOM_MODULES, tally = {},
 }
 
 local RULE = string.rep("-", 78)
@@ -230,7 +237,7 @@ local function main()
         .. " taken from input/phase-1-demo.config, the rest the first variant listed.")
     say("each scene overrides the key it is about.")
     for _, setting in ipairs(baseline) do
-        say(string.format("  %-28s = %-12s (%s; %s)", setting.key, setting.value, setting.module,
+        say(string.format("  %-32s = %-12s (%s; %s)", setting.key, setting.value, setting.module,
                           setting.source))
     end
 

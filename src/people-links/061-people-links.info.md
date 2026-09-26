@@ -56,7 +56,15 @@ All are read with `config_value`: a missing key is an error, never a default.
 
 Registers on 101's change bell at load: `created`, `label`, `token`,
 `members`, `parent`, `filed`, `removed-room` → `rebuild_all`; `heard`,
-`withheld`, `ignore`, `log` → nothing; any other kind → error.
+`withheld`, `ignore`, `log`, `mailbox` → nothing; any other kind → error.
+
+- `mailbox` (round 3): a mailbox is a listening port grouping rooms; making
+  one, changing its port or moving a room into another changes no label,
+  member or tree parent, so no link.
+- `withheld` also rings when 103's `flagged` file changes (round 3).  A
+  flagged member is still in the entry's members, so it still counts
+  toward that person's rooms (choice `people-flagged-members`, built as
+  `count`).
 
 ## What it errors on
 

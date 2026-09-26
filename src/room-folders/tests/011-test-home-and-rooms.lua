@@ -18,7 +18,8 @@ local check, same, same_list, fails = kit.check, kit.same, kit.same_list, kit.fa
 
 -- {{{ local function spec
 local function spec(label, token, kind, parent, members)
-    return { label = label, token = token, kind = kind, parent = parent, filed_under = "", members = members or {} }
+    return { label = label, token = token, kind = kind, parent = parent, filed_under = "", members = members or {},
+             mailbox_port = kit.port_for(kind, parent) }
 end
 -- }}}
 
@@ -40,7 +41,7 @@ local function exists(path)
 end
 -- }}}
 
-check("open_home: makes config, an empty ignore, rooms/ and people/; no contacts file", function()
+check("open_home: makes config, an empty ignore, empty mailboxes, rooms/ and people/; no contacts file", function()
     local dir = kit.fresh_home_dir("layout")
     local home = rooms.open_home(dir .. "/")
     same(home.dir, dir, "trailing slash dropped")
@@ -48,6 +49,9 @@ check("open_home: makes config, an empty ignore, rooms/ and people/; no contacts
     same(exists(dir .. "/config"), true, "config")
     same(exists(dir .. "/contacts"), false, "no contacts file any more")
     same(rooms.ignore_path(home), dir .. "/ignore", "ignore_path")
+    same(rooms.mailboxes_path(home), dir .. "/mailboxes", "mailboxes_path")
+    same(#rooms.read_mailboxes(home), 0, "no mailboxes yet")
+    same(rooms.direct_mailbox(home), "", "no direct mailbox yet")
     same(#rooms.list_rooms(home), 0, "no rooms")
 end)
 
@@ -71,7 +75,9 @@ check("config_value: an absent key is an error naming the line to add", function
     fails(function() rooms.config_value(home, "tree.anything") end, "add a line: tree.anything = <value>")
 end)
 
-local home = rooms.open_home(kit.fresh_home_dir("rooms"))
+-- The waiting variant here: the children of unheld parents below wait in
+-- the waiting mailbox (015-test-mailboxes tests both variants).
+local home = kit.test_home(rooms, "rooms", "waiting-mailbox")
 local top, middle, bottom, girlfriend, coder
 local GIRLFRIEND_PHONE = member("203.0.113.20", 7777)
 local GIRLFRIEND_LAPTOP = member("gf.example.org", 7801)
@@ -89,9 +95,11 @@ check("make the owner's example tree and two direct messages", function()
     end
 end)
 
-check("every room folder holds entry, an empty withheld and an empty log (and nothing half-built is left)", function()
+check("every room folder holds entry, an empty withheld, flagged and log (and nothing half-built is left)", function()
     for _, tag in ipairs({ top, middle, bottom, girlfriend, coder }) do
         same(kit.read_file(rooms.withheld_path(home, tag)), "", "withheld")
+        same(kit.read_file(rooms.flagged_path(home, tag)), "", "flagged")
+        same(rooms.flagged_path(home, tag), home.dir .. "/rooms/" .. tag .. "/flagged", "flagged_path")
         same(kit.read_file(rooms.log_path(home, tag)), "", "log")
         same(exists(rooms.entry_path(home, tag)), true, "entry")
     end
@@ -114,6 +122,8 @@ check("a direct message and a group room are read by the same code", function()
     same(dm.members[2].port, 7801) same(group.members[2].port, 9000)
     same(group.parent, rooms.token_fingerprint("ritz-token"))
     same(dm.parent, "") same(dm.filed_under, "")
+    same(dm.mailbox, rooms.direct_mailbox(home), "the direct message is in the direct mailbox")
+    same(group.mailbox, rooms.read_entry(home, top).mailbox, "programming is in home's mailbox")
 end)
 
 check("list_rooms: every tag sorted; list_rooms_by_kind splits direct from group", function()
@@ -233,7 +243,7 @@ check("write_filed_under: a held room, not itself, no loop; \"\" unfiles", funct
 end)
 
 check("make_room: every spec field required, unknown fields refused", function()
-    for _, field in ipairs({ "label", "token", "kind", "parent", "filed_under", "members" }) do
+    for _, field in ipairs({ "label", "token", "kind", "parent", "filed_under", "members", "mailbox_port" }) do
         local s = spec("x", "spec-" .. field, "group", "")
         s[field] = nil
         fails(function() rooms.make_room(home, s) end, "spec." .. field .. " is missing")
@@ -245,9 +255,13 @@ end)
 
 check("make_room: a refused room leaves nothing on disk", function()
     local count = #rooms.list_rooms(home)
+    local mailbox_count = #rooms.read_mailboxes(home)
     fails(function() rooms.make_room(home, spec("bad", "bad-kind", "channel", "")) end, "kind must be")
     fails(function() rooms.make_room(home, spec("bad", "bad-parent", "group", "not-a-fingerprint")) end, "parent must be")
+    -- a top room refused for its token: no mailbox is made for it either.
+    fails(function() rooms.make_room(home, spec("again", "home-token", "group", "")) end, "already held here")
     same(#rooms.list_rooms(home), count)
+    same(#rooms.read_mailboxes(home), mailbox_count, "no orphan mailbox")
 end)
 
 check("reading and writing a room that does not exist is an error", function()

@@ -9,7 +9,13 @@ switchable), `variants` (each `name`, `summary`, `built_in`, `tests`,
 `findings`, all strings) and `leaning`.  The first variant of a switchable
 choice is what the demo starts with.
 
-Switchable: `ignore.hide-files`, `ignore.scope`, `ignore.match`,
-`recipients.shared-address-label`.  Not switchable: two addresses for one
-person (keep), withheld after a return (still withheld), what records
+Switchable: `ignore.scope`, `recipients.flag-after-passing` (read only
+when a flagged member passes a re-check), `recipients.shared-address-label`
+(read only when two direct-message rooms hold one address).  Not
+switchable: how long an approval lasts (until they leave), two addresses for
+one person (keep), withheld after a return (still withheld), what records
 last-heard (the arrival path; waits on phase 2).
+
+Removed in round 3, answered and fixed in place: `ignore-hide-files`
+(hidden messages are not filed) and `ignore-match` (every port at the
+address).

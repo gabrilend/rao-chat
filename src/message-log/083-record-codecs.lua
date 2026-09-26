@@ -1,25 +1,24 @@
--- 083-record-codecs.lua — the three ways a message can be written into a
--- room's log file, kept side by side so the owner can choose (open
--- question 8, config key log.record-shape).
+-- 083-record-codecs.lua — how a message is written into a room's log file,
+-- and read back: one line per message, its fields separated by tabs.
 --
 -- A "codec" is a pair of translators: one turns a message into the text
--- written in the file, the other turns that text back into a message.  All
--- three shapes carry exactly the same fields, so the rest of the log code
--- never knows which one is in use; it looks the shape up in one table and
--- calls its translators.
+-- written in the file, the other turns that text back into a message.
+-- There is one shape, tsv (the owner's answer to planning question 8,
+-- 2026-09-25: "okay... wink ;)").  It is still looked up in a table by name
+-- rather than called directly, so another shape could be added back beside
+-- it without touching the rest of the log.  Two others were built and
+-- measured in rounds 1 and 2 and retired in round 3 (they are in git
+-- history): a labelled block per message, easiest to read in less but 40%
+-- larger, and one JSON object per line, readable by JSON tools but 50%
+-- larger, slowest, and needing a bundled JSON library.
 --
 --   tsv    one line per message, fields separated by tabs.  Tabs, line
 --          breaks and backslashes inside the text are written as \t, \n,
---          \r and \\ so the message stays on one line.  Smallest; grep
---          shows a whole message per hit.
---   block  a few labelled lines per message ("id: ...", "from: ..."),
---          then "text:" and the text with every line pushed two spaces in,
---          then a blank line.  Because text lines are always indented, no
---          line of a message can ever pose as a label or as the blank line
---          that ends the record.  Easiest to read with less.
---   jsonl  one JSON object per line (dkjson).  Every JSON tool can read it.
+--          \r and \\ so the message stays on one line.  grep shows a whole
+--          message per hit; a person grepping for a multi-line text must
+--          write the line break as \n.
 --
--- The record every codec carries (all fields always present, never nil):
+-- The record the codec carries (all fields always present, never nil):
 --   id       string  message id (see 082-message-ids.lua for its alphabet)
 --   from     string  "me", or the address it arrived from as "<host> <port>"
 --                    (see 082-message-ids.lua check_from); proves nothing
@@ -32,25 +31,19 @@
 --   text     string  any bytes at all, including tabs, newlines, NUL, and
 --                    bytes that are not valid UTF-8
 --
--- Each codec also gives an "id marker": a piece of text that can appear in
+-- The codec also gives an "id marker": a piece of text that can appear in
 -- the file only at the start of the record with that id (never inside a
--- message's text, because each shape escapes or indents the text so the
--- marker's pattern cannot form there).  The duplicate check uses it to find
--- an id with one plain text search instead of decoding every record.
-
-local json = require("dkjson")
+-- message's text, because the text's tabs and line breaks are escaped, so
+-- the marker's pattern cannot form there).  The duplicate check uses it to
+-- find an id with one plain text search instead of decoding every record.
 
 local codecs = {}
-
--- The field order on disk, shared by all three shapes so a person reading
--- any of them sees the same sequence.
-local FIELD_ORDER = { "id", "from", "written", "arrived", "kind", "target", "text" }
 
 local KINDS = { message = true, correction = true, deletion = true }
 
 -- {{{ local function check_decoded
--- Every decoder ends here, so a record that came back from the file with a
--- missing or malformed field is refused the same way whichever shape it was.
+-- The decoder ends here, so a record that came back from the file with a
+-- missing or malformed field is refused with a reason.
 local function check_decoded(record, shape, raw)
     -- Path: a known kind — continue checking.  Unknown — the file is damaged
     -- or written by a newer program; refuse rather than guess.
@@ -128,11 +121,10 @@ local function split_tabs(line)
 end
 -- }}}
 
-codecs.tsv = {
-    record_ends = "line",
-}
+codecs.tsv = {}
 
 -- {{{ function codecs.tsv.encode
+-- Field order on disk: id, from, written, arrived, kind, target, text.
 function codecs.tsv.encode(record)
     return table.concat({
         record.id, record.from, tostring(record.written), tostring(record.arrived),
@@ -170,188 +162,28 @@ end
 -- }}}
 
 ------------------------------------------------------------------------------
--- block
-------------------------------------------------------------------------------
-
-codecs.block = {
-    record_ends = "blank-line",
-}
-
--- {{{ local function label_line
--- "label: value", or just "label:" when the value is empty, so no line in
--- the file ends in a stray space.
-local function label_line(label, value)
-    -- Path: a value — "label: value".  Empty — "label:".
-    if value == "" then
-        return label .. ":"
-    end
-    return label .. ": " .. value
-end
--- }}}
-
--- {{{ function codecs.block.encode
--- Text "" is written as no indented lines at all; any other text is split
--- at every "\n" and each piece indented, so "a\n" becomes "  a" and "  "
--- (two lines, the second empty).  That keeps "" and "\n" distinct.
-function codecs.block.encode(record)
-    local lines = {
-        "id: " .. record.id,
-        "from: " .. record.from,
-        "written: " .. tostring(record.written),
-        "arrived: " .. tostring(record.arrived),
-        "kind: " .. record.kind,
-        label_line("target", record.target),
-        "text:",
-    }
-    -- Path: non-empty text — indented lines.  Empty text — none.
-    if record.text ~= "" then
-        local start = 1
-        while true do
-            local newline = record.text:find("\n", start, true)
-            -- Path: another line break — emit a line and go on.  None — last line.
-            if not newline then
-                lines[#lines + 1] = "  " .. record.text:sub(start)
-                break
-            end
-            lines[#lines + 1] = "  " .. record.text:sub(start, newline - 1)
-            start = newline + 1
-        end
-    end
-    return table.concat(lines, "\n") .. "\n\n"
-end
--- }}}
-
--- Label lines in the order they must appear; a block whose labels are out
--- of order or missing is refused, not repaired.
-local BLOCK_LABELS = { "id", "from", "written", "arrived", "kind", "target" }
-
--- {{{ function codecs.block.decode
--- `raw` is the record's lines joined by "\n", without the ending blank line.
-function codecs.block.decode(raw)
-    local lines = {}
-    local start = 1
-    while true do
-        local newline = raw:find("\n", start, true)
-        -- Path: another line — collect.  None — last line.
-        if not newline then
-            lines[#lines + 1] = raw:sub(start)
-            break
-        end
-        lines[#lines + 1] = raw:sub(start, newline - 1)
-        start = newline + 1
-    end
-    local record = {}
-    for position, label in ipairs(BLOCK_LABELS) do
-        local line = lines[position] or ""
-        local found, value = line:match("^(%a+): ?(.*)$")
-        -- Path: the expected label — take its value.  Anything else — refuse.
-        if found ~= label then
-            error("message-log: block record line " .. position .. " should be '" .. label
-                .. ":' but is '" .. line .. "'", 0)
-        end
-        record[label] = value
-    end
-    -- Path: the text label where expected — read indented lines.  Else refuse.
-    if lines[7] ~= "text:" then
-        error("message-log: block record line 7 should be 'text:' but is '" .. tostring(lines[7]) .. "'", 0)
-    end
-    local text_lines = {}
-    for position = 8, #lines do
-        local line = lines[position]
-        -- Path: indented — a text line.  Not indented — damaged record.
-        if line:sub(1, 2) ~= "  " then
-            error("message-log: block record text line is not indented: '" .. line .. "'", 0)
-        end
-        text_lines[#text_lines + 1] = line:sub(3)
-    end
-    record.text = table.concat(text_lines, "\n")
-    record.written = to_whole_number(record.written, "block", "written", raw)
-    record.arrived = to_whole_number(record.arrived, "block", "arrived", raw)
-    return check_decoded(record, "block", raw)
-end
--- }}}
-
--- {{{ function codecs.block.id_marker
--- The id line starts a record, after the blank line that ends the one
--- before; text lines are indented, so "\nid: <id>\n" occurs nowhere else.
-function codecs.block.id_marker(id)
-    return "\nid: " .. id .. "\n"
-end
--- }}}
-
-------------------------------------------------------------------------------
--- jsonl
-------------------------------------------------------------------------------
-
-codecs.jsonl = {
-    record_ends = "line",
-}
-
--- {{{ function codecs.jsonl.encode
--- keyorder puts "id" first, which the id marker depends on.  dkjson writes
--- no spaces, escapes control characters (a newline becomes \n) and passes
--- other bytes through as they are, so invalid UTF-8 survives a round trip.
-function codecs.jsonl.encode(record)
-    return json.encode(record, { keyorder = FIELD_ORDER }) .. "\n"
-end
--- }}}
-
--- {{{ function codecs.jsonl.decode
-function codecs.jsonl.decode(raw)
-    local record, _, problem = json.decode(raw)
-    -- Path: a JSON object — check its fields.  Anything else — refuse.
-    if type(record) ~= "table" then
-        error("message-log: jsonl record is not a JSON object (" .. tostring(problem) .. "): "
-            .. raw:sub(1, 80), 0)
-    end
-    return check_decoded(record, "jsonl", raw)
-end
--- }}}
-
--- {{{ function codecs.jsonl.id_marker
--- Newlines inside strings are escaped, so a line start followed by
--- {"id":"<id>" occurs only where that record begins.
-function codecs.jsonl.id_marker(id)
-    return '\n{"id":"' .. id .. '"'
-end
--- }}}
-
-------------------------------------------------------------------------------
 -- choosing a codec
 ------------------------------------------------------------------------------
 
+-- The shape every log is written and read in.  Not a config key: the owner
+-- chose it.  To add a shape back, give it a codec above, list it in SHAPES,
+-- and decide how a log holding more than one shape is read (round 2 built
+-- recognising each record by its first characters; see git history).
+codecs.SHAPE = "tsv"
+
+codecs.SHAPES = { tsv = codecs.tsv }
+
 -- {{{ function codecs.get
--- Gives the codec for a shape name; an unknown name is an error (it came
--- from config, and a typo there must not quietly pick some other shape).
+-- Gives the codec for a shape name; an unknown name is an error, never a
+-- quiet substitute.
 function codecs.get(shape)
     local codec = codecs.SHAPES[shape]
     -- Path: known shape — its codec.  Unknown — refuse.
     if not codec then
-        error("message-log: log.record-shape '" .. tostring(shape)
-            .. "' is not one of tsv, block, jsonl", 0)
+        error("message-log: record shape '" .. tostring(shape) .. "' is not one of tsv", 0)
     end
     return codec
 end
 -- }}}
-
--- {{{ function codecs.detect
--- Names the shape a record is in from the first line of that record.  Works
--- because the three shapes start differently: jsonl with '{', block with
--- "id:", tsv with the id itself, and an id may not hold ':' or '{'.
-function codecs.detect(first_line)
-    local first = first_line:sub(1, 1)
-    -- Path: '{' — jsonl.  "id:" — block.  Anything else — tsv.
-    if first == "{" then
-        return "jsonl"
-    end
-    if first_line:sub(1, 3) == "id:" then
-        return "block"
-    end
-    return "tsv"
-end
--- }}}
-
-codecs.SHAPES = { tsv = codecs.tsv, block = codecs.block, jsonl = codecs.jsonl }
-codecs.SHAPE_NAMES = { "tsv", "block", "jsonl" }
 
 return codecs

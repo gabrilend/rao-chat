@@ -31,14 +31,15 @@
 -- After anything is filed the room-folders change bell is rung with "log",
 -- so modules that keep derived views can catch up.
 --
--- Which choices this module reads from rao-home/config (an absent key is an
--- error, there is no default):
---   log.record-shape         tsv | block | jsonl         every read and write
---   log.shape-mixing         fixed | per-record          every read and write
---   log.duplicate-check      scan | remembered           every write
---   log.who-may-edit         anyone | same-address       filing an edit
---   log.same-id-new-address  duplicate | error           only when a repeat
---                            matches in everything but the address it came from
+-- The one choice this module reads from rao-home/config (an absent key is
+-- an error, there is no default):
+--   log.duplicate-check      scan | remembered           every write and has_message
+-- It waits on phase 2 (is the home server one long-running program?).
+-- Four keys the owner has answered are no longer read (round 3): the
+-- record shape is tsv (083-record-codecs.lua), so log.record-shape and
+-- log.shape-mixing are gone; anyone may edit (log.who-may-edit); and a
+-- repeat that differs only in the address it came from is a duplicate
+-- (log.same-id-new-address).
 
 local rooms = require("002-room-folders")
 local ids = require("082-message-ids")
@@ -49,14 +50,10 @@ local edits = require("086-edits")
 
 local log = {}
 
--- {{{ local function settings
--- Reads the three keys every read or write needs, once per call.
-local function settings(home)
-    return {
-        shape = rooms.config_value(home, "log.record-shape"),
-        mixing = rooms.config_value(home, "log.shape-mixing"),
-        duplicate_check = rooms.config_value(home, "log.duplicate-check"),
-    }
+-- {{{ local function duplicate_check
+-- Reads log.duplicate-check, the one switch left, once per call.
+local function duplicate_check(home)
+    return rooms.config_value(home, "log.duplicate-check")
 end
 -- }}}
 
@@ -89,10 +86,12 @@ end
 -- }}}
 
 -- The fields that make up a message's contents.  `arrived` is left out on
--- purpose: every repeated delivery arrives at a new time.  `from` is judged
--- apart (see same_id), because a copy may honestly come from another
--- address — a member who moved, or a missing message fetched from another
--- member during the cross-check (phase 2).
+-- purpose: every repeated delivery arrives at a new time.  So is `from`: a
+-- copy may honestly come from another address — a member who moved, or a
+-- missing message fetched from another member during the cross-check
+-- (phase 2) — and the address proves nothing about who wrote it.  Owner,
+-- 2026-09-25, on the same message arriving from a second address:
+-- "duplicate".  The first copy's `from` stays in the file.
 local CONTENT_FIELDS = { "written", "kind", "target", "text" }
 
 -- {{{ local function describe
@@ -108,72 +107,41 @@ local function describe(record)
 end
 -- }}}
 
--- What to do when a repeated id matches in contents but came from another
--- address.  One entry per log.same-id-new-address value.
-local NEW_ADDRESS = {
-    -- {{{ local function duplicate
-    ["duplicate"] = function(kept, arriving)
-        return "duplicate"
-    end,
-    -- }}}
-    -- {{{ local function refuse
-    ["error"] = function(kept, arriving)
-        error("message-log: message id '" .. arriving.id .. "' arrived again from another address"
-            .. " (log.same-id-new-address = error): filed " .. describe(kept)
-            .. ", arriving " .. describe(arriving), 0)
-    end,
-    -- }}}
-}
-
 -- {{{ local function same_id
 -- A record with this id is already filed (`kept`); decide what the
 -- arriving one is.  Gives "duplicate" or raises an error naming both.
-local function same_id(home, kept, arriving)
+local function same_id(kept, arriving)
     for _, field in ipairs(CONTENT_FIELDS) do
         -- Path: a content field differs — the same id says two different
-        -- things; raise it, naming both, file nothing.
+        -- things; raise it, naming both, file nothing.  All equal — a
+        -- repeat, whatever address it came from.
         if kept[field] ~= arriving[field] then
             error("message-log: message id '" .. arriving.id .. "' arrived again with different "
                 .. field .. ": filed " .. describe(kept) .. ", arriving " .. describe(arriving), 0)
         end
     end
-    -- Path: same address too — a plain repeat.  Another address — the
-    -- owner's choice decides (read only here, so homes that never meet
-    -- this case need not set it).
-    if kept.from == arriving.from then
-        return "duplicate"
-    end
-    local choice = rooms.config_value(home, "log.same-id-new-address")
-    local rule = NEW_ADDRESS[choice]
-    -- Path: known value — apply it.  Unknown — refuse (config typo).
-    if not rule then
-        error("message-log: log.same-id-new-address '" .. choice
-            .. "' is not one of duplicate, error", 0)
-    end
-    return rule(kept, arriving)
+    return "duplicate"
 end
 -- }}}
 
 -- {{{ local function file_record
 -- Adds one checked record to a room's log unless its id is already there,
 -- then rings the bell.  before_filing: function(), or false — run after the
--- repeat check and before writing (edits check their rule there, so a
+-- repeat check and before writing (edits check their target there, so a
 -- repeat of an edit already filed is answered "duplicate", not refused).
 -- Gives "filed" or "duplicate"; raises on a conflicting repeat.
 local function file_record(home, room_id, record, before_filing)
-    local config = settings(home)
     local path = rooms.log_path(home, room_id)
-    local found, kept = duplicates.find(path, record.id, config.duplicate_check,
-        config.mixing, config.shape)
+    local found, kept = duplicates.find(path, record.id, duplicate_check(home))
     -- Path: the id is already in the log — compare, and file nothing.
     if found then
-        return same_id(home, kept, record)
+        return same_id(kept, record)
     end
     -- Path: an extra check to run (edits) — run it; it raises to refuse.
     if before_filing then
-        before_filing(config)
+        before_filing()
     end
-    local encoded = codecs.get(config.shape).encode(record)
+    local encoded = codecs.get(codecs.SHAPE).encode(record)
     -- The whole record goes out in one write to a file opened for appending,
     -- so two programs appending at once put whole records one after the
     -- other (Linux appends each write at the end atomically for regular
@@ -225,10 +193,9 @@ end
 -- {{{ local function file_edit
 local function file_edit(home, room_id, record)
     check_record(record)
-    return file_record(home, room_id, record, function(config)
-        local records = reader.parse(reader.read_file(rooms.log_path(home, room_id)),
-            config.mixing, config.shape)
-        edits.check(rooms.config_value(home, "log.who-may-edit"), records, record)
+    return file_record(home, room_id, record, function()
+        local records = reader.parse(reader.read_file(rooms.log_path(home, room_id)))
+        edits.check(records, record)
     end)
 end
 -- }}}
@@ -237,8 +204,8 @@ end
 -- correction: { id=string (a new message id), from=string,
 --               written=integer, arrived=integer, target=string (the id
 --               of the message corrected), text=string (the new text) }.
--- Gives "filed" or "duplicate"; raises an error when the target is missing
--- or deleted, or log.who-may-edit refuses.
+-- Anyone may correct any message.  Gives "filed" or "duplicate"; raises an
+-- error when the target is missing, is itself an edit, or is deleted.
 function log.correct(home, room_id, correction)
     return file_edit(home, room_id, {
         id = correction.id, from = correction.from,
@@ -264,9 +231,8 @@ end
 -- {{{ function log.has_message
 -- Gives bool: is a record with this id (message or edit) in the room's log.
 function log.has_message(home, room_id, message_id)
-    local config = settings(home)
     local found = duplicates.find(rooms.log_path(home, room_id), message_id,
-        config.duplicate_check, config.mixing, config.shape)
+        duplicate_check(home))
     return found
 end
 -- }}}
@@ -277,9 +243,7 @@ end
 -- target, text } (see 083-record-codecs.lua).  Plain messages have kind
 -- "message" and target "".
 function log.read(home, room_id)
-    local config = settings(home)
-    return (reader.parse(reader.read_file(rooms.log_path(home, room_id)),
-        config.mixing, config.shape))
+    return (reader.parse(reader.read_file(rooms.log_path(home, room_id))))
 end
 -- }}}
 

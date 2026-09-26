@@ -1,12 +1,13 @@
 -- 036-test-with-neighbours.lua — tests the room tree together with the
 -- real modules that lean on it: members (issue 103, which asks the tree
--- "may this address join?" before adding anyone) and the people/ links
+-- "does this address belong here, by the rooms above?" and adds everyone,
+-- flagging those answered no or cannot-check) and the people/ links
 -- (issue 104, which finds each person's top rooms from the tree).
 --
 -- Runs only against the real room-folders module, since the neighbours
 -- load it by name.  Builds the owner's household tree, adds people
--- through 103, files a room, and checks that 103's refusals follow the
--- parent-membership rule and that 104's tops agree with the tree.
+-- through 103, files a room, and checks that 103's flags follow the
+-- tree's answers and that 104's tops agree with the tree.
 --
 -- Run: luajit 036-test-with-neighbours.lua [DIR] real
 
@@ -30,11 +31,12 @@ local home = t.fresh_home(rooms, "neighbours")
 rooms.set_config(home, "people.link-collision", "suffix-id")
 rooms.set_config(home, "people.direct-message-link", "leave-out")
 rooms.set_config(home, "people.members-without-dm", "leave-out")
--- 103a reads these when judging an address (see src/recipients/059-options.lua)
-rooms.set_config(home, "ignore.match", "pair")
+-- 103a reads these when judging an address (see src/recipients/059-options.lua);
+-- keys 103 no longer reads are harmless in a config file
 rooms.set_config(home, "ignore.scope", "home")
-rooms.set_config(home, "ignore.hide-files", "filed")
 rooms.set_config(home, "recipients.shared-address-label", "all-labels")
+-- 103 reads this when a flagged member later passes a re-check
+rooms.set_config(home, "recipients.flag-after-passing", "kept")
 
 local girlfriend = { "192.168.1.20", 7777 }
 local sister = { "sister.example.org", 7001 }
@@ -51,18 +53,49 @@ local function add(tag, pair)
 end
 -- }}}
 
--- 103 asks the tree before adding
+-- 103 asks the tree, adds everyone, flags the ones it answers no
 t.equal(add(h, girlfriend), "added", "103: girlfriend added to home (a top)")
 t.equal(add(h, sister), "added", "103: sister added to home")
-t.equal(add(r, friend), "not-in-parent", "103: friend refused in ritz (not in home)")
+t.equal(add(r, friend), "added-flagged", "103: friend added to ritz but flagged (not in home)")
 t.equal(add(r, girlfriend), "added", "103: girlfriend added to ritz")
-t.equal(add(p, sister), "not-in-parent", "103: sister refused in programming (not in ritz)")
+t.equal(add(p, sister), "added-flagged", "103: sister added to programming but flagged (not in ritz)")
 t.equal(add(p, girlfriend), "added", "103: girlfriend added to programming")
 t.equal(add(cafe, friend), "added", "103: friend added to cafe (a top)")
-local word, why = members.add_member(home, p, sister[1], sister[2])
-t.check(why ~= nil and why:find("ritz", 1, true) ~= nil, "103 passes on the tree's reason, naming the parent")
 t.equal(add(r, sister), "added", "103: sister added to ritz")
-t.equal(add(p, sister), "added", "103: now the sister may join programming")
+-- the tree's own view of what 103 flagged
+local rows = tree.failing_below(home, h)
+local seen = {}
+for _, row in ipairs(rows) do
+    seen[#seen + 1] = row.room .. " " .. row.address .. " " .. row.answer
+end
+t.same_list(seen, { r .. " 203.0.113.9 no" },
+    "after the sister joins ritz only the friend still fails below home")
+-- dropping the sister from home, written straight into the entry: she fails in
+-- ritz and in the grandchild programming (every room above counts)
+rooms.write_members(home, h, t.members({ girlfriend }))
+rows = tree.failing_below(home, h)
+seen = {}
+for _, row in ipairs(rows) do
+    seen[#seen + 1] = row.room .. " " .. row.address
+end
+t.same_list(seen, { r .. " 203.0.113.9", r .. " sister.example.org", p .. " sister.example.org" },
+    "the sister dropped from home fails in ritz and programming")
+-- 103's listener heard 'members' on home and re-checked below it with
+-- failing_below: the sister is now awaiting review in both rooms
+-- {{{ local function flagged_addresses
+local function flagged_addresses(tag)
+    local out = {}
+    for _, row in ipairs(members.flagged(home, tag)) do
+        out[#out + 1] = row.address
+    end
+    table.sort(out)
+    return out
+end
+-- }}}
+t.same_list(flagged_addresses(r), { "203.0.113.9", "sister.example.org" },
+    "103 flags the friend and the sister in ritz")
+t.same_list(flagged_addresses(p), { "sister.example.org" },
+    "103 flags the sister in the grandchild programming")
 
 -- member changes do not move anything in the tree
 t.equal(tree.read_where(home, p).labels, "home/ritz/programming", "where untouched by member changes")
@@ -105,13 +138,18 @@ end
 
 t.same_list(people_tops_for(girlfriend), { h }, "104: girlfriend's one top is home")
 t.same_list(people_tops_for(girlfriend), tree_tops_for(girlfriend), "104 agrees with the tree: girlfriend")
-t.same_list(people_tops_for(friend), { cafe }, "104: friend's top is cafe")
+-- the friend now sits in ritz too (flagged, not refused), and home does
+-- not hold them, so ritz is one of the friend's tops as well as cafe
+local friend_tops = { cafe, r }
+table.sort(friend_tops)
+t.same_list(people_tops_for(friend), friend_tops, "104: friend's tops are cafe and ritz (flagged there)")
+t.same_list(people_tops_for(friend), tree_tops_for(friend), "104 agrees with the tree: friend")
 
 -- filing cafe under programming: the friend is not in programming, so
 -- cafe is still the friend's top; filing a room holding the girlfriend
 -- under home folds it into her home tree
 tree.file_under(home, cafe, p)
-t.same_list(people_tops_for(friend), { cafe }, "104: filed cafe is still the friend's top")
+t.same_list(people_tops_for(friend), friend_tops, "104: filed cafe is still one of the friend's tops")
 t.same_list(people_tops_for(friend), tree_tops_for(friend), "104 agrees with the tree: friend, filed")
 local games = t.room(rooms, home, "games", "token-games", "", {})
 t.equal(add(games, girlfriend), "added", "103: girlfriend added to games (a top)")
@@ -121,8 +159,14 @@ tree.file_under(home, games, h)
 t.same_list(people_tops_for(girlfriend), { h }, "104: games filed under home folds into her home tree")
 t.same_list(people_tops_for(girlfriend), tree_tops_for(girlfriend), "104 agrees with the tree after filing")
 
--- which child rooms hold the girlfriend, for the client's clean-up
-t.same_list(tree.child_rooms_holding(home, h, girlfriend[1], girlfriend[2]), { r, p },
-    "child rooms of home holding her: ritz, then programming below it (top-down)")
+-- the girlfriend is in every tier: nothing to flag anywhere below home
+local girlfriend_fails = 0
+for _, row in ipairs(tree.failing_below(home, h)) do
+    -- a row for her: counted; anyone else: not this check's concern
+    if row.address == girlfriend[1] then
+        girlfriend_fails = girlfriend_fails + 1
+    end
+end
+t.equal(girlfriend_fails, 0, "the girlfriend fails nowhere below home")
 
 t.finish("036-test-with-neighbours")

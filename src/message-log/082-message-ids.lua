@@ -12,10 +12,10 @@
 -- Ids that come from elsewhere (another home server) are not
 -- required to be 32 hex letters, only to be made of letters, digits, '-' and
 -- '_'.  That narrow alphabet is load-bearing: it keeps an id from ever
--- containing a tab, a newline, a colon or a '{', which is what lets each
--- record shape find a record's id with a plain text search (see
--- 083-record-codecs.lua, id_marker) and lets a reader tell the three shapes
--- apart by a record's first characters.
+-- containing a tab or a newline, which is what lets the log find a
+-- record's id with a plain text search (see 083-record-codecs.lua,
+-- id_marker).  It also kept out ':' and '{', which round 2 needed to tell
+-- three record shapes apart; kept narrow so a shape could be added back.
 
 local ids = {}
 

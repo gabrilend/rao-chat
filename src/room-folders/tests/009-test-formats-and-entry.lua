@@ -17,12 +17,13 @@ local check, same, fails = kit.check, kit.same, kit.fails
 
 local TAG = "0123456789abcdef0123456789abcdef"
 local OTHER_TAG = "fedcba9876543210fedcba9876543210"
+local MAILBOX_TAG = "9c41d07a2be35f6e8810aa3c5d7e9f01"
 
 -- {{{ local function sample_entry
 local function sample_entry()
     return {
         tag = TAG, label = "programming", token = "maple-orbit-velvet-tin", kind = "group",
-        parent = tokens.token_fingerprint("home"), filed_under = "",
+        parent = tokens.token_fingerprint("home"), mailbox = MAILBOX_TAG, filed_under = "",
         members = {
             { address = "203.0.113.9", port = 7777, heard = 1790000000 },
             { address = "sorelu.example.org", port = 7778, heard = 0 },
@@ -79,7 +80,7 @@ end)
 check("entry: text and back gives the same entry", function()
     local entry = sample_entry()
     local back = entries.parse_entry(entries.entry_text(entry), TAG, "test")
-    for _, field in ipairs({ "tag", "label", "token", "kind", "parent", "filed_under" }) do
+    for _, field in ipairs({ "tag", "label", "token", "kind", "parent", "mailbox", "filed_under" }) do
         same(back[field], entry[field], field)
     end
     same(#back.members, 3, "members")
@@ -105,6 +106,8 @@ end)
 
 check("entry: the text is rmail's contacts format, named by the tag, addresses from 1", function()
     local text = entries.entry_text(sample_entry())
+    same(text:find(TAG .. ".parent = " .. tokens.token_fingerprint("home") .. "\n" .. TAG .. ".mailbox = "
+        .. MAILBOX_TAG .. "\n" .. TAG .. ".filed-under =\n", 1, true) ~= nil, true, "mailbox between parent and filed-under")
     same(text:find(TAG .. '.label = "programming"\n', 1, true) ~= nil, true, "label line")
     same(text:find(TAG .. ".ip[1] = 203.0.113.9\n" .. TAG .. ".port[1] = 7777\n" .. TAG .. ".heard[1] = 1790000000\n", 1, true) ~= nil, true, "pair 1")
     same(text:find(TAG .. ".filed-under\n", 1, true) == nil and text:find(TAG .. ".filed-under =\n", 1, true) ~= nil, true, "empty field")
@@ -135,6 +138,9 @@ check("entry: writer refusals", function()
         { function(e) e.parent = "abc" end, "parent must be" },
         { function(e) e.parent = TAG end, "parent must be" },
         { function(e) e.filed_under = "programming" end, "filed_under must be" },
+        { function(e) e.mailbox = "" end, "mailbox must be" },
+        { function(e) e.mailbox = 7777 end, "mailbox must be" },
+        { function(e) e.mailbox = nil end, "mailbox must be" },
         { function(e) e.members[1].port = nil end, "port must be" },
         { function(e) e.members[1].port = 7777.5 end, "port must be" },
         { function(e) e.members[1].heard = -1 end, "heard must be" },
@@ -184,6 +190,8 @@ check("entry: reader refusals for hand-edited files", function()
         { with_line(nil, TAG .. ".colour = blue"), "unknown field 'colour'" },
         { with_line(nil, TAG .. ".nick[1] = x"), "unknown indexed field" },
         { with_line(TAG .. ".kind = group\n", ""), "'kind' is missing" },
+        { with_line(TAG .. ".mailbox = " .. MAILBOX_TAG .. "\n", ""), "'mailbox' is missing" },
+        { with_line(TAG .. ".mailbox = " .. MAILBOX_TAG, TAG .. ".mailbox ="), "mailbox must be" },
         { with_line(TAG .. ".kind = group", TAG .. ".kind = channel"), "kind must be" },
         { with_line(TAG .. ".heard[1] = 1790000000", TAG .. ".heard[1] = soon"), "heard[1] must be" },
         { with_line(TAG .. ".heard[1] = 1790000000", TAG .. ".heard[1] = 007"), "heard[1] must be" },

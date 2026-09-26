@@ -14,56 +14,103 @@
 -- rooms-unknown-parent (a parent held nowhere is now simply a top room,
 -- decided by the new model) and rooms-slash-in-name (labels are the
 -- reader's own and may hold any text but a line break).
+--
+-- Answered in round 3 and removed: rooms-suggested-token-words (the
+-- owner: six words; built fixed, the rooms.suggested-token-words switch
+-- and its 5- and 4-word variants are gone; suggest_token_of still takes
+-- any count).  The measurement behind it (about 775,000 fingerprints a
+-- second on one CPU core; six words about 700,000 years at an assumed
+-- 5 billion guesses a second) is in the planning document's "Answers from
+-- the tally, round 2".
 
 return {
     {
-        id = "rooms-suggested-token-words",
-        question = "How many words should a suggested room token have? (Tokens may be any text; this is "
-            .. "only what rao-chat offers, e.g. 'maple-orbit-velvet-tin'.)",
+        id = "rooms-unheld-parent-mailbox",
+        question = "A child room is made (or joined) while this home does not hold its declared parent. "
+            .. "Which mailbox (listening port) does it go in: a new one of its own, or a shared waiting "
+            .. "mailbox until the parent arrives?",
         waits_on = "owner",
-        detail = "issue 101 open question 3 (planning section 15, answered question 4: suggest readable "
-            .. "tokens, never restrict them); the list is the EFF large word list, 7,772 words",
-        config_key = "rooms.suggested-token-words",
+        detail = "issue 102 round 3 open question (found while writing); agreed on the board that 101's "
+            .. "make_room takes the choice and this file holds it (102's options point here)",
+        config_key = "mailboxes.unheld-parent",
         variants = {
             {
-                name = "6",
-                summary = "Six random words: about 77.5 bits.",
-                built_in = "src/room-folders/002-room-folders.lua (suggest_token) + 007-tokens.lua (suggest_token_of)",
-                tests = "tests/010-test-tokens.lua ('every variant of rooms.suggested-token-words')",
+                name = "own-mailbox",
+                summary = "The child starts its own tree mailbox, with a port the maker gives, as if it were "
+                    .. "a top room; it stays there when the parent arrives.",
+                built_in = "src/room-folders/002-room-folders.lua (UNHELD_PARENT_VARIANTS, make_room)",
+                tests = "tests/015-test-mailboxes.lua ('own-mailbox: the child starts its own tree mailbox, "
+                    .. "and stays in it when the parent arrives')",
                 findings = {
-                    "A room's safety against strangers is only its token (planning section 5: 'a room is as "
-                        .. "private as its token is hard to guess'), and anyone who records sealed traffic, or "
-                        .. "sees a child room's invitation (which carries the parent's fingerprint), can guess "
-                        .. "offline without asking anyone: two SHA-256 per guess against a fingerprint.",
-                    "Measured here: LuaJIT + libcrypto makes about 775,000 fingerprints a second on one CPU "
-                        .. "core. Assumed, not measured: one modern GPU does about 5 billion a second. At that "
-                        .. "rate the expected time to find a six-word token is about 700,000 years for one GPU.",
-                    "Example length: 'overstock-yam-setback-praying-tin-orbit' — about 40 characters; still "
-                        .. "readable aloud in one breath or two.",
+                    "The port a room listens on never changes after it is made, so the addresses its members "
+                        .. "hold for this home stay right; nothing has to be announced in phase 2.",
+                    "Cost: one more forwarded router port for every such child, and once the parent arrives "
+                        .. "one tree lives in two mailboxes on this home (a frame for the child arrives on the "
+                        .. "child's port, a frame for the parent on the parent's). Rooms made under the child "
+                        .. "later join the child's mailbox, not the parent's.",
+                    "The maker must know, when making the room, that the parent is not held, to pass a port: "
+                        .. "a missing port is an error naming the rule, never a default.",
                 },
             },
             {
-                name = "5",
-                summary = "Five random words: about 64.6 bits.",
-                built_in = "same code; config value 5",
-                tests = "tests/010-test-tokens.lua",
-                findings = "At the assumed 5 billion guesses a second: about 90 years for one GPU, about "
-                    .. "33 days for a thousand GPUs working together — enough against a curious stranger, "
-                    .. "not against someone who rents a large GPU farm for a month.",
-            },
-            {
-                name = "4",
-                summary = "Four random words: about 51.7 bits (the example the owner was shown).",
-                built_in = "same code; config value 4",
-                tests = "tests/010-test-tokens.lua",
-                findings = "At the assumed rate: about 4 days for one GPU. The issue's first estimate (four "
-                    .. "words from 2,048 = 44 bits, 'hard to guess by hand') holds against guessing by hand, "
-                    .. "but a token here is guessed by machine against recorded traffic, where 4 words is weak.",
+                name = "waiting-mailbox",
+                summary = "The child goes in the home's one 'waiting' mailbox (made once with make_mailbox, "
+                    .. "with its port); when the parent arrives it moves into the parent's mailbox.",
+                built_in = "src/room-folders/002-room-folders.lua (UNHELD_PARENT_VARIANTS, settle_waiting, "
+                    .. "called after make_room, change_token and write_parent)",
+                tests = "tests/015-test-mailboxes.lua ('waiting-mailbox: the child waits ...', 'a chain whose "
+                    .. "rooms arrive bottom-up settles top-down', 'a parent arriving by a token change', "
+                    .. "'given a held parent by write_parent', 'without the waiting mailbox made')",
+                findings = {
+                    "Every orphaned child shares one port, so no extra router port per child, and a tree ends "
+                        .. "up in one mailbox once its top arrives. A chain arriving bottom-up settles top-down "
+                        .. "in repeated passes (one 'mailbox' ring per room moved).",
+                    "Cost: when a waiting room moves, the port it listens on changes. Members who send to this "
+                        .. "home for that room still use the waiting port, which no longer tries that room's "
+                        .. "key, so their messages would be lost until phase 2 tells them the new port (or "
+                        .. "keeps trying moved rooms on the waiting port for a while). Nothing in phase 1 does.",
+                    "Needs one more one-per-home mailbox made before the first such child: without it the "
+                        .. "child is refused with the make_mailbox call to run.",
+                },
             },
         },
-        leaning = "6: the token is the room's only lock and is attacked offline, so each extra word is cheap "
-            .. "for the person and costly for the guesser. Any whole number >= 1 is accepted by the key, so "
-            .. "the owner can pick another count without code changes.",
+        leaning = "own-mailbox: a port that never moves is correctness, while the waiting mailbox trades it "
+            .. "for one fewer router port and needs a phase 2 announcement to stay correct. Revisit if "
+            .. "orphaned children turn out to be common (many ports) rather than rare.",
+    },
+    {
+        id = "rooms-mailbox-after-parent-change",
+        question = "A room already in a mailbox is given a different declared parent (write_parent). "
+            .. "Should it move into the new parent's mailbox, or keep the one it has?",
+        waits_on = "owner",
+        detail = "issue 101: new (round 3, found while building mailboxes); the owner's rule says where a "
+            .. "room goes when made ('a child room joins its declared parent's mailbox'), not after",
+        config_key = "",
+        variants = {
+            {
+                name = "keep",
+                summary = "It keeps its mailbox (only a room in the waiting mailbox follows a held parent); "
+                    .. "moving by hand is write_mailbox.",
+                built_in = "src/room-folders/002-room-folders.lua (write_parent, settle_waiting) — the only "
+                    .. "variant built",
+                tests = "tests/015-test-mailboxes.lua ('a room already in a mailbox keeps it when its parent "
+                    .. "is changed')",
+                findings = "The port a room listens on changes only when someone asks (write_mailbox), so "
+                    .. "members' addresses for this home stay right. A room whose parent changed can sit in "
+                    .. "a different mailbox from its new parent: the tree and the mailboxes then disagree on "
+                    .. "this home until moved by hand.",
+            },
+            {
+                name = "follow",
+                summary = "It moves (with everything under it) into the new parent's mailbox.",
+                built_in = "not built",
+                tests = "none",
+                findings = "Not built: moves the listening port of a whole subtree on one parent change, with "
+                    .. "the same lost-message problem as the waiting variant above; cheap to add (the "
+                    .. "settling loop already moves rooms) once phase 2 can announce a new port.",
+            },
+        },
+        leaning = "keep, until phase 2 can tell members that a room's port moved.",
     },
     {
         id = "rooms-bell-failure",

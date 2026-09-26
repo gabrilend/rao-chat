@@ -27,7 +27,7 @@ local rooms, tree = t.setup(DIR, arg[2])
 local function set_up_ring(name)
     local home = t.fresh_home(rooms, name)
     local h = t.room(rooms, home, "home", "token-home", "", {})
-    local p = rooms.make_room(home, {
+    local p = t.make(rooms, home, {
         label = "programming", token = "token-prog", kind = "group",
         parent = rooms.token_fingerprint("token-ritz"), filed_under = "", members = {},
     })
@@ -38,7 +38,7 @@ end
 
 -- {{{ local function arrive_ritz
 local function arrive_ritz(home)
-    return rooms.make_room(home, {
+    return t.make(rooms, home, {
         label = "ritz", token = "token-ritz", kind = "group",
         parent = rooms.token_fingerprint("token-home"), filed_under = "", members = {},
     })

@@ -5,8 +5,9 @@
 -- It keeps the part of 101's promise that people-links and its tests use,
 -- in the shapes the phase 1 contract gives: a home with config, rooms
 -- named by a 32-hex local tag, each room's entry (label, token, kind,
--- parent fingerprint, filed-under, member pairs), and a change bell rung
--- after every write.  The test runner uses the real module instead when it
+-- parent fingerprint, mailbox, filed-under, member pairs), the round-3
+-- mailboxes (make_room's mailbox_port rule, the one direct mailbox), and a
+-- change bell rung after every write.  The test runner uses the real module instead when it
 -- has been rewritten.
 --
 -- Stand-in shortcuts (the real 101 differs, which is why people-links only
@@ -16,6 +17,10 @@
 --   token_fingerprint  64 hex from eight rounds of a 32-bit FNV-1a mix, not
 --                      SHA-256 twice: same token, same fingerprint, which
 --                      is all the tests need
+--   rao-home/mailboxes  a Lua table too; no shared-port warnings; no
+--                      waiting mailbox (a parent not held here is always
+--                      treated as mailboxes.unheld-parent = own-mailbox, but
+--                      the key is still read then, as the real 101 does)
 --   no refusals of loops, repeated tokens or bad addresses
 
 local bit = require("bit")
@@ -56,7 +61,7 @@ end
 -- {{{ function M.open_home
 function M.open_home(dir)
     os.execute('mkdir -p "' .. dir .. '/rooms" "' .. dir .. '/people"')
-    for _, name in ipairs({ "config", "ignore" }) do
+    for _, name in ipairs({ "config", "ignore", "mailboxes" }) do
         -- absent: make it empty; present: leave it
         if not file_exists(dir .. "/" .. name) then
             write_text(dir .. "/" .. name, "")
@@ -165,8 +170,8 @@ local function serialize_entry(e)
     for i, m in ipairs(e.members) do
         members[i] = string.format("{address=%q,port=%d,heard=%d}", m.address, m.port, m.heard)
     end
-    return string.format("return {tag=%q,label=%q,token=%q,kind=%q,parent=%q,filed_under=%q,members={%s}}\n",
-        e.tag, e.label, e.token, e.kind, e.parent, e.filed_under, table.concat(members, ","))
+    return string.format("return {tag=%q,label=%q,token=%q,kind=%q,parent=%q,mailbox=%q,filed_under=%q,members={%s}}\n",
+        e.tag, e.label, e.token, e.kind, e.parent, e.mailbox, e.filed_under, table.concat(members, ","))
 end
 -- }}}
 
@@ -186,15 +191,155 @@ function M.read_entry(home, tag)
 end
 -- }}}
 
+-- {{{ local function read_mailboxes
+-- The mailboxes file: a list of { tag, label, kind, port }.  Empty file
+-- (as open_home makes it): no mailboxes.
+local function read_mailboxes(home)
+    local text = read_text(home.dir .. "/mailboxes")
+    -- never written: none yet
+    if text == "" then
+        return {}
+    end
+    return dofile(home.dir .. "/mailboxes")
+end
+-- }}}
+
+-- {{{ local function write_mailboxes
+local function write_mailboxes(home, list)
+    local out = {}
+    for i, m in ipairs(list) do
+        out[i] = string.format("{tag=%q,label=%q,kind=%q,port=%d}", m.tag, m.label, m.kind, m.port)
+    end
+    write_text(home.dir .. "/mailboxes", "return {" .. table.concat(out, ",") .. "}\n")
+end
+-- }}}
+
+-- {{{ local function add_mailbox
+-- Appends one mailbox; gives its tag.  Rings nothing (callers decide).
+local function add_mailbox(home, label, kind, port)
+    -- a port that is not a whole number 1-65535: the caller is wrong
+    if type(port) ~= "number" or port < 1 or port > 65535 or port % 1 ~= 0 then
+        error("stand-in room-folders: a mailbox port is an integer 1-65535, got " .. tostring(port))
+    end
+    local list = read_mailboxes(home)
+    local tag = M.new_local_tag()
+    list[#list + 1] = { tag = tag, label = label, kind = kind, port = port }
+    write_mailboxes(home, list)
+    return tag
+end
+-- }}}
+
+-- {{{ function M.direct_mailbox
+-- The direct mailbox's tag, or "" when none is made yet.
+function M.direct_mailbox(home)
+    for _, m in ipairs(read_mailboxes(home)) do
+        -- the one direct mailbox
+        if m.kind == "direct" then
+            return m.tag
+        end
+    end
+    return ""
+end
+-- }}}
+
+-- {{{ function M.make_mailbox
+-- spec { label, kind = "direct", port }; rings mailbox with "" as 101 does.
+function M.make_mailbox(home, spec)
+    -- the stand-in only makes the direct mailbox (no waiting mailbox)
+    if spec.kind ~= "direct" then
+        error("stand-in room-folders: make_mailbox makes only the direct mailbox here, got " .. tostring(spec.kind))
+    end
+    -- one already: refused, as 101 does
+    if M.direct_mailbox(home) ~= "" then
+        error("stand-in room-folders: a direct mailbox exists already")
+    end
+    local tag = add_mailbox(home, spec.label, spec.kind, spec.port)
+    M.notify(home, "", "mailbox")
+    return tag
+end
+-- }}}
+
+-- {{{ function M.write_mailbox_port
+-- A mailbox's port changes; rings mailbox with "".
+function M.write_mailbox_port(home, mailbox_tag, port)
+    local list = read_mailboxes(home)
+    local found = false
+    for _, m in ipairs(list) do
+        -- this mailbox: new port
+        if m.tag == mailbox_tag then
+            m.port, found = port, true
+        end
+    end
+    -- no such mailbox: loud
+    if not found then
+        error("stand-in room-folders: no mailbox " .. tostring(mailbox_tag))
+    end
+    write_mailboxes(home, list)
+    M.notify(home, "", "mailbox")
+end
+-- }}}
+
+-- {{{ local function choose_mailbox
+-- make_room's mailbox rule (contract, "Mailboxes"): gives the mailbox tag
+-- and checks mailbox_port is an integer exactly when a new one is made.
+local function choose_mailbox(home, spec)
+    local port = spec.mailbox_port
+    local wants_new
+    -- a direct message: the direct mailbox, which must exist
+    if spec.kind == "direct" then
+        wants_new = false
+    -- a top group room: a new tree mailbox
+    elseif spec.parent == "" then
+        wants_new = true
+    -- a declared parent held here: its mailbox
+    elseif M.find_by_fingerprint(home, spec.parent) ~= "" then
+        wants_new = false
+    -- a parent not held here: read the key, as 101 does only then
+    else
+        local choice = M.config_value(home, "mailboxes.unheld-parent")
+        -- the stand-in builds only own-mailbox
+        if choice ~= "own-mailbox" then
+            error("stand-in room-folders: only mailboxes.unheld-parent = own-mailbox is built here")
+        end
+        wants_new = true
+    end
+    -- a new mailbox needs an integer port; the rest need ""
+    if wants_new then
+        -- anything but an integer: refused
+        if type(port) ~= "number" then
+            error("stand-in room-folders: make_room needs spec.mailbox_port (an integer) for a room that starts a mailbox")
+        end
+        return add_mailbox(home, spec.label, "tree", port)
+    end
+    -- not "": refused
+    if port ~= "" then
+        error("stand-in room-folders: spec.mailbox_port must be \"\" for a room that starts no mailbox")
+    end
+    -- a direct message
+    if spec.kind == "direct" then
+        local tag = M.direct_mailbox(home)
+        -- none made yet: refused, as 101 does
+        if tag == "" then
+            error("stand-in room-folders: no direct mailbox; make_mailbox first")
+        end
+        return tag
+    end
+    return M.read_entry(home, M.find_by_fingerprint(home, spec.parent)).mailbox
+end
+-- }}}
+
 -- {{{ function M.make_room
 function M.make_room(home, spec)
+    local mailbox = choose_mailbox(home, spec)
     local tag = M.new_local_tag()
     os.execute('mkdir -p "' .. M.room_dir(home, tag) .. '"')
     write_entry(home, {
         tag = tag, label = spec.label, token = spec.token, kind = spec.kind,
-        parent = spec.parent, filed_under = spec.filed_under, members = spec.members,
+        parent = spec.parent, mailbox = mailbox, filed_under = spec.filed_under,
+        members = spec.members,
     })
     write_text(M.room_dir(home, tag) .. "/withheld", "")
+    write_text(M.room_dir(home, tag) .. "/flagged", "")
     write_text(M.room_dir(home, tag) .. "/log", "")
     M.notify(home, tag, "created")
     return tag
@@ -231,6 +376,14 @@ end
 -- {{{ function M.write_filed_under
 function M.write_filed_under(home, tag, other)
     change_field(home, tag, "filed_under", other, "filed")
+end
+-- }}}
+
+-- {{{ function M.write_mailbox
+-- Moves a room to another mailbox; rings mailbox with the room's tag.  (No
+-- kind-fits check here; the real 101 has one.)
+function M.write_mailbox(home, tag, mailbox_tag)
+    change_field(home, tag, "mailbox", mailbox_tag, "mailbox")
 end
 -- }}}
 

@@ -10,4 +10,4 @@ re-exports all of it.
 | `on_change(listener)` | function(home, tag, what) | nothing | Signs the listener up; listeners are told in sign-up order. |
 | `notify(home, tag, what)` | home table, string, string | nothing | Tells every listener.  Errors on an unknown `what`, a non-home, or a tag that does not fit the kind's scope.  A listener's error stops the ring and reaches the caller. |
 | `listener_count()` | — | integer | How many listeners signed up. |
-| `BELL_KINDS` | — | table what (string) → `{scope = string, meaning = string}` | The kinds: `created label token members heard parent filed withheld log ignore removed-room`.  `scope = "room"`: the tag must be a local tag.  `scope = "home-or-room"` (only `ignore`): `""` for the whole home, or a local tag. |
+| `BELL_KINDS` | — | table what (string) → `{scope = string, meaning = string}` | The kinds: `created label token members heard parent filed withheld log ignore removed-room mailbox`.  `scope = "room"`: the tag must be a local tag.  `scope = "home-or-room"` (`ignore` and `mailbox`): `""` for the whole home, or a local tag. |

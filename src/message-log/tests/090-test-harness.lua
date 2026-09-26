@@ -33,6 +33,7 @@ function harness.start(args, name)
     harness.passed = 0
     harness.failed = 0
     harness.home_count = 0
+    harness.room_count = 0
     os.execute('rm -rf "' .. harness.scratch .. '"')
     os.execute('mkdir -p "' .. harness.scratch .. '"')
     harness.rooms = require("002-room-folders")
@@ -54,14 +55,18 @@ end
 -- }}}
 
 -- {{{ function harness.new_room
--- A new empty group room with a token no other room in the home holds
--- (101 refuses a repeated token), no parent, not filed, no members.
+-- A new empty top-level group room with a token no other room in the home
+-- holds (101 refuses a repeated token), no parent, not filed, no members.
+-- A top room starts its own mailbox, so make_room needs a port for it
+-- (round 3); each room gets a different one, since two mailboxes on one
+-- port make 101 print a warning on every read.
 -- Gives the room's local tag.
 function harness.new_room(home)
+    harness.room_count = harness.room_count + 1
     local tag_for_token = harness.rooms.new_local_tag()
-    return harness.rooms.make_room(home, { label = "room" .. harness.home_count,
+    return harness.rooms.make_room(home, { label = "room" .. harness.room_count,
         token = "test-token-" .. tag_for_token, kind = "group", parent = "",
-        filed_under = "", members = {} })
+        filed_under = "", members = {}, mailbox_port = 20000 + harness.room_count })
 end
 -- }}}
 
@@ -105,17 +110,16 @@ function harness.message(fields)
 end
 -- }}}
 
--- Every combination of the three switches that shape filing and reading.
-harness.SHAPES = { "tsv", "block", "jsonl" }
-harness.MIXINGS = { "fixed", "per-record" }
+-- The one switch left that shapes filing: how a repeat is recognised.
 harness.CHECKS = { "scan", "remembered" }
 
 -- {{{ function harness.settings
-function harness.settings(shape, mixing, check, who)
-    return {
-        ["log.record-shape"] = shape, ["log.shape-mixing"] = mixing,
-        ["log.duplicate-check"] = check, ["log.who-may-edit"] = who or "anyone",
-    }
+-- The config a home needs for the log: only log.duplicate-check.  The
+-- answered keys (log.record-shape, log.shape-mixing, log.who-may-edit,
+-- log.same-id-new-address) are left out on purpose, so a test proves they
+-- are no longer read.
+function harness.settings(check)
+    return { ["log.duplicate-check"] = check }
 end
 -- }}}
 

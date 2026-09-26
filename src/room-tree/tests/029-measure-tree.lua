@@ -5,9 +5,10 @@
 -- works the tree out afresh (a "snapshot"), and every change that could
 -- move a room rewrites every room's `where` note.  That is simple and
 -- cannot fall out of step, but its cost grows with the number of rooms.
--- This script builds homes of increasing size (a chain of children plus
--- side rooms) and prints, for each size, the time for one snapshot, one
--- may_join, and one room made (which rings the bell, so it includes
+-- This script builds homes of increasing size (a tenth of the rooms are
+-- tops, each heading a chain nine deep) and prints, for each size, the time for one snapshot, one
+-- check_member, one failing_below from the top of the deepest chain, and
+-- one room made (which rings the bell, so it includes
 -- rewriting every `where`).  It also times the same making with the
 -- people/ module (104) loaded, which asks the tree about each room.
 --
@@ -48,30 +49,34 @@ local function config_for(home)
 end
 -- }}}
 
-print(string.format("%-8s %-12s %12s %12s %14s", "rooms", "listeners", "snapshot s", "may_join s", "make_room s"))
+print(string.format("%-8s %-12s %12s %12s %12s %14s", "rooms", "listeners", "snapshot s", "check s", "recheck s", "make_room s"))
 for size in SIZES:gmatch("%d+") do
     local n = tonumber(size)
     local home = t.fresh_home(rooms, "measure-" .. n)
     config_for(home)
     local previous = ""
+    local first_top = ""
     for i = 1, n - 1 do
-        local parent = ""
-        -- every other room goes one level deeper; the rest are tops
-        if i % 2 == 0 then
-            parent = previous
+        local parent = previous
+        -- every tenth room starts a new top; the rest go one level deeper
+        -- than the room before, so each top heads a chain nine deep
+        if i % 10 == 1 then
+            parent = ""
         end
         local tag = t.room(rooms, home, "room-" .. i, "token-" .. n .. "-" .. i, parent,
             { { "10.0.0." .. (i % 250 + 1), 7777 } })
-        -- a top: the next deeper room hangs from it
-        if parent == "" then
-            previous = tag
+        previous = tag
+        -- the very first top: the re-check is timed from it
+        if i == 1 then
+            first_top = tag
         end
     end
     local snap_time = seconds(function() tree.snapshot(home) end)
     local tag_any = rooms.list_rooms(home)[1]
-    local join_time = seconds(function() tree.may_join(home, tag_any, "10.0.0.1", 7777) end)
+    local join_time = seconds(function() tree.check_member(home, tag_any, "10.0.0.1", 7777) end)
+    local recheck_time = seconds(function() tree.failing_below(home, first_top) end)
     local make_time = seconds(function()
         t.room(rooms, home, "last", "token-last-" .. n, "", {})
     end)
-    print(string.format("%-8d %-12s %12.4f %12.4f %14.4f", n, WITH, snap_time, join_time, make_time))
+    print(string.format("%-8d %-12s %12.4f %12.4f %12.4f %14.4f", n, WITH, snap_time, join_time, recheck_time, make_time))
 end

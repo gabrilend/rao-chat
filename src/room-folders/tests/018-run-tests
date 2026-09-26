@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # 018-run-tests — runs every room-folders test file and adds up the results.
 #
-# Each test file in this folder (the numbered *-test-*.lua files; retired
-# *-done files are never matched, so never run) is run
+# Each test file in this folder (the numbered *-test-*.lua files) is run
 # with luajit, one after another.  Each prints a PASS or FAIL line per
 # check and ends with "counts <passed> <failed>"; this script shows the
 # failures, adds the counts up, prints the totals, and exits non-zero if

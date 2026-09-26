@@ -1,7 +1,8 @@
--- 091-test-codecs.lua — checks that each of the three record shapes writes
--- any text and reads it back unchanged (tabs, newlines, backslashes, empty
+-- 091-test-codecs.lua — checks that the log's record shape (tsv) writes any
+-- text and reads it back unchanged (tabs, newlines, backslashes, empty
 -- text, non-ASCII, every byte value, random bytes), that text can never
--- pose as a record's id marker, and that damaged records are refused.
+-- pose as a record's id marker, and that damaged records — including lines
+-- in the retired block and jsonl shapes — are refused, not guessed at.
 --
 -- Run: luajit 091-test-codecs.lua [DIR] [real|stand-in]
 
@@ -61,13 +62,14 @@ local function same_record(a, b)
 end
 -- }}}
 
-for _, shape in ipairs(t.SHAPES) do
+do
+    local shape = codecs.SHAPE
     local codec = codecs.get(shape)
     local all_ok = true
     for position, text in ipairs(TEXTS) do
         local record = record_with(text)
         local encoded = codec.encode(record)
-        local parsed = reader.parse(encoded, "fixed", shape)
+        local parsed = reader.parse(encoded)
         local ok = #parsed == 1 and same_record(parsed[1], record)
         -- Path: round trip broke — report which text.
         if not ok then
@@ -84,7 +86,7 @@ for _, shape in ipairs(t.SHAPES) do
         record.id = string.format("%032x", position)
         pieces[#pieces + 1] = codec.encode(record)
     end
-    local parsed = reader.parse(table.concat(pieces), "fixed", shape)
+    local parsed = reader.parse(table.concat(pieces))
     local in_order = #parsed == #TEXTS
     for position, record in ipairs(parsed) do
         in_order = in_order and record.text == TEXTS[position]
@@ -94,17 +96,16 @@ for _, shape in ipairs(t.SHAPES) do
 
     -- Edit records round-trip too.
     local fix = record_with("fixed text\n", "correction", "abc")
-    t.check(same_record(reader.parse(codec.encode(fix), "fixed", shape)[1], fix),
+    t.check(same_record(reader.parse(codec.encode(fix))[1], fix),
         shape .. " round-trips a correction record")
     local gone = record_with("", "deletion", "abc")
-    t.check(same_record(reader.parse(codec.encode(gone), "fixed", shape)[1], gone),
+    t.check(same_record(reader.parse(codec.encode(gone))[1], gone),
         shape .. " round-trips a deletion record")
 
     -- Text that contains other shapes' and this shape's marker text for some
     -- id must not be found as that id.
     local fake_id = "ffffffffffffffffffffffffffffffff"
-    local sneaky = "x" .. codecs.tsv.id_marker(fake_id) .. codecs.block.id_marker(fake_id)
-        .. codecs.jsonl.id_marker(fake_id) .. "y"
+    local sneaky = "x" .. codecs.tsv.id_marker(fake_id) .. "y" .. fake_id .. "\t" .. fake_id
     local file_text = codec.encode(record_with(sneaky))
     local marker = codec.id_marker(fake_id)
     t.check(("\n" .. file_text):find(marker, 1, true) == nil,
@@ -114,38 +115,36 @@ for _, shape in ipairs(t.SHAPES) do
 
     -- A record cut short is refused.
     t.refuses(function()
-        reader.parse(codec.encode(record_with("abc")):sub(1, -2), "fixed", shape)
+        reader.parse(codec.encode(record_with("abc")):sub(1, -2))
     end, "part-way", shape .. " refuses a record cut short")
-
-    -- detect names this shape from its first line.
-    local first_line = codec.encode(record_with("x")):match("^[^\n]*")
-    t.check(codecs.detect(first_line) == shape, shape .. " is detected from its first line")
 end
 
 -- Damaged records are refused, with a reason.
-t.refuses(function() reader.parse("a\tb\tc\n", "fixed", "tsv") end, "fields", "tsv refuses a short line")
+t.refuses(function() reader.parse("a\tb\tc\n") end, "fields", "tsv refuses a short line")
 t.refuses(function()
-    reader.parse("abc\tme\t1\t1\tmessage\t\tbad \\q escape\n", "fixed", "tsv")
+    reader.parse("abc\tme\t1\t1\tmessage\t\tbad \\q escape\n")
 end, "unknown escape", "tsv refuses an unknown escape")
 t.refuses(function()
-    reader.parse("abc\tme\tsoon\t1\tmessage\t\ttext\n", "fixed", "tsv")
+    reader.parse("abc\tme\tsoon\t1\tmessage\t\ttext\n")
 end, "written", "tsv refuses a non-number time")
 t.refuses(function()
-    reader.parse("abc\tme\t1\t1\tshout\t\ttext\n", "fixed", "tsv")
+    reader.parse("abc\tme\t1\t1\tshout\t\ttext\n")
 end, "unknown kind", "tsv refuses an unknown kind")
+t.refuses(function() reader.parse("\n") end, "empty line", "an empty line is refused")
+t.refuses(function() reader.parse("abc\tme\t1\t1\tmessage\t\ttext") end, "part-way",
+    "a last line without its newline is refused")
+t.refuses(function() codecs.get("block") end, "not one of tsv", "the retired block shape is not offered")
+t.refuses(function() codecs.get("jsonl") end, "not one of tsv", "the retired jsonl shape is not offered")
+t.check(codecs.block == nil and codecs.jsonl == nil and codecs.detect == nil,
+    "the retired codecs and shape detection are gone")
+
+-- A log written by round 2 in a retired shape is refused loudly, never
+-- read as something else.
 t.refuses(function()
-    reader.parse("id: a\nfrom: me\nwritten: 1\narrived: 1\nkind: message\ntarget:\ntext:\nnot indented\n\n",
-        "fixed", "block")
-end, "not indented", "block refuses an unindented text line")
+    reader.parse("id: a\nfrom: me\nwritten: 1\narrived: 1\nkind: message\ntarget:\ntext:\n  hi\n\n")
+end, "fields, wanted 7", "a block-shaped record is refused")
 t.refuses(function()
-    reader.parse("id: a\nwritten: 1\n\n", "fixed", "block")
-end, "should be 'from:'", "block refuses a missing label")
-t.refuses(function() reader.parse("{not json\n", "fixed", "jsonl") end, "not a JSON object", "jsonl refuses garbage")
-t.refuses(function()
-    reader.parse('{"id":"a","from":"me","written":1,"arrived":1,"kind":"message","target":""}\n', "fixed", "jsonl")
-end, "lacks 'text'", "jsonl refuses a record without text")
-t.refuses(function() reader.parse("\n", "fixed", "tsv") end, "empty line", "an empty line is refused")
-t.refuses(function() codecs.get("xml") end, "not one of", "an unknown shape is refused")
-t.refuses(function() reader.parse("", "sometimes", "tsv") end, "log.shape-mixing", "an unknown mixing value is refused")
+    reader.parse('{"id":"a","from":"me","written":1,"arrived":1,"kind":"message","target":"","text":"hi"}\n')
+end, "fields, wanted 7", "a jsonl-shaped record is refused")
 
 t.finish()

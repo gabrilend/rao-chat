@@ -28,16 +28,16 @@ local p1 = t.room(rooms, one, "programming", "quiet-anvil-saffron-dune", r1, {})
 -- Made bottom-up on purpose (programming arrives first): the tree must
 -- join whatever order rooms arrive in.
 local two = t.fresh_home(rooms, "two-homes-housemate")
-local p2 = rooms.make_room(two, {
+local p2 = t.make(rooms, two, {
     label = "code-club", token = "quiet-anvil-saffron-dune", kind = "group",
     parent = rooms.token_fingerprint("cobalt-ferry-lantern-oak"), filed_under = "", members = {},
 })
 t.equal(tree.placement(two, p2).parent_unheld, true, "housemate: code-club arrives before its parent")
-local r2 = rooms.make_room(two, {
+local r2 = t.make(rooms, two, {
     label = "ritz-corner", token = "cobalt-ferry-lantern-oak", kind = "group",
     parent = rooms.token_fingerprint("maple-orbit-velvet-tin"), filed_under = "", members = {},
 })
-local h2 = rooms.make_room(two, {
+local h2 = t.make(rooms, two, {
     label = "our-house", token = "maple-orbit-velvet-tin", kind = "group",
     parent = "", filed_under = "", members = {},
 })
@@ -55,7 +55,7 @@ t.equal(#tree.tops(two), 1, "housemate: one tree")
 
 -- a friend holds only programming: a top, marked, in the friend's label
 local three = t.fresh_home(rooms, "two-homes-friend")
-local p3 = rooms.make_room(three, {
+local p3 = t.make(rooms, three, {
     label = "programming", token = "quiet-anvil-saffron-dune", kind = "group",
     parent = rooms.token_fingerprint("cobalt-ferry-lantern-oak"), filed_under = "", members = {},
 })

@@ -51,35 +51,14 @@ local function marker_start(content, marker)
 end
 -- }}}
 
--- Which shapes' markers to search for, per log.shape-mixing value.
-local SHAPES_TO_SEARCH = {
-    -- {{{ local function fixed
-    ["fixed"] = function(shape)
-        return { shape }
-    end,
-    -- }}}
-    -- {{{ local function per_record
-    ["per-record"] = function(shape)
-        return codecs.SHAPE_NAMES
-    end,
-    -- }}}
-}
-
 -- {{{ local function scan
-local function scan(path, id, mixing, shape)
+local function scan(path, id)
     local content = reader.read_file(path)
-    local choose = SHAPES_TO_SEARCH[mixing]
-    -- Path: known mixing value — search.  Unknown — let the reader's
-    -- picker raise its error (one place owns that message).
-    if not choose then
-        reader.picker(mixing)
-    end
-    for _, each_shape in ipairs(choose(shape)) do
-        local start = marker_start(content, codecs.get(each_shape).id_marker(id))
-        -- Path: this shape's marker is in the file — decode that record.
-        if start then
-            return true, reader.parse_one(content, start, mixing, shape)
-        end
+    local start = marker_start(content, codecs.get(codecs.SHAPE).id_marker(id))
+    -- Path: the id's marker is in the file — decode that record.  Not
+    -- there — absent.
+    if start then
+        return true, reader.parse_one(content, start)
     end
     return false
 end
@@ -113,7 +92,7 @@ end
 -- }}}
 
 -- {{{ local function remembered
-local function remembered(path, id, mixing, shape)
+local function remembered(path, id)
     local file = io.open(path, "rb")
     -- Path: opened — check.  Missing — the room is not there.
     if not file then
@@ -133,7 +112,7 @@ local function remembered(path, id, mixing, shape)
     local added = file:read("*a")
     -- Path: something new — parse it.  Nothing new — memory is current.
     if #added > 0 then
-        local records = reader.parse(added, mixing, shape)
+        local records = reader.parse(added)
         for _, record in ipairs(records) do
             -- Path: first time this id is seen — keep it.  Seen before —
             -- the file holds two records with one id, which filing never
@@ -165,16 +144,15 @@ local STRATEGIES = { ["scan"] = scan, ["remembered"] = remembered }
 -- path:     string, the log file.
 -- id:       string, the message id looked for.
 -- strategy: string, "scan" or "remembered" (log.duplicate-check).
--- mixing:   string, log.shape-mixing.  shape: string, log.record-shape.
 -- Gives:    true and the record already filed with that id, or false.
-function duplicates.find(path, id, strategy, mixing, shape)
+function duplicates.find(path, id, strategy)
     local check = STRATEGIES[strategy]
     -- Path: known strategy — run it.  Unknown — refuse (config typo).
     if not check then
         error("message-log: log.duplicate-check '" .. tostring(strategy)
             .. "' is not one of scan, remembered", 0)
     end
-    return check(path, id, mixing, shape)
+    return check(path, id)
 end
 -- }}}
 

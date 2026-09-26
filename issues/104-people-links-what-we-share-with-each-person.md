@@ -8,10 +8,40 @@
 
 ## Current Behavior
 
-Rebuilt for the room-is-a-contact model (round 2, 2026-09-25) and tested:
-739 checks pass — 244 against stand-ins, 244 against the real 101 with a
-stand-in 102, 251 against the real 101, 102 and 103 together.  Run
-`luajit src/people-links/tests/073-run-tests.lua`.
+Rebuilt for the room-is-a-contact model (round 2, 2026-09-25), then
+brought up to round 3's mailboxes and flags (a small fix after the other
+builders' round 3), and tested: 768 checks pass — 253 against stand-ins,
+253 against the real 101 with a stand-in 102, 262 against the real 101,
+102 and 103 together.  Run `luajit src/people-links/tests/073-run-tests.lua`.
+The phase 1 demo (`./run-phase-demo 1`) runs all 10 scenes, people
+included, on the real modules.
+
+Round 3 (mailboxes and flags) as it touches people/:
+
+- **Mailboxes change no link.**  A mailbox is a listening port grouping a
+  top room's tree (or every direct message).  101's bell kind `mailbox`
+  (a mailbox made, a port changed, a room moved) is heard and ignored;
+  before this fix it was refused as an unknown kind, which stopped any home
+  from making its direct mailbox while 104 was loaded.  An unlisted kind is
+  still an error.
+- **A flagged member counts.**  103's `add_member` can answer
+  `added-flagged`: the member is written into the entry but held off the
+  send list until approved or declined.  104 reads membership from the
+  entry, so a flagged member makes the room theirs (and can make it a top
+  for them) at once; the `withheld` ring, which now also covers 103's
+  `flagged` file, still moves nothing.  Recorded as the owner's choice
+  `people-flagged-members` (built: `count`; not built: `leave-out`).
+- **Tests make rooms the round-3 way.**  The test harness makes every home's
+  direct mailbox first (so every test also hears a `mailbox` ring) and
+  passes 101's `mailbox_port` (a fresh port for a room starting a mailbox,
+  `""` for one joining its held parent's or the direct mailbox).  The
+  stand-in 101 learned the same rule.  New test file
+  `076-test-mailboxes-and-flags.lua` (a port change and a room move leave
+  people/ unchanged; the owner's round-3 coder-in-shopping example, flagged
+  by the real 103 in real mode and by hand otherwise; declining moves no
+  link).  The neighbour test sets 102's and 103's current keys (the answered
+  `ignore.hide-files`, `ignore.match`, `tree.unheld-parent-join` are no
+  longer set).
 
 What exists in `src/people-links/` (each file with a `.info.md`):
 
@@ -25,17 +55,18 @@ What exists in `src/people-links/` (each file with a `.info.md`):
   direct message's address pairs; tops are their rooms whose tree parent
   (declared if held, else filed-under) is not theirs.  Rebuilds on
   `created`, `label`, `token`, `members`, `parent`, `filed`,
-  `removed-room`; ignores `heard`, `withheld`, `ignore`, `log`; errors on
-  any other kind.  Offers `top_rooms_for` (by direct-message tag),
+  `removed-room`; ignores `heard`, `withheld`, `ignore`, `log`, `mailbox`;
+  errors on any other kind.  Offers `top_rooms_for` (by direct-message tag),
   `top_rooms_for_addresses`, `people`, `planned_links`, `rebuild_person`,
   `rebuild_all`, `read_snapshot`.
 - `062-disk-links.lua` — unchanged from round 1.
 - `063-link-names.lua` — the three collision modes; now also names
   people's folders (ids may be longer than a tag).
-- `079-options.lua` — seven choices: five switchable
+- `079-options.lua` — eight choices: five switchable
   (`people.link-collision`, `people.slash-in-link-name`,
   `people.direct-message-link`, `people.members-without-dm`,
-  `people.person-folder-collision`), two not (own devices, rebuild scope).
+  `people.person-folder-collision`), three not (own devices, rebuild scope,
+  and — round 3 — whether a flagged member counts).
 - Tests: the owner's example on the new model (programming filed under
   ritz, since the girlfriend is not in ritz and so cannot be in a declared
   child of it) in all three collision modes, bell-only; a person in three
@@ -46,8 +77,9 @@ What exists in `src/people-links/` (each file with a `.info.md`):
   safety of anything not ours; the real 102's ancestors agreeing with our
   tops; the real 103's `add_member` moving links and `withhold` not.
 
-Retired (kept as `-done` until one commit carries them): the round-1
-versions of 061, 063, 079, their `.info.md`s, and tests 064–073;
+Retired (the `-done` copies carried by one commit, then deleted in round
+3): the round-1 versions of 061, 063, 079, their `.info.md`s, and tests
+064–073;
 `people.split-records` (no splits any more); the `people.own-devices`
 switch (the home keeps no list of your own devices now — no contacts file
 — so `all-tops` has nothing to act on until pairing exists).
@@ -129,6 +161,12 @@ them one at a time.  An issue with any of them unanswered is in progress.
 5. **Rebuilding everything on each bell ring** (waits on a measurement of a
    real home): 400 rooms take 19 ms per rebuild; making 400 rooms one by
    one, 5 s in total, growing with the square of the room count.
+6. **A flagged member** (added, but held off the send list until you
+   approve or decline, because the room tree could not vouch for them):
+   does that room count as one you share with them?  Built: `count` (they
+   are a member; people/ shows membership, as with withholding).  Not
+   built: `leave-out` (104 would read 103's flagged file and rebuild on
+   every `withheld` ring).  Builder's leaning: `count`.
 
 ## Earlier designs
 

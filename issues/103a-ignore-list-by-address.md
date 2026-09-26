@@ -9,10 +9,10 @@
 
 ## Current Behavior
 
-Built (round 2, 2026-09-25) in `src/recipients/042-ignore-list.lua`, with
-its `.info.md`, and tested in `src/recipients/tests/048-test-ignore.lua`
-(17 of 103's 62 checks; all pass against the stand-ins and against the real
-101 and 102).
+Built (round 2) and fixed in place for two answered choices (round 3,
+2026-09-25) in `src/recipients/042-ignore-list.lua`, with its `.info.md`,
+and tested in `src/recipients/tests/048-test-ignore.lua` (part of 103's
+run; see 103 for the counts).
 
 - **The file** is `rao-home/ignore` (101 makes it empty with the home): one
   line per entry, `<address> <port> <level> <added> <scope>` — level `hide`
@@ -20,34 +20,37 @@ its `.info.md`, and tested in `src/recipients/tests/048-test-ignore.lua`
   home or a room's local tag.
 - **Ignoring** gives ignored, level-changed (the time is restamped) or
   already (nothing written, no bell); **un-ignoring** something not on the
-  list is an error.  Every change rings the bell `ignore`: on `""` for a
-  whole-home entry, on the room's tag for a one-room entry.
+  list (exact pair and scope) is an error.  Every change rings the bell
+  `ignore`: on `""` for a whole-home entry, on the room's tag for a
+  one-room entry.
+- **An entry covers the whole IP address**, every port there (answered
+  2026-09-25; the `ignore.match` switch is gone).  The port is still
+  written on the line, since an address is always kept as a pair.
+  Ignoring one port of an address ignores the others; everyone else behind
+  that same public address is covered too.
 - **Asking** "how is this address ignored in this room?" gives none, hide
-  or mark; when two lines match, hide wins over mark, as a rule, so the
-  order of lines never decides.  A second question, "should this message
-  be filed at all?", is for the message log (105) to ask before filing.
+  or mark; when two lines match (two ports at one address, or a whole-home
+  line beside a one-room line), hide wins over mark, as a rule.
+- **A hidden address's messages are not filed** (answered 2026-09-25; the
+  `ignore.hide-files` switch is gone): "should this message be filed at
+  all?" answers false for `hide` and true otherwise (`mark` is filed, so
+  the room can show that they spoke).  The message log (105) asks it
+  before filing.  Nothing is sent back.
 - **The member filter**: 103's adding refuses an address ignored at either
-  level, so another member's list cannot bring it back; un-ignoring lets
-  it in again.  Ignoring an existing member does not remove them, and does
-  not withhold them.
+  level, before the room tree is asked, so another member's list cannot
+  bring it back; un-ignoring lets it in again.  Ignoring an existing
+  member does not remove them, and does not withhold them.
 - **An address change escapes the list**, by design.
 
-Built every way, chosen in `rao-home/config` (absent or unknown values are
-errors), recorded in `059-options.lua`:
-
-- `ignore.hide-files` — open question 1: `filed` or `not-filed`.  `mark` is
-  filed under both, since the room must show that they spoke.
-- `ignore.scope` — open question 2: `home` (a one-room entry is refused,
-  and one found in the file is reported) or `home-and-room`.
-- `ignore.match` — found while building: an entry covers its exact
-  `pair`, or every port at the `host`.  The owner's words ("until they
-  change IP addresses") lean to host; the glossary's "an address is always
-  a pair" leans to pair.  Host also ignores everyone sharing that public
-  address.
+Still built both ways, chosen in `rao-home/config` (absent or unknown values
+are errors), recorded in `059-options.lua`: `ignore.scope` — open question
+2: `home` (a one-room entry is refused, and one found in the file is
+reported) or `home-and-room`.
 
 Not integrated: the message log (105) does not yet ask `how_ignored` or
-`files_message`; the clients' views that show "someone you ignore spoke"
-are later phases.
+`files_message`; the cross-check's "no summaries to an ignored address"
+is phase 2 (issue 209); the clients' views that show "someone you ignore
+spoke" are later phases.
 
 ## Intended Behavior
 

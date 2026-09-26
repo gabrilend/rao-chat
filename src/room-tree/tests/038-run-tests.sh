@@ -41,11 +41,11 @@ for target in $TARGETS; do
         continue
     fi
     # 032-035 and 037 run against either module; 036 meets the real
-    # neighbours (members, people links) and so runs only on real.  The
-    # patterns end in .lua, so retired -done files are never run.
+    # neighbours (members, people links) and 028 the real mailboxes, so
+    # those two run only on real.
     PATTERN="$TESTS/03[2-57]-test-*.lua"
     if [ "$target" = "real" ]; then
-        PATTERN="$TESTS/03[2-7]-test-*.lua"
+        PATTERN="$TESTS/028-test-*.lua $TESTS/03[2-7]-test-*.lua"
     fi
     for test in $PATTERN; do
         if ! luajit "$test" "$DIR" "$target"; then

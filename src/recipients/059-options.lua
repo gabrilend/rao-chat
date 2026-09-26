@@ -8,39 +8,12 @@
 -- the one the demo starts with.  The "findings" are what building and
 -- testing each variant actually showed, so the choice can be made on facts.
 -- Plain data: nothing here runs.
+--
+-- Answered and fixed in place (round 3, 2026-09-25), so no longer listed:
+-- ignore-hide-files (a hidden address's messages are not filed) and
+-- ignore-match (an ignore entry covers every port at its address).
 
 return {
-    {
-        id = "ignore-hide-files",
-        question = "When you hide an address entirely, are its messages still written to your room's log (just never shown), or not written at all?",
-        waits_on = "owner",
-        detail = "issue 103a open question 1",
-        config_key = "ignore.hide-files",
-        variants = {
-            {
-                name = "filed",
-                summary = "Written to the log, never shown.",
-                built_in = "src/recipients/042-ignore-list.lua (files_message)",
-                tests = "tests/048-test-ignore.lua",
-                findings = "Your log stays a full record of the room, which the periodic cross-check (phase 2, "
-                    .. "issue 209) compares with other members' logs: with hidden messages missing, every "
-                    .. "comparison with a member who does not ignore that address would show gaps. "
-                    .. "Un-ignoring later shows everything they said while hidden. Costs disk for text you "
-                    .. "never read. The log (105) must ask files_message before filing; the view asks how_ignored.",
-            },
-            {
-                name = "not-filed",
-                summary = "Dropped on arrival; nothing kept.",
-                built_in = "src/recipients/042-ignore-list.lua (files_message)",
-                tests = "tests/048-test-ignore.lua",
-                findings = "Saves space and keeps nothing of a person you want gone. Un-ignoring cannot bring "
-                    .. "back what was said meanwhile, and the cross-check will see your log as missing their "
-                    .. "messages (normal per the planning document, 'a missing message is normal', but noisy). "
-                    .. "'mark' is always filed under both variants: the room has to show that they spoke.",
-            },
-        },
-        leaning = "filed, as the issue suggests: the log is your record, and the cross-check stays quiet.",
-    },
     {
         id = "ignore-scope",
         question = "Is the ignore list only for the whole home, or may you also ignore an address in one room only?",
@@ -74,33 +47,62 @@ return {
             .. "withholding plus not opening the room already gives.",
     },
     {
-        id = "ignore-match",
-        question = "Does an ignore line cover only that exact address and port, or every port at that address?",
+        id = "recipients-flag-after-passing",
+        question = "A flagged member later passes the check (the room above arrives and holds them, or they join it). Does the flag stay until you review it, or clear by itself?",
         waits_on = "owner",
-        detail = "found while building 103a: an address is always a pair, but the owner's words were 'until they change IP addresses'",
-        config_key = "ignore.match",
+        detail = "found while building 103 round 3 (flagged members); read only when a flagged member passes a re-check",
+        config_key = "recipients.flag-after-passing",
         variants = {
             {
-                name = "pair",
-                summary = "Only the exact (address, port).",
-                built_in = "src/recipients/042-ignore-list.lua (MATCHERS.pair)",
-                tests = "tests/048-test-ignore.lua",
-                findings = "Consistent with 'an address is always a pair': two people behind one household "
-                    .. "router differ only by port, and ignoring one does not ignore the other. Someone "
-                    .. "escapes it by changing only their port, which is one line of their config.",
+                name = "kept",
+                summary = "The flag stays until you approve or decline; its word is not changed.",
+                built_in = "src/recipients/041-recipients.lua (AFTER_PASSING, recheck_flagged_in)",
+                tests = "tests/054-test-child-room.lua ('flag-after-passing = kept')",
+                findings = "Nothing disappears unseen: every flag is reviewed by a person, as the owner "
+                    .. "described ('manually reviewed by the user'). The cost: a member of a child room made "
+                    .. "before its parent arrived stays orange and unsent-to even after the parent shows "
+                    .. "they belong, until someone clicks approve.",
             },
             {
-                name = "host",
-                summary = "Every port at that address.",
-                built_in = "src/recipients/042-ignore-list.lua (MATCHERS.host)",
-                tests = "tests/048-test-ignore.lua",
-                findings = "Matches the owner's wording ('until they change IP addresses'). Also ignores "
-                    .. "everyone else sharing that public address (a household, a Tor exit, a university). "
-                    .. "Two lines at one address with different levels can both match; the stronger level "
-                    .. "(hide over mark) wins, written as a rule so file order never decides.",
+                name = "cleared",
+                summary = "The flag line is deleted; they are an ordinary member again.",
+                built_in = "src/recipients/041-recipients.lua (AFTER_PASSING, recheck_flagged_in)",
+                tests = "tests/054-test-child-room.lua ('flag-after-passing = cleared')",
+                findings = "The common case (join a child first, its parent later) fixes itself when the "
+                    .. "parent arrives. A flag can then vanish without the person ever seeing it; messages "
+                    .. "they wrote while it was flagged were never sent to that member (phase 2's resending "
+                    .. "of gaps, issue 209, would fill them on the next cross-check).",
             },
         },
-        leaning = "pair, to keep 'an address is a pair' true everywhere; host is one line away if port-hopping becomes a problem.",
+        leaning = "cleared: a flag says 'this does not match the tree'; once it matches there is nothing to review.",
+    },
+    {
+        id = "recipients-approval-lasts",
+        question = "How long does approving a flagged member last?",
+        waits_on = "owner",
+        detail = "found while building 103 round 3: without remembering approvals, a member of a child whose parent is not held here would be flagged again on every members change",
+        config_key = "",
+        variants = {
+            {
+                name = "until-they-leave",
+                summary = "An 'approved' line is kept in the flagged file until the address's confirmed leave.",
+                built_in = "src/recipients/041-recipients.lua (approve, flag_rows, confirm_leave)",
+                tests = "tests/054-test-child-room.lua ('an approved member is not flagged again')",
+                findings = "Re-checks skip approved members, so approval is asked once. A member who "
+                    .. "later drops out of the parent too is NOT flagged again (you already said yes to "
+                    .. "them here); leaving and coming back starts over, since the leave deletes the line.",
+            },
+            {
+                name = "until-the-answer-changes",
+                summary = "The approval holds only for the answer it was given against (no or cannot-check). Not built.",
+                built_in = "not built",
+                tests = "none",
+                findings = "Would need the approved line to keep the answer it overrode; a cannot-check "
+                    .. "approval would come back as a flag when the parent arrives and says no. Cheap to "
+                    .. "build if wanted: the line would read '<address> <port> approved-<answer>'.",
+            },
+        },
+        leaning = "until-they-leave: approval is a statement about a person, not about the tree.",
     },
     {
         id = "recipients-shared-address-label",
@@ -200,7 +202,7 @@ return {
                 tests = "tests/053-test-leave-and-heard.lua",
                 findings = "One call per message, one entry rewrite at most (none when an older message "
                     .. "arrives late: the time only moves forward). Also re-adds a returning member and "
-                    .. "applies the ignore and parent refusals in the same step. Needs phase 2 (or the demo) "
+                    .. "applies the ignore refusal and the tree flag in the same step. Needs phase 2 (or the demo) "
                     .. "to make the call.",
             },
             {

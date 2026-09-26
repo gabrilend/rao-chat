@@ -86,6 +86,62 @@ end
 kit.fresh_home_dir = fresh_home_dir
 -- }}}
 
+-- The next listening port handed to a room that starts its own mailbox.
+-- Each top room in a test gets a port of its own (the recommended shape),
+-- so a shared port only ever appears where a test makes one on purpose.
+kit.next_port = 7000
+
+-- The ports of a test home's one-per-home mailboxes, kept apart from the
+-- counted ports above.
+kit.DIRECT_PORT = 7700
+kit.WAITING_PORT = 7701
+
+-- {{{ local function port_for
+-- What a make_room spec's mailbox_port must be for a room of this kind
+-- and declared parent, as the contract's placement table says: a fresh
+-- port for a top group room (it starts a mailbox), "" for everything
+-- else.  A child of an unheld parent under own-mailbox also needs a port;
+-- such tests pass kit.fresh_port() themselves.
+local function port_for(kind, parent)
+    -- a top group room: starts a mailbox.  Anything else: joins one.
+    if kind == "group" and parent == "" then
+        return kit.fresh_port()
+    end
+    return ""
+end
+kit.port_for = port_for
+-- }}}
+
+-- {{{ local function fresh_port
+local function fresh_port()
+    kit.next_port = kit.next_port + 1
+    return kit.next_port
+end
+kit.fresh_port = fresh_port
+-- }}}
+
+-- {{{ local function test_home
+-- A fresh home ready for rooms of every kind: its direct-message mailbox
+-- made, and, when `unheld` names a variant of mailboxes.unheld-parent,
+-- that key set (and, for waiting-mailbox, the waiting mailbox made).
+-- `unheld` "" leaves the key unset: making a child of an unheld parent is
+-- then an error, as it should be on a home nobody configured.
+local function test_home(rooms, name, unheld)
+    local home = rooms.open_home(fresh_home_dir(name))
+    rooms.make_mailbox(home, { label = "direct messages", kind = "direct", port = kit.DIRECT_PORT })
+    -- a variant named: set it.  "": leave the key absent on purpose.
+    if unheld ~= "" then
+        rooms.set_config(home, rooms.UNHELD_PARENT_KEY, unheld)
+    end
+    -- the waiting variant needs its mailbox; the own variant needs none.
+    if unheld == "waiting-mailbox" then
+        rooms.make_mailbox(home, { label = "waiting", kind = "waiting", port = kit.WAITING_PORT })
+    end
+    return home
+end
+kit.test_home = test_home
+-- }}}
+
 -- {{{ local function read_file
 local function read_file(path)
     local handle = assert(io.open(path, "rb"))

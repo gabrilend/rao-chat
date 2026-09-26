@@ -27,6 +27,9 @@ What it does, in order:
 
 Scratch homes: `tmp/shared-memory/phase-1-demo/<scene>-<variant>/rao-home`.
 
+101's shared-port reports go to stderr except during the mailboxes scene,
+which collects them to show them (and points the sink back at stderr after).
+
 Exit status: 0 when every scene ran, 1 otherwise.
 
 No outward functions.

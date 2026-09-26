@@ -36,6 +36,12 @@ return {
                         .. "not yet listed, nor was 101's rooms.suggested-token-words; only 1 of 9 scenes (the tally) ran until they were).",
                     "An input line naming an unknown key or an unbuilt value stops the demo before any "
                         .. "scene runs, naming the line.",
+                    "Round 3: as the owner answered choices, their keys left the options files (log.record-shape, "
+                        .. "log.who-may-edit, log.shape-mixing, log.same-id-new-address, "
+                        .. "rooms.suggested-token-words, tree.unheld-parent-join, ignore.hide-files, ignore.match) "
+                        .. "and the baseline dropped them with no change to its code; the one new key "
+                        .. "(mailboxes.unheld-parent) arrived the same way. Answered choices need no baseline at "
+                        .. "all, so the question covers fewer keys each round.",
                 },
             },
             {

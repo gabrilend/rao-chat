@@ -24,15 +24,16 @@ local GF, FRIEND, HOUSE = "gf.example 7000", "friend.example 7001", "house.examp
 -- {{{ local function neighbour_home
 -- A home with every key the real 102 and 103 read on the paths used here
 -- (their first-listed variants), so their code never stops on a missing
--- one.  Which keys they are was read from their options files.
+-- one.  Which keys they are was read from their options files (round 3:
+-- ignore.hide-files, ignore.match and tree.unheld-parent-join were
+-- answered and are no longer read, so they are no longer set here).
 local function neighbour_home(name)
     local home = H.fresh_home(name, {})
     local keys = {
-        { "ignore.hide-files", "filed" },
         { "ignore.scope", "home" },
-        { "ignore.match", "pair" },
         { "recipients.shared-address-label", "all-labels" },
-        { "tree.unheld-parent-join", "refuse" },
+        { "recipients.flag-after-passing", "kept" },
+        { "tree.filing-loop", "unfile" },
     }
     for _, pair in ipairs(keys) do
         rooms.set_config(home, pair[1], pair[2])

@@ -3,9 +3,9 @@
 -- Checks that the fingerprint is SHA-256 twice (against known values),
 -- is the same on two separate homes for the same token and differs from
 -- the sealing key; that the word list is intact; that suggestions are
--- made of list words joined by dashes and spread evenly; and that every
--- variant of the word-count choice (rooms.suggested-token-words) works
--- and that the key has no default.
+-- made of list words joined by dashes and spread evenly; and that a
+-- suggested token has six words with no setting consulted (the owner's
+-- answer; the round-2 switch rooms.suggested-token-words is gone).
 -- Run: luajit 010-test-tokens.lua [project folder]
 
 local DIR = arg[1] or "/home/ritz/programs/rao-chat"
@@ -22,7 +22,8 @@ end
 
 -- {{{ local function spec
 local function spec(label, token, parent)
-    return { label = label, token = token, kind = "group", parent = parent, filed_under = "", members = {} }
+    return { label = label, token = token, kind = "group", parent = parent, filed_under = "", members = {},
+             mailbox_port = kit.port_for("group", parent) }
 end
 -- }}}
 
@@ -45,8 +46,8 @@ check("fingerprint is not the sealing key itself", function()
 end)
 
 check("fingerprint: same token on two homes gives the same parent value; labels differ freely", function()
-    local home_a = rooms.open_home(kit.fresh_home_dir("tokens-a"))
-    local home_b = rooms.open_home(kit.fresh_home_dir("tokens-b"))
+    local home_a = kit.test_home(rooms, "tokens-a", "")
+    local home_b = kit.test_home(rooms, "tokens-b", "")
     local top_a = rooms.make_room(home_a, spec("home", "shared-top-token", ""))
     local top_b = rooms.make_room(home_b, spec("family", "shared-top-token", ""))
     local fingerprint_a = rooms.token_fingerprint(rooms.read_entry(home_a, top_a).token)
@@ -144,29 +145,29 @@ check("suggest_token_of: refusals", function()
     fails(function() rooms.suggest_token_of("4") end, "whole number")
 end)
 
-check("suggest_token: the config key has no default", function()
-    local home = rooms.open_home(kit.fresh_home_dir("tokens-unset"))
-    fails(function() rooms.suggest_token(home) end, "config key 'rooms.suggested-token-words' is not set")
-end)
-
-check("suggest_token: every variant of rooms.suggested-token-words (6, 5, 4)", function()
-    local home = rooms.open_home(kit.fresh_home_dir("tokens-variants"))
-    for _, variant in ipairs({ "6", "5", "4" }) do
-        rooms.set_config(home, rooms.SUGGESTED_WORDS_KEY, variant)
+check("suggest_token: six words, no setting read (an empty config is enough)", function()
+    local home = rooms.open_home(kit.fresh_home_dir("tokens-six"))
+    same(rooms.SUGGESTED_WORD_COUNT, 6, "the exported count")
+    for _ = 1, 20 do
         local token = rooms.suggest_token(home)
-        local count = select(2, token:gsub("-", "-")) + 1
-        same(count, tonumber(variant), "words for " .. variant)
-        -- the suggestion is a usable token: a room can be made with it.
-        rooms.make_room(home, { label = "v" .. variant, token = token, kind = "group", parent = "", filed_under = "", members = {} })
+        same(select(2, token:gsub("-", "-")) + 1, 6, "words in " .. token)
     end
+    -- the suggestion is a usable token: a room can be made with it.
+    local tag = rooms.make_room(home, { label = "six", token = rooms.suggest_token(home), kind = "group",
+                                        parent = "", filed_under = "", members = {},
+                                        mailbox_port = kit.fresh_port() })
+    same(rooms.room_exists(home, tag), true)
 end)
 
-check("suggest_token: a malformed setting is refused, not rounded", function()
-    local home = rooms.open_home(kit.fresh_home_dir("tokens-bad"))
-    for _, bad in ipairs({ "four", "0", "4.5", "-4" }) do
-        rooms.set_config(home, rooms.SUGGESTED_WORDS_KEY, bad)
-        fails(function() rooms.suggest_token(home) end, "must be a whole number")
-    end
+check("suggest_token: the round-2 setting is gone (not read even when present)", function()
+    local home = rooms.open_home(kit.fresh_home_dir("tokens-old-key"))
+    rooms.set_config(home, "rooms.suggested-token-words", "4")
+    same(select(2, rooms.suggest_token(home):gsub("-", "-")) + 1, 6)
+    same(rooms.SUGGESTED_WORDS_KEY, nil, "no exported key")
+end)
+
+check("suggest_token: still checks its home argument", function()
+    fails(function() rooms.suggest_token("not a home") end, "expected a home")
 end)
 
 kit.finish()

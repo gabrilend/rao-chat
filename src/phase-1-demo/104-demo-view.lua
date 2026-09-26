@@ -52,7 +52,7 @@ end
 
 -- {{{ local function outcome
 -- One attempt ({ok, answer}) as text.  Some refusals are answers (103's
--- add_member says "not-in-parent" or "ignored" rather than raising), so
+-- add_member says "added-flagged" or "ignored" rather than raising), so
 -- an answer is shown as "answered <word>" and a raised error as
 -- "ERROR: <the module's own words>".
 local function outcome(result)
@@ -116,12 +116,13 @@ end
 
 -- {{{ function view.tokens
 function view.tokens(record)
-    local lines = { "suggested readable tokens (rooms.suggested-token-words; EFF list, 7,772 words, "
-                    .. "about 12.9 bits a word):" }
-    for _, row in ipairs(record.suggested) do
-        lines[#lines + 1] = string.format("  %s words (~%.0f bits):  %s", row.words,
-                                          tonumber(row.words) * math.log(7772) / math.log(2),
-                                          table.concat(row.tokens, "   "))
+    local lines = { "suggested readable tokens (EFF list, 7,772 words, about 12.9 bits a word):" }
+    for _, token in ipairs(record.suggested) do
+        -- counted from the token itself: the words are joined by "-", and no
+        -- word in the EFF large list holds a "-" of its own
+        local _, dashes = token:gsub("-", "")
+        lines[#lines + 1] = string.format("  %-60s %d words, ~%.0f bits", token, dashes + 1,
+                                          (dashes + 1) * math.log(7772) / math.log(2))
     end
     lines[#lines + 1] = ""
     lines[#lines + 1] = "a typed token, any text:   \"" .. record.typed .. "\""
@@ -142,6 +143,29 @@ local function tree_table(lines, rooms)
         lines[#lines + 1] = string.format("    %-10s fingerprint %s…  parent %s", room.label,
                                           room.fingerprint:sub(1, 16), parent)
     end
+end
+-- }}}
+
+-- {{{ local function room_state
+-- One room's members, send list and flagged file (a room_view record).
+local function room_state(lines, name, state)
+    lines[#lines + 1] = string.format("    %s: %d members, %d on the send list", name, #state.members,
+                                      #state.send)
+    lines[#lines + 1] = "      members:   " .. joined(state.members)
+    lines[#lines + 1] = "      send to:   " .. joined(state.send)
+    lines[#lines + 1] = "      $ cat flagged   (private to this home, never sent)"
+    file_lines(lines, state.flagged, "        ")
+end
+-- }}}
+
+-- {{{ local function check_text
+local function check_text(result)
+    if result.reason == "" then
+        -- a yes carries no reason
+        return result.answer
+    end
+    -- (no or cannot-check: the reason in 102's own words)
+    return result.answer .. "  (" .. result.reason .. ")"
 end
 -- }}}
 
@@ -166,16 +190,97 @@ function view.tree(record)
                                           room.fingerprint == other.fingerprint and "same" or "DIFFERENT")
     end
     lines[#lines + 1] = ""
-    lines[#lines + 1] = "the parent-membership rule, in shopping (child of kitchen):"
+    lines[#lines + 1] = "detection, not refusal, in shopping (under kitchen, under home):"
     lines[#lines + 1] = "    kitchen members:  " .. joined(record.kitchen_members)
-    -- 102's may_join gives a reason only when it says no ("" when yes)
-    lines[#lines + 1] = "    may coder join?     " .. tostring(record.may_join_coder.answer) .. "  "
-                        .. record.may_join_coder.reason
-    lines[#lines + 1] = "    may housemate join? " .. tostring(record.may_join_housemate.answer)
-                        .. "  (in kitchen, so allowed)"
+    lines[#lines + 1] = "    check coder:      " .. check_text(record.check_coder)
+    lines[#lines + 1] = "    check housemate:  " .. check_text(record.check_housemate)
     lines[#lines + 1] = "    adding coder:     " .. outcome(record.add_coder)
     lines[#lines + 1] = "    adding housemate: " .. outcome(record.add_housemate)
-    lines[#lines + 1] = "    shopping members now: " .. joined(record.shopping_members)
+    room_state(lines, "shopping", record.shopping_flagged)
+    lines[#lines + 1] = "    approving coder:  " .. outcome(record.approve_coder)
+    room_state(lines, "shopping", record.shopping_approved)
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = record.leaver .. " leaves home (confirmed); nothing removes it below, it is flagged:"
+    lines[#lines + 1] = "    " .. outcome(record.leave)
+    room_state(lines, "kitchen", record.kitchen_after_leave)
+    room_state(lines, "shopping", record.shopping_after_leave)
+    lines[#lines + 1] = "    kitchen declines it: " .. outcome(record.decline)
+    room_state(lines, "kitchen", record.kitchen_declined)
+    lines[#lines + 1] = "      $ cat withheld"
+    file_lines(lines, record.kitchen_withheld, "        ")
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = "home B, attic: a room whose declared parent home B does not hold:"
+    lines[#lines + 1] = "    check coder:      " .. check_text(record.check_unheld)
+    lines[#lines + 1] = "    adding coder:     " .. outcome(record.add_unheld)
+    room_state(lines, "attic", record.orphan)
+    return lines
+end
+-- }}}
+
+-- {{{ local function mailbox_rows
+local function mailbox_rows(lines, list, indent)
+    for _, mailbox in ipairs(list) do
+        lines[#lines + 1] = string.format("%s%s…  %-7s port %-5d %-18s rooms: %s", indent, mailbox.tag:sub(1, 8),
+                                          mailbox.kind, mailbox.port, "\"" .. mailbox.label .. "\"",
+                                          joined(mailbox.rooms))
+    end
+end
+-- }}}
+
+-- {{{ function view.mailboxes
+function view.mailboxes(record)
+    local lines = { "home folder: " .. record.home_dir }
+    lines[#lines + 1] = "each room's entry names its mailbox:"
+    for _, room in ipairs(record.rooms) do
+        lines[#lines + 1] = string.format("    %-12s %-6s mailbox %s…  (%s, port %d)", room.label, room.kind,
+                                          room.mailbox:sub(1, 8), room.mailbox_kind, room.port)
+    end
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = "$ cat mailboxes"
+    file_lines(lines, record.file, "    ")
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = "by mailbox:"
+    mailbox_rows(lines, record.table, "    ")
+    lines[#lines + 1] = "shared-port reports so far: " .. record.warnings_before
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = "a frame arriving on a port is tried only against that port's rooms' keys:"
+    for _, row in ipairs(record.tried) do
+        lines[#lines + 1] = string.format("    port %-5d %d key(s): %s", row.port, #row.rooms, joined(row.rooms))
+    end
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = "a top room \"games\" made on port " .. record.shared.port
+                        .. " too (allowed, not recommended):"
+    lines[#lines + 1] = "  $ cat mailboxes"
+    file_lines(lines, record.shared.file, "      ")
+    for _, row in ipairs(record.shared.ports) do
+        local short = {}
+        for _, tag in ipairs(row.mailboxes) do
+            short[#short + 1] = tag:sub(1, 8) .. "…"
+        end
+        lines[#lines + 1] = string.format("  shared_ports: port %d named by %d mailboxes (%s)", row.port,
+                                          #row.mailboxes, table.concat(short, ", "))
+    end
+    lines[#lines + 1] = string.format("  reports while making games: %d (every read of the mailboxes file "
+                                      .. "reports it)", record.shared.reports_while_making)
+    lines[#lines + 1] = string.format("  one read of the mailboxes file on its own: %d report(s):",
+                                      #record.shared.warnings)
+    add(lines, record.shared.warnings, "      ")
+    lines[#lines + 1] = string.format("  port %d now tries %d key(s): %s", record.shared.port,
+                                      #record.shared.tried, joined(record.shared.tried))
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = "\"attic\" declares a parent (\"loft\") this home does not hold; then loft is made here:"
+    for _, row in ipairs(record.unheld) do
+        lines[#lines + 1] = "  mailboxes.unheld-parent = " .. row.variant
+        lines[#lines + 1] = string.format("      attic before loft: %-7s port %-5d %s…", row.before.kind,
+                                          row.before.port, row.before.tag:sub(1, 8))
+        lines[#lines + 1] = string.format("      loft:              %-7s port %-5d %s…", row.loft.kind,
+                                          row.loft.port, row.loft.tag:sub(1, 8))
+        lines[#lines + 1] = string.format("      attic after loft:  %-7s port %-5d %s…  (%s)", row.after.kind,
+                                          row.after.port, row.after.tag:sub(1, 8),
+                                          row.after.tag == row.loft.tag and "moved into loft's mailbox"
+                                          or "kept its own mailbox")
+        mailbox_rows(lines, row.mailboxes, "      ")
+    end
     return lines
 end
 -- }}}
@@ -235,14 +340,18 @@ local SHOWN_AS = {
     hide = function() return nil end,
 }
 
--- {{{ local function ignoring_variant
-local function ignoring_variant(lines, record)
-    lines[#lines + 1] = "ignore.hide-files = " .. record.variant
+-- {{{ function view.ignoring
+function view.ignoring(record)
+    local lines = { "a hidden address's messages are not filed at all; an ignore covers every port of "
+                    .. "its address (both answered by the owner)." }
     lines[#lines + 1] = "  $ cat ignore"
     file_lines(lines, record.ignore_file, "      ")
     for _, entry in ipairs(record.levels) do
         lines[#lines + 1] = string.format("    %-18s ignored: %s", entry.who, entry.level)
     end
+    lines[#lines + 1] = string.format("    %-18s ignored: %s, filed: %s   (the hidden machine on another port)",
+                                      record.other_port.who, record.other_port.level,
+                                      tostring(record.other_port.files))
     lines[#lines + 1] = string.format("  %d messages delivered, %d filed in the log (%d bytes); the room as shown:",
                                       record.delivered, record.filed, record.log_bytes)
     for _, shown in ipairs(record.shown) do
@@ -265,17 +374,6 @@ local function ignoring_variant(lines, record)
     lines[#lines + 1] = "      members there: " .. joined(record.other_members)
     lines[#lines + 1] = "      the hidden one, after un-ignoring: " .. outcome(record.readd_after_unignore)
     lines[#lines + 1] = "      members there: " .. joined(record.other_members_after)
-end
--- }}}
-
--- {{{ function view.ignoring
-function view.ignoring(record)
-    local lines = {}
-    for _, variant in ipairs(record.variants) do
-        ignoring_variant(lines, variant)
-        lines[#lines + 1] = ""
-    end
-    lines[#lines] = nil
     return lines
 end
 -- }}}
@@ -312,31 +410,27 @@ end
 -- {{{ function view.log
 function view.log(record)
     local lines = { "times are seconds after " .. record.t0
-                    .. " (2026-09-23 12:00 UTC); message 4 was written at +30 but arrives at +200." }
-    local summary = { "", "bytes per message, " .. (record.shapes[1] and record.shapes[1].bulk.count or 0)
-                      .. " one-line messages per shape:" }
-    for _, shape in ipairs(record.shapes) do
-        lines[#lines + 1] = ""
-        lines[#lines + 1] = "log.record-shape = " .. shape.shape
-        lines[#lines + 1] = "  filing the four:           " .. table.concat(shape.answers, ", ")
-        lines[#lines + 1] = "  message 2 delivered again: " .. outcome(shape.repeat_answer)
-        lines[#lines + 1] = "  message 2's id, new words: " .. outcome(shape.conflict)
-        lines[#lines + 1] = "  an edit of message 3:      " .. outcome(shape.edit)
-        lines[#lines + 1] = "  in the file (arrival order, originals kept):"
-        for position, filed in ipairs(shape.in_file) do
-            lines[#lines + 1] = string.format("    %d. %-10s written +%-4d %-20s %s", position, filed.kind,
-                                              filed.written, filed.from, filed.text)
-        end
-        lines[#lines + 1] = "  on screen (written order, edits applied):"
-        shown_rows(shape.shown, lines)
-        lines[#lines + 1] = string.format("  $ cat log   (%d bytes)", shape.bytes)
-        file_lines(lines, shape.raw, "    ")
-        summary[#summary + 1] = string.format("  %-6s %6d bytes  %6.1f bytes per message  %.3f ms per filing",
-                                              shape.shape, shape.bulk.bytes,
-                                              shape.bulk.bytes / shape.bulk.count,
-                                              shape.bulk.seconds * 1000 / shape.bulk.count)
+                    .. " (2026-09-23 12:00 UTC); message 4 was written at +30 but arrives at +200.",
+                    "one record shape: tab-separated, one line per record (the owner's answer)." }
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = "  filing the four:           " .. table.concat(record.answers, ", ")
+    lines[#lines + 1] = "  message 2 delivered again: " .. outcome(record.repeat_answer)
+    lines[#lines + 1] = "  message 2's id, new words: " .. outcome(record.conflict)
+    lines[#lines + 1] = "  an edit of message 3:      " .. outcome(record.edit)
+    lines[#lines + 1] = "  in the file (arrival order, originals kept):"
+    for position, filed in ipairs(record.in_file) do
+        lines[#lines + 1] = string.format("    %d. %-10s written +%-4d %-20s %s", position, filed.kind,
+                                          filed.written, filed.from, filed.text)
     end
-    add(lines, summary, "")
+    lines[#lines + 1] = "  on screen (written order, edits applied):"
+    shown_rows(record.shown, lines)
+    lines[#lines + 1] = string.format("  $ cat log   (%d bytes)", record.bytes)
+    file_lines(lines, record.raw, "    ")
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = string.format("bytes per message, %d one-line messages: %d bytes, %.1f bytes per "
+                                      .. "message, %.3f ms per filing", record.bulk.count, record.bulk.bytes,
+                                      record.bulk.bytes / record.bulk.count,
+                                      record.bulk.seconds * 1000 / record.bulk.count)
     lines[#lines + 1] = ""
     lines[#lines + 1] = "the same room on two homes (same token, different local tags), "
                         .. "the same four messages arriving in opposite orders:"

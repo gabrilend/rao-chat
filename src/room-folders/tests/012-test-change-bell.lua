@@ -4,8 +4,10 @@
 -- room-folders can change it, and checks that each write rings exactly
 -- its own kind, once, after the change is on disk; that a token change
 -- rings "parent" for each held child before "token"; that every kind in
--- the list can be rung and anything else is refused; that "ignore" takes
--- "" or a room tag while room kinds need a tag; and that a listener's
+-- the list can be rung and anything else is refused; that "ignore" and
+-- "mailbox" take "" or a room tag while room kinds need a tag; that a new
+-- top room's mailbox rings nothing but "created", while making the direct
+-- mailbox, changing a port and moving a room ring "mailbox"; and that a listener's
 -- failure reaches whoever made the change (with the change kept).
 -- Run: luajit 012-test-change-bell.lua [project folder]
 
@@ -35,7 +37,8 @@ end)
 
 -- {{{ local function spec
 local function spec(label, token, parent)
-    return { label = label, token = token, kind = "group", parent = parent, filed_under = "", members = {} }
+    return { label = label, token = token, kind = "group", parent = parent, filed_under = "", members = {},
+             mailbox_port = kit.port_for("group", parent) }
 end
 -- }}}
 
@@ -52,7 +55,13 @@ end
 local home = rooms.open_home(kit.fresh_home_dir("bell"))
 local parent_tag, child_a, child_b
 
-check("make_room rings created once, after the folder is whole", function()
+check("make_mailbox rings mailbox once, with \"\" (the mailboxes file is the home's)", function()
+    take()
+    rooms.make_mailbox(home, { label = "direct messages", kind = "direct", port = kit.DIRECT_PORT })
+    same_list(take(), { " mailbox" })
+end)
+
+check("make_room rings created once, after the folder is whole (its new mailbox rings nothing more)", function()
     take()
     parent_tag = rooms.make_room(home, spec("parent", "bell-parent", ""))
     same_list(take(), { parent_tag .. " created" })
@@ -95,7 +104,7 @@ end)
 
 check("every listed kind can be rung; the list is the contract's", function()
     local want = { "created", "label", "token", "members", "heard", "parent", "filed",
-                   "withheld", "log", "ignore", "removed-room" }
+                   "withheld", "log", "ignore", "removed-room", "mailbox" }
     local count = 0
     for _ in pairs(rooms.BELL_KINDS) do count = count + 1 end
     same(count, #want, "number of kinds")
@@ -117,6 +126,24 @@ check("ignore takes \"\" (whole home) or a room tag", function()
     rooms.notify(home, child_a, "ignore")
     same_list(take(), { " ignore", child_a .. " ignore" })
     fails(function() rooms.notify(home, "somebody", "ignore") end, "or a local tag")
+end)
+
+check("mailbox takes \"\" (the mailboxes file) or a room tag (that room moved)", function()
+    rooms.notify(home, "", "mailbox")
+    rooms.notify(home, child_a, "mailbox")
+    same_list(take(), { " mailbox", child_a .. " mailbox" })
+    fails(function() rooms.notify(home, "7777", "mailbox") end, "or a local tag")
+end)
+
+check("write_mailbox_port rings mailbox with \"\"; write_mailbox rings it with the room's tag", function()
+    local own = rooms.read_entry(home, parent_tag).mailbox
+    take()
+    rooms.write_mailbox_port(home, own, kit.fresh_port())
+    same_list(take(), { " mailbox" }, "port")
+    local other_top = rooms.make_room(home, spec("other", "bell-other", ""))
+    take()
+    rooms.write_mailbox(home, child_b, rooms.read_entry(home, other_top).mailbox)
+    same_list(take(), { child_b .. " mailbox" }, "moved")
 end)
 
 check("room kinds need a local tag", function()

@@ -10,5 +10,6 @@ strings.  The first variant listed is the phase 1 demo's starting value.
 Choices listed: `people-link-collision`, `people-slash-in-link-name`,
 `people-direct-message-link`, `people-members-without-dm`,
 `people-person-folder-collision` (owner, switchable); `people-own-devices`
-and `people-rebuild-scope` (state, not switchable).  Retired in round 2:
+and `people-rebuild-scope` (state, not switchable); `people-flagged-members`
+(owner, not switchable; built as `count`, added in round 3).  Retired in round 2:
 `people-split-records`.

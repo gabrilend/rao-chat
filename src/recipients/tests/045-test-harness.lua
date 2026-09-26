@@ -13,8 +13,8 @@
 -- first, so 041-recipients picks them up as if they were the real ones.
 -- "real": nothing is pre-loaded; require finds src/room-folders and
 -- src/room-tree through the load path.
--- "real-101": the real room folders with the stand-in tree, for while 102
--- is being rewritten and its parent-membership check has not landed.
+-- "real-101": the real room folders with the stand-in tree (useful when
+-- 102 is being rewritten and its check has not landed).
 local function wire_neighbours(dir, neighbours)
     dofile(dir .. "/src/room-folders/001-load-path.lua")(dir)
     local wirings = {
@@ -72,6 +72,7 @@ local function make_harness(dir, neighbours)
         failures = {},
         home_count = 0,
         clock = 1790000000,
+        next_port = 7100,
         start_config = every_first_variant(dir),
     }
     -- every run gets its own scratch folder in RAM, so two runs never share
@@ -128,9 +129,19 @@ local function make_harness(dir, neighbours)
     end
     -- }}}
 
+    -- {{{ function h.port
+    -- A fresh listening port for a new mailbox (whole number, no default).
+    function h.port()
+        h.next_port = h.next_port + 1
+        return h.next_port
+    end
+    -- }}}
+
     -- {{{ function h.new_home
     -- A fresh home with every module's first variant set, then `config`
-    -- (key -> value) on top.
+    -- (key -> value) on top, and the one direct-message mailbox made (101
+    -- refuses a direct room without it) — plus the waiting mailbox when the
+    -- home puts unheld-parent rooms there.
     function h.new_home(label, config)
         h.home_count = h.home_count + 1
         local home = h.rooms.open_home(h.scratch .. "/" .. h.home_count .. "-" .. label)
@@ -140,7 +151,49 @@ local function make_harness(dir, neighbours)
         for key, value in pairs(config) do
             h.rooms.set_config(home, key, value)
         end
+        h.rooms.make_mailbox(home, { label = "direct messages", kind = "direct", port = h.port() })
+        -- waiting-mailbox homes need their waiting mailbox; others do not have one
+        if h.rooms.read_config(home)["mailboxes.unheld-parent"] == "waiting-mailbox" then
+            h.rooms.make_mailbox(home, { label = "waiting", kind = "waiting", port = h.port() })
+        end
         return home
+    end
+    -- }}}
+
+    -- The mailbox_port make_room wants (contract, "Mailboxes"): a port when
+    -- the room starts a new mailbox, "" when it joins one.  Keyed by what
+    -- the new room is; an unheld parent follows 101's own setting.
+    local MAILBOX_PORT = {
+        ["direct"] = function(home) return "" end,
+        ["top"] = function(home) return h.port() end,
+        ["held-parent"] = function(home) return "" end,
+        ["unheld-parent"] = function(home)
+            local mode = h.rooms.config_value(home, "mailboxes.unheld-parent")
+            -- own mailbox: a port; the waiting mailbox: none
+            if mode == "own-mailbox" then
+                return h.port()
+            end
+            return ""
+        end,
+    }
+
+    -- {{{ function h.make
+    -- make_room with mailbox_port filled in.  spec: {label, token, kind,
+    -- parent (fingerprint or ""), filed_under, members}.
+    function h.make(home, spec)
+        local shape = "direct"
+        -- a group room: top, or under a parent held here or not
+        if spec.kind == "group" then
+            if spec.parent == "" then
+                shape = "top"
+            elseif h.rooms.find_by_fingerprint(home, spec.parent) ~= "" then
+                shape = "held-parent"
+            else
+                shape = "unheld-parent"
+            end
+        end
+        spec.mailbox_port = MAILBOX_PORT[shape](home)
+        return h.rooms.make_room(home, spec)
     end
     -- }}}
 
@@ -157,7 +210,7 @@ local function make_harness(dir, neighbours)
         if parent_tag ~= nil and parent_tag ~= "" then
             parent = h.rooms.token_fingerprint(h.rooms.read_entry(home, parent_tag).token)
         end
-        return h.rooms.make_room(home, {
+        return h.make(home, {
             label = label,
             token = "token-" .. label .. "-" .. h.rooms.new_local_tag():sub(1, 8),
             kind = kind or "group",

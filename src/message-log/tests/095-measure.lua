@@ -1,8 +1,9 @@
--- 095-measure.lua — measures each record shape: how many bytes a message
--- takes in the log, how long filing 10,000 messages takes (each filing
--- includes the duplicate check), and how long reading them back takes,
--- in file order and in written order.  Run for both duplicate checks, so
--- the "does the check need an index of ids?" question gets a number.
+-- 095-measure.lua — measures the log's record shape (tsv): how many bytes a
+-- message takes in the log, how long filing 10,000 messages takes (each
+-- filing includes the duplicate check), and how long reading them back
+-- takes, in file order and in written order.  Run for both duplicate
+-- checks, so the "does the check need an index of ids?" question gets a
+-- number.
 --
 -- The messages are a fixed, repeatable mix: short chat lines, a few long
 -- ones, some with line breaks and tabs, some non-ASCII.  Times are wall
@@ -79,45 +80,42 @@ for _, message in ipairs(messages) do
 end
 print(string.format("measure [%s]: %d messages, average text %.1f bytes",
     t.neighbour, count, text_bytes / count))
-print(string.format("%-6s %-10s %-11s %9s %10s %10s %10s %12s",
-    "shape", "check", "mixing", "bytes/msg", "append s", "read s", "ordered s", "repeat all s"))
+print(string.format("%-6s %-10s %9s %10s %10s %10s %12s",
+    "shape", "check", "bytes/msg", "append s", "read s", "ordered s", "repeat all s"))
 
-for _, shape in ipairs(t.SHAPES) do
-    for _, check in ipairs(t.CHECKS) do
-        for _, mixing in ipairs(t.MIXINGS) do
-            local home = t.fresh_home(t.settings(shape, mixing, check))
-            local room = t.new_room(home)
-            local started = now()
-            for _, message in ipairs(messages) do
-                log.append(home, room, message)
-            end
-            local appended = now() - started
-            started = now()
-            local records = log.read(home, room)
-            local read_time = now() - started
-            started = now()
-            log.read_ordered(home, room)
-            local ordered_time = now() - started
-            -- Every message delivered a second time: all must be refused.
-            started = now()
-            local repeats = 0
-            for _, message in ipairs(messages) do
-                -- Path: refused — as it should be.  Filed — a failure.
-                if log.append(home, room, message) == "duplicate" then
-                    repeats = repeats + 1
-                end
-            end
-            local repeat_time = now() - started
-            -- Path: counts right — print.  Wrong — stop loudly.
-            if #records ~= count or repeats ~= count then
-                error("measure: " .. shape .. " read " .. #records .. " and refused " .. repeats
-                    .. " of " .. count)
-            end
-            print(string.format("%-6s %-10s %-11s %9.1f %10.3f %10.3f %10.3f %12.3f",
-                shape, check, mixing, file_size(rooms.log_path(home, room)) / count,
-                appended, read_time, ordered_time, repeat_time))
-            io.stdout:flush()
-            os.execute('rm -rf "' .. home.dir .. '"')
+local shape = "tsv"
+for _, check in ipairs(t.CHECKS) do
+    local home = t.fresh_home(t.settings(check))
+    local room = t.new_room(home)
+    local started = now()
+    for _, message in ipairs(messages) do
+        log.append(home, room, message)
+    end
+    local appended = now() - started
+    started = now()
+    local records = log.read(home, room)
+    local read_time = now() - started
+    started = now()
+    log.read_ordered(home, room)
+    local ordered_time = now() - started
+    -- Every message delivered a second time: all must be refused.
+    started = now()
+    local repeats = 0
+    for _, message in ipairs(messages) do
+        -- Path: refused — as it should be.  Filed — a failure.
+        if log.append(home, room, message) == "duplicate" then
+            repeats = repeats + 1
         end
     end
+    local repeat_time = now() - started
+    -- Path: counts right — print.  Wrong — stop loudly.
+    if #records ~= count or repeats ~= count then
+        error("measure: " .. shape .. " read " .. #records .. " and refused " .. repeats
+            .. " of " .. count)
+    end
+    print(string.format("%-6s %-10s %9.1f %10.3f %10.3f %10.3f %12.3f",
+        shape, check, file_size(rooms.log_path(home, room)) / count,
+        appended, read_time, ordered_time, repeat_time))
+    io.stdout:flush()
+    os.execute('rm -rf "' .. home.dir .. '"')
 end

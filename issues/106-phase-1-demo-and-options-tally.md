@@ -8,76 +8,115 @@
 
 ## Current Behavior
 
-Both halves exist and run against the round-2 ("a room is a contact")
-modules: the demo shows 9 of 9 scenes on the real 101, 102, 103, 103a,
-104 and 105 (`run-phase-demo 1` exits 0), and 253 of 253 checks pass
-(`luajit src/phase-1-demo/tests/118-run-tests.lua`).
+Both halves exist and run against the round-3 modules (mailboxes, flags
+instead of refusals, answered choices fixed).  On 2026-09-25, after 104's
+bell listener was fixed to accept 101's new bell kind `mailbox`, the demo
+showed 10 of 10 scenes on the real 101, 102, 103, 103a, 104 and 105
+(`run-phase-demo 1` exits 0), and 281 of 281 checks pass
+(`luajit src/phase-1-demo/tests/118-run-tests.lua`).  No stand-in config
+keys were needed: every key a module reads is in some options file.
 
 - **The options tally**, `scripts/tally-options [project folder] [--walk]
   [--no-pause]`: gathering (`src/phase-1-demo/100-gather-options.lua`)
-  kept apart from showing (`101-show-options.lua`), unchanged from round
-  1.  It reads every live `src/<module>/<3 digits>-options.lua` and never
-  a retired `-options.lua-done` (tested on a sample, and on the real
-  project by comparing its count with `find`).  On 2026-09-25 it read 6
-  files, 33 choices (24 waiting on the owner, 9 on some other state).
+  kept apart from showing (`101-show-options.lua`).  It reads every live
+  `src/<module>/<3 digits>-options.lua` and never a retired
+  `-options.lua-done` (checked on a sample, and on the real project by
+  comparing its count with `find`: 6 files).  On 2026-09-25 (round 3) it
+  read 31 choices, 24 waiting on the owner and 7 on some other state.
 - **The demo**, `issues/completed/demos/phase-1-demo` (bash) running
-  `src/phase-1-demo/106-phase-1-demo.lua`: the round-1 harness kept
-  (input/ read first, every config key set to its first-listed variant
-  unless `input/phase-1-demo.config` names another, each scene in its own
-  scratch home under `tmp/shared-memory/phase-1-demo/`, a ran / could-not
-  table with the reason, `output/phase-1-demo.goodbye` written last).  It
-  now loads seven module files (002, 021, 024, 041, 042, 061, 081).  The
-  scenes (`103-demo-sections.lua` builds, `104-demo-view.lua` draws):
-  1. entries — `ls rooms/`, both `entry` files as written, the one
-     reader's result, the lists by kind; a member without a port refused
-     by `make_room`, and an entry with `port[2]` deleted by hand refused
-     by `read_entry`.
-  2. tokens — three suggestions for each `rooms.suggested-token-words`
-     variant (6, 5, 4 words), a typed token with spaces and punctuation
-     read back unchanged, a duplicate token refused, a hand token change
-     with folder, label, 3 members, 5 messages and 475 log bytes the same
-     before and after.
-  3. tree — home/kitchen/shopping on one home and family/cooking/groceries
-     on another, the three fingerprints matching, local tags differing,
-     shopping's `where`; the coder (in home, not in kitchen) answered
-     `not-in-parent` in shopping, the housemate `added`.
-  4. members — six members, six on the send list; one withheld: six
-     members, five on the send list, the `withheld` file holding it.
-  5. leaving — an unconfirmed leave: nothing is called (103 keeps no
-     pending-leave state; phase 2's call-back check decides), six members,
-     the entry byte for byte unchanged; a confirmed leave: `removed`, five;
-     the leaver speaking again: `added`, six, its `heard[6]` written.
-  6. ignoring — per `ignore.hide-files` variant: the `ignore` file, levels
-     none/mark/hide, the room as shown (the marked address as "(someone
-     you ignore spoke)", the hidden one absent), 5 of 5 messages filed
-     under `filed` and 4 of 5 under `not-filed`; both ignored addresses
-     answered `ignored` when a member's list brings them into another
-     room, the hidden one `added` after un-ignoring.
-  7. people — one folder per direct message; the girlfriend's two
-     machines give her two links (home, programming), not four; a second
-     top room labelled programming under each `people.link-collision`
-     variant (`programming~42d9`, `programming-2`, one folder per room).
-  8. log — per `log.record-shape`: the late message placed second on
-     screen, a repeat `duplicate`, the same id with new words raised as an
-     error naming both, a correction filed with its original kept, the raw
-     log; bytes per message over 200 one-line messages: tsv 105.5, block
-     155.5, jsonl 172.5.  The same four messages on two homes in opposite
-     arrival orders show in the identical order.
-  9. the tally's summary.
+  `src/phase-1-demo/106-phase-1-demo.lua`: input/ read first; every
+  config key set to its first-listed variant unless
+  `input/phase-1-demo.config` names another (11 keys on 2026-09-25, down
+  from 16 as answered choices left the options files); each scene in its
+  own scratch home under `tmp/shared-memory/phase-1-demo/`; a ran /
+  could-not table with the reason; `output/phase-1-demo.goodbye` written
+  last.  All seven module files (002, 021, 024, 041, 042, 061, 081) are
+  loaded before the first scene, so every bell listener hears every home
+  and a fault in any listener shows in every scene it touches.  (While
+  104's listener refused bell kind `mailbox`, the demo briefly loaded 104
+  only for the people scene; that was dropped once 104 was fixed, since it
+  hid how the modules work together.)
+  Every home the demo makes gets its direct-message mailbox at birth (port
+  7700); top rooms take tree-mailbox ports from 7701 up; a waiting
+  mailbox, when needed, is on 7799.  The scenes (`103-demo-sections.lua`
+  builds, `104-demo-view.lua` draws):
+  1. entries — `ls rooms/`, every file with its size (entry, flagged,
+     log, where, withheld), both entries as written (now with `mailbox`),
+     the one reader's result, lists by kind; a member without a port
+     refused by `make_room`, an entry with `port[2]` deleted by hand
+     refused by `read_entry`.
+  2. tokens — three six-word suggestions (words counted from the token,
+     ~78 bits each), a typed token read back unchanged, a duplicate token
+     refused, a hand token change with folder, label, 3 members, 5
+     messages and 475 log bytes the same before and after.
+  3. tree — home/kitchen/shopping and family/cooking/groceries matched by
+     fingerprint; 102's `check_member`: coder `no` in shopping (not a
+     member of kitchen), housemate `yes`; adding the coder answers
+     `added-flagged`: 4 members, 3 on the send list, `flagged` holding
+     `203.0.113.30 7003 no`; approved: 4 of 4, the line now `approved`.
+     The girlfriend's first machine leaves home (confirmed): nothing
+     removes it below; it is flagged `no` in kitchen (3 members, 2 sent)
+     and in shopping (grandchild).  Kitchen declines it: flag line gone,
+     `withheld` holds it.  A room whose parent home B does not hold:
+     `cannot-check`, both members flagged, 0 of 2 on the send list.
+  4. mailboxes — home, kitchen, shopping in one tree mailbox (port 7701),
+     both direct messages in the direct mailbox (7700), programming in its
+     own (7702); the `mailboxes` file as written; a frame on 7700 tried
+     against 2 keys, on 7701 against 3.  A top room "games" made on 7702
+     too: `shared_ports` finds 1 port named by 2 mailboxes, one read of
+     the file gives 1 report, 7702 tries 2 keys.  A room "attic" whose
+     parent "loft" is not held, per `mailboxes.unheld-parent`:
+     `own-mailbox` puts it in a tree mailbox of its own and it stays there
+     when loft arrives; `waiting-mailbox` puts it in the waiting mailbox
+     (7799) and it moves into loft's mailbox when loft arrives.
+  5. members — six members, six sent; one withheld: six members, five
+     sent, the `withheld` file holding it.
+  6. leaving — an unconfirmed leave changes nothing (entry byte for byte);
+     a confirmed leave: `removed`, five; speaking again: `added`, six,
+     `heard[6]` written.
+  7. ignoring — one address at `mark`, one at `hide`: 5 delivered, 4
+     filed (the hidden one's message is dropped); the marked one shown as
+     "(someone you ignore spoke)"; the hidden address on another port is
+     hidden too and not filed; both answered `ignored` when a member's
+     list brings them into another room; the hidden one `added` after
+     un-ignoring.
+  8. people — `ls people/` gives one folder per direct message (coder,
+     girlfriend, housemate); the girlfriend's two machines give her two
+     links (home, programming); a second top room labelled programming
+     under each `people.link-collision` variant: `programming~074b` beside
+     `programming~a99a` (suffix-id), `programming` beside `programming-2`
+     (numbered), one folder per room tag (id-folder, links one level
+     deeper).  About 1.25 s, the slowest scene (four homes, 104 rebuilding
+     all of people/ on every ring).
+  9. log — tab-separated, the one shape: the late message placed second,
+     a repeat `duplicate`, the same id with new words raised as an error
+     naming both, a correction filed with its original kept, the raw log;
+     105.5 bytes per message over 200 one-line messages; the same four
+     messages on two homes in opposite arrival orders shown identically.
+  10. the tally's summary: 31 choices, 24 waiting on the owner, 7 on some
+     other state.
 - **Tests** (`src/phase-1-demo/tests/`): every scene built and checked on
   the real modules, then built again with every key at its last-listed
-  variant; the whole demo through `run-phase-demo 1`.  Where a key a
-  module reads is in no options file yet, the scenes test fills it from a
-  stand-in table and prints which (on 2026-09-25: `tree.filing-loop` and
-  `tree.unheld-parent-join`, which 102 had not yet listed; neither is read
-  by any scene, since both are read only on their edge case).
-- Round 1's scenes are kept as `103-demo-sections.lua-done`,
-  `104-demo-view.lua-done`, `106-phase-1-demo.lua-done`,
-  `119-options.lua-done`, `tests/115-test-demo-scenes.lua-done` (with
-  their `.info.md-done`), until one commit has carried them.
-- Seen while building: 102's `039-options.lua` still listed round 1's
-  `tree.parent-disclosure` when the demo last ran, so the demo still set
-  it in every home; it goes when 102 rewrites that file.
+  variant; the whole demo through `run-phase-demo 1`.  The people scene is
+  checked in full on both baselines, with expectations worked out from
+  the options actually set: under `people.direct-message-link = include`
+  each person's folder holds one more link (their own direct message: the
+  girlfriend 3 instead of 2, the coder 4 instead of 3), and under
+  `people.link-collision = id-folder` every link must read
+  `<person>/<tag>/<name> -> ../../../rooms/<tag>` with the middle folder
+  equal to the target's tag (otherwise `<person>/<name> ->
+  ../../rooms/<tag>`).  These variants first ran on 2026-09-25 once 104
+  was fixed; the earlier checks assumed leave-out and one level.  (A slip
+  in the test itself also surfaced then: the "first-listed" people pass
+  had been run on the last-listed settings.)
+- Round 1's and round 2's scene files (`-done`) are deleted; git history
+  holds them.  (The sample `tests/samples/good-src/alpha/019-options.lua-done`
+  stays: it is the fixture proving the tally never reads a `-done` file.)
+- Removed from the scenes with their answered choices: the token
+  word-count variants (`rooms.suggested-token-words`), the
+  `ignore.hide-files` variants (filed / not-filed), the `log.record-shape`
+  variants (block, jsonl and their bytes-per-message comparison), and 102's
+  `may_join` / 103's `not-in-parent` refusal.
 
 ## Intended Behavior
 
@@ -96,7 +135,12 @@ outputs, not descriptions.  Scenes, each in its own scratch home:
 3. **The tree.**  `home`, a child `home/kitchen`, a grandchild; drawn as
    text; the same tree on a second home with different labels, matched by
    fingerprint; an address flagged in a child room because it is not in
-   the parent, off the send list until approved.
+   every room above, off the send list until approved; a leaver flagged
+   below; a parent not held: "cannot-check".
+3a. **Mailboxes.**  A top room and its children in one mailbox, direct
+   messages in the one direct mailbox, the `mailboxes` file, which keys a
+   frame on each port is tried against; two mailboxes on one port,
+   allowed and reported; a room whose parent is not held, per variant.
 4. **Members and withheld.**  A room of six: every member on the send list;
    one withheld; the send list shrinking by one while the member list does
    not.
@@ -110,7 +154,7 @@ outputs, not descriptions.  Scenes, each in its own scratch home:
 8. **The log.**  A late message placed in order; a repeat answered
    `duplicate`; the same id with different contents raised as an error; an
    edit with its original kept; ordering identical on two homes; bytes per
-   message in each record shape.
+   message.
 9. **The tally's summary.**
 
 ## Suggested Implementation Steps
@@ -118,19 +162,9 @@ outputs, not descriptions.  Scenes, each in its own scratch home:
 1. Keep the tally; check it reads the rewritten options files.
 2. Keep the demo's harness (input first, config baseline, scratch homes,
    the ran/could-not table, goodbye last).
-3. Replace the scenes with the nine above; drop the first model's scenes.
+3. Replace the scenes with the ten above; drop the earlier designs' scenes.
 4. Tests: every scene on the real modules; the whole demo through
    `run-phase-demo 1`.
-
-### Round 3 (2026-09-25)
-
-1. Scenes for what changed: mailboxes (a top room and its child in one,
-   the direct-message mailbox, a shared port reported); the tree scene
-   shows a flag raised, the member off the send list, then approved; the
-   ignore scene without the retired variants; the log scene in tsv only.
-2. Drop scenes' use of retired keys; check the tally still reads every
-   options file.
-3. Delete this module's `-done` files.
 
 ## Blockers that are not the owner's
 
@@ -158,6 +192,12 @@ them one at a time.  An issue with any of them unanswered is in progress.
   reader's trees under both disclosure modes, the log in each shape, edits
   under each rule, a room of six split into two rooms of five, and the
   tally.
+
+- **Round 2 (built 2026-09-25):** nine scenes of "a room is a contact"
+  before mailboxes and flags: token suggestions per word count (6, 5, 4),
+  the parent-membership rule as a refusal (`not-in-parent`), ignoring per
+  `ignore.hide-files` (5 of 5 filed / 4 of 5), and the log in three record
+  shapes (tsv 105.5, block 155.5, jsonl 172.5 bytes per message).
 
 ## Related documents
 

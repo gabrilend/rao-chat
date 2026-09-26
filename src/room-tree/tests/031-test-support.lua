@@ -42,11 +42,77 @@ end
 
 -- {{{ function M.fresh_home
 -- An empty home folder under tmp/shared-memory/room-tree/<which>/<name>.
+-- Its config says mailboxes.unheld-parent = own-mailbox: the tree does not
+-- care which mailbox a room listens in, and own-mailbox needs no mailbox
+-- made beforehand.  028-test-mailboxes sets the other variant itself.
 function M.fresh_home(rooms, name)
     local path = M.scratch .. "/" .. name
     os.execute('rm -rf "' .. path .. '"')
     os.execute('mkdir -p "' .. M.scratch .. '"')
-    return rooms.open_home(path)
+    local home = rooms.open_home(path)
+    rooms.set_config(home, "mailboxes.unheld-parent", "own-mailbox")
+    return home
+end
+-- }}}
+
+-- Ports handed to new mailboxes: each a different whole number, so no two
+-- mailboxes share a port (a shared port is reported as a warning by 101,
+-- and warnings are treated as errors here).
+M.next_port = 20000
+
+-- {{{ local function port_for
+-- The mailbox_port make_room needs (contract, "Mailboxes"): a whole number
+-- when the room starts a new mailbox, "" when it joins one.
+--   direct room                       joins the one direct mailbox: ""
+--   group room, no parent             a new tree mailbox: a port
+--   group room, parent held here      the parent's mailbox: ""
+--   group room, parent not held here  the home's mailboxes.unheld-parent:
+--                                     own-mailbox a port, waiting-mailbox ""
+local function port_for(rooms, home, spec)
+    local fresh = function()
+        M.next_port = M.next_port + 1
+        return M.next_port
+    end
+    -- a direct message: never starts a mailbox
+    if spec.kind == "direct" then
+        return ""
+    end
+    -- a top group room: always a new mailbox
+    if spec.parent == "" then
+        return fresh()
+    end
+    -- the parent held here: the child joins its mailbox
+    if rooms.find_by_fingerprint(home, spec.parent) ~= "" then
+        return ""
+    end
+    local by_variant = { ["own-mailbox"] = fresh, ["waiting-mailbox"] = function() return "" end }
+    local mode = rooms.config_value(home, "mailboxes.unheld-parent")
+    local choose = by_variant[mode]
+    -- a value this helper does not know: the test's own mistake
+    if choose == nil then
+        error("tests: mailboxes.unheld-parent = " .. tostring(mode))
+    end
+    return choose()
+end
+-- }}}
+
+-- {{{ function M.make
+-- make_room with the mailbox_port worked out as above.  spec: every
+-- make_room field but mailbox_port.  A direct room in a home with no
+-- direct mailbox yet gets one made first (real module only; the stand-in
+-- keeps no mailboxes).
+function M.make(rooms, home, spec)
+    -- a direct room on the real module: the direct mailbox must exist
+    if spec.kind == "direct" and M.which == "real" and rooms.direct_mailbox(home) == "" then
+        M.next_port = M.next_port + 1
+        rooms.make_mailbox(home, { label = "direct messages", kind = "direct", port = M.next_port })
+    end
+    local full = {}
+    for key, value in pairs(spec) do
+        full[key] = value
+    end
+    full.mailbox_port = port_for(rooms, home, spec)
+    return rooms.make_room(home, full)
 end
 -- }}}
 
@@ -61,7 +127,7 @@ function M.room(rooms, home, label, token, parent_room, members)
     if parent_room ~= "" then
         parent = rooms.token_fingerprint(rooms.read_entry(home, parent_room).token)
     end
-    return rooms.make_room(home, {
+    return M.make(rooms, home, {
         label = label, token = token, kind = "group", parent = parent,
         filed_under = "", members = M.members(members),
     })

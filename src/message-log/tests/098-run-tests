@@ -5,8 +5,7 @@
 # non-zero if any test fails.  The 10,000-message measurement is not run
 # here (it takes about a minute); run tests/095-measure.lua for that.
 #
-# The test files are named one by one below, so retired copies (named
-# <file>-done) are never run.
+# The test files are named one by one below, so only these run.
 #
 # Usage: 098-run-tests [DIR]
 
@@ -30,7 +29,7 @@ fi
 
 FAILED_FILES=0
 for neighbour in ${NEIGHBOURS}; do
-    for test_file in 091-test-codecs.lua 092-test-log.lua 093-test-edits.lua 094-test-mixing-and-memory.lua; do
+    for test_file in 091-test-codecs.lua 092-test-log.lua 093-test-edits.lua 094-test-memory.lua; do
         luajit "${TESTS_DIR}/${test_file}" "${DIR}" "${neighbour}"
         status=$?
         # Path: non-zero — a failure (or a crash) in that file; count it.

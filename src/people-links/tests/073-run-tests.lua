@@ -25,6 +25,7 @@ local TESTS = {
     "070-test-safety",
     "071-test-choices",
     "075-test-people-by-address",
+    "076-test-mailboxes-and-flags",
     "072-test-with-neighbours",
 }
 

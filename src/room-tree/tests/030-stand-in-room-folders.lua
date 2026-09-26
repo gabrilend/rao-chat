@@ -1,6 +1,6 @@
 -- 030-stand-in-room-folders.lua — a small copy of the room-folders module
 -- (issue 101), used only by the room-tree tests while the real one is being
--- rewritten for "a room is a contact".
+-- rewritten for "a room is a contact" (round 2; kept in step since).
 --
 -- The room tree needs somewhere to keep rooms: a home folder with a config
 -- file and one folder per room, named by a random local tag, holding one
@@ -37,6 +37,7 @@ local KINDS = {
     ["created"] = true, ["label"] = true, ["token"] = true, ["members"] = true,
     ["parent"] = true, ["filed"] = true, ["withheld"] = true, ["log"] = true,
     ["ignore"] = true, ["removed-room"] = true, ["heard"] = true,
+    ["mailbox"] = true,
 }
 
 -- {{{ local function read_file
@@ -237,8 +238,16 @@ end
 
 -- {{{ function M.make_room
 -- spec: { label, token, kind, parent (fingerprint or ""), filed_under (tag
--- or ""), members = list of {address, port, heard} }, all required.
+-- or ""), members = list of {address, port, heard}, mailbox_port }, all
+-- required.  Mailboxes (round 3) are not kept here: the tree never reads
+-- them.  Only the shape of mailbox_port is checked, a whole number or "",
+-- so a test that would trip the real module's check trips here too.
 function M.make_room(home, spec)
+    local port = spec.mailbox_port
+    -- neither a whole number nor "": the test built the spec wrongly
+    if not ((type(port) == "number" and port == math.floor(port)) or port == "") then
+        error("stand-in: make_room needs mailbox_port, a whole number or \"\", got " .. tostring(port))
+    end
     -- a token already held: refused, as 101 does
     if M.find_by_fingerprint(home, M.token_fingerprint(spec.token)) ~= "" then
         error("stand-in: token already held by another room")

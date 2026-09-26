@@ -1,9 +1,0 @@
-# 023-reader-forest.lua
-
-The reader's side of the tree: the trees a person sees, worked out only
-from the rooms that reached them.  Offered through 021 as well.
-
-| function | takes | gives | purpose |
-|---|---|---|---|
-| `visible_forest(received)` | list of `{ room_id = string, name = string, disclosed_parent_id = string }` | list of top nodes | joins each room under its said parent when that parent was also received.  A room with no parent said, or a parent said but not received, is a top; the latter has `parent_unseen = true`.  Each node is `{ room_id = string, name = string, disclosed_parent_id = string, parent_unseen = bool, children = list of nodes }`; tops and children sorted by name then room id.  Errors on: a missing or non-string field, a room listed twice, a room naming itself as parent, rooms naming each other in a ring. |
-| `forest_paths(forest)` | a forest from `visible_forest` | list of strings | each room's path of names from the top of its tree, in drawing order (e.g. `"home"`, `"home/ritz"`).  Names are escaped as in 022. |

@@ -19,21 +19,24 @@
 -- local tag of the room that changed; "home-or-room" — the empty string
 -- when the change belongs to the whole home, or a local tag when it
 -- belongs to one room (the ignore list can be kept for the whole home or
--- per room; which is the ignore list's own open choice, ignore.scope).
+-- per room; which is the ignore list's own open choice, ignore.scope; and
+-- the mailboxes file is the whole home's, while a room moving between
+-- mailboxes is that room's).
 -- A table rather than a chain of comparisons, so the list is written once
 -- and read everywhere (the demo and tests read it too).
 local BELL_KINDS = {
-    ["created"]      = { scope = "room", meaning = "a new room folder now exists (entry, empty withheld, empty log)" },
+    ["created"]      = { scope = "room", meaning = "a new room folder now exists (entry, empty withheld, empty flagged, empty log)" },
     ["label"]        = { scope = "room", meaning = "the entry's label changed" },
     ["token"]        = { scope = "room", meaning = "the entry's token (and so its fingerprint) changed" },
     ["members"]      = { scope = "room", meaning = "the entry's address pairs changed (rung for 103's writes)" },
     ["heard"]        = { scope = "room", meaning = "one address's last-heard time changed; membership did not" },
     ["parent"]       = { scope = "room", meaning = "the entry's parent fingerprint changed" },
     ["filed"]        = { scope = "room", meaning = "the entry's filed-under changed" },
-    ["withheld"]     = { scope = "room", meaning = "the room's withheld file changed (rung by recipients)" },
+    ["withheld"]     = { scope = "room", meaning = "the room's withheld or flagged file changed: who you send to (rung by recipients)" },
     ["log"]          = { scope = "room", meaning = "a record was filed in the room's log (rung by message-log)" },
     ["ignore"]       = { scope = "home-or-room", meaning = "the ignore file changed (rung by the ignore list: tag \"\" for the whole home, or the room it was scoped to)" },
     ["removed-room"] = { scope = "room", meaning = "a room folder is gone (rung by whoever retires one; none in phase 1)" },
+    ["mailbox"]      = { scope = "home-or-room", meaning = "the mailboxes changed: tag \"\" when a mailbox was made by make_mailbox or its port changed, a room's tag when that room moved to another mailbox; membership did not change" },
 }
 
 -- How each scope checks the tag it is rung with.  A local tag is exactly

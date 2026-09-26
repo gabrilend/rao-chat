@@ -1,6 +1,7 @@
 -- 048-test-ignore.lua — the ignore list (issue 103a): both levels, the
--- member filter (a synced-back ignored address refused), un-ignoring, and
--- every variant of its three undecided choices.
+-- member filter (a synced-back ignored address refused), un-ignoring, the
+-- two answered choices fixed in place (every port at an address; hidden
+-- messages not filed), and both variants of the one still open (scope).
 
 local A = { "203.0.113.1", 7001 }
 local B = { "203.0.113.2", 7002 }
@@ -76,22 +77,15 @@ local function run(h)
     end)
 
     h.check("ignore: the address change escapes the list (by design)", function()
-        local home = h.new_home("ignore-moved", { ["ignore.match"] = "pair" })
+        local home = h.new_home("ignore-moved", {})
         local tag = h.room(home, "room", {})
         I.ignore(home, A[1], A[2], "hide", "*", T)
         h.equal(R.add_member(home, tag, "198.51.100.9", A[2]), "added", "new address, same person")
     end)
 
-    -- ignore.match
-    h.check("ignore.match = pair: another port at the same address is not ignored", function()
-        local home = h.new_home("ignore-match-pair", { ["ignore.match"] = "pair" })
-        local tag = h.room(home, "room", {})
-        I.ignore(home, A[1], A[2], "hide", "*", T)
-        h.equal(I.how_ignored(home, tag, A[1], 9999), "none", "other port")
-    end)
-
-    h.check("ignore.match = host: every port at that address is ignored; strongest level wins", function()
-        local home = h.new_home("ignore-match-host", { ["ignore.match"] = "host" })
+    -- every port at the address (fixed 2026-09-25; ignore.match went)
+    h.check("ignore: ignoring one port of an address ignores the others; strongest level wins", function()
+        local home = h.new_home("ignore-every-port", {})
         local tag = h.room(home, "room", {})
         I.ignore(home, A[1], A[2], "mark", "*", T)
         h.equal(I.how_ignored(home, tag, A[1], 9999), "mark", "other port")
@@ -131,28 +125,30 @@ local function run(h)
         h.expect_error("one-room entry", function() I.how_ignored(home, tag, A[1], A[2]) end)
     end)
 
-    -- ignore.hide-files
-    h.check("ignore.hide-files = filed: a hidden message is still filed; marked always filed", function()
-        local home = h.new_home("ignore-files-filed", { ["ignore.hide-files"] = "filed" })
-        local tag = h.room(home, "room", {})
-        I.ignore(home, A[1], A[2], "hide", "*", T)
-        I.ignore(home, B[1], B[2], "mark", "*", T)
-        h.equal(I.files_message(home, tag, A[1], A[2]), true, "hidden, filed")
-        h.equal(I.files_message(home, tag, B[1], B[2]), true, "marked, filed")
-        h.equal(I.files_message(home, tag, "198.51.100.1", 1), true, "stranger, filed")
-    end)
-
-    h.check("ignore.hide-files = not-filed: a hidden message is not filed; marked still is", function()
-        local home = h.new_home("ignore-files-not", { ["ignore.hide-files"] = "not-filed" })
+    -- hidden messages are not filed (fixed 2026-09-25; ignore.hide-files went)
+    h.check("ignore: a hidden message is not filed, on any port; marked and strangers are", function()
+        local home = h.new_home("ignore-files", {})
         local tag = h.room(home, "room", {})
         I.ignore(home, A[1], A[2], "hide", "*", T)
         I.ignore(home, B[1], B[2], "mark", "*", T)
         h.equal(I.files_message(home, tag, A[1], A[2]), false, "hidden, not filed")
+        h.equal(I.files_message(home, tag, A[1], 9999), false, "hidden, other port, not filed")
         h.equal(I.files_message(home, tag, B[1], B[2]), true, "marked, filed")
+        h.equal(I.files_message(home, tag, "198.51.100.1", 1), true, "stranger, filed")
+    end)
+
+    h.check("ignore: the retired keys are not read (a home without them works)", function()
+        local home = h.new_home("ignore-retired-keys", {})
+        local tag = h.room(home, "room", {})
+        local cfg = h.rooms.read_config(home)
+        h.equal(cfg["ignore.match"], nil, "no ignore.match in a new home")
+        h.equal(cfg["ignore.hide-files"], nil, "no ignore.hide-files in a new home")
+        I.ignore(home, A[1], A[2], "hide", "*", T)
+        h.equal(I.how_ignored(home, tag, A[1], A[2]), "hide", "answers without them")
     end)
 
     h.check("ignore: an unknown variant value in config is refused at first use", function()
-        local home = h.new_home("ignore-typo", { ["ignore.match"] = "hosts" })
+        local home = h.new_home("ignore-typo", { ["ignore.scope"] = "homes" })
         local tag = h.room(home, "room", {})
         h.expect_error("not a built variant", function() I.how_ignored(home, tag, A[1], A[2]) end)
     end)
@@ -162,13 +158,13 @@ local function run(h)
         local tag = h.room(home, "room", {})
         -- rewrite config without ignore.match
         local cfg = h.rooms.read_config(home)
-        cfg["ignore.match"] = nil
+        cfg["ignore.scope"] = nil
         local lines = {}
         for k, v in pairs(cfg) do lines[#lines + 1] = k .. " = " .. v .. "\n" end
         local file = assert(io.open(home.dir .. "/config", "w"))
         file:write(table.concat(lines))
         file:close()
-        h.expect_error("ignore.match", function() I.how_ignored(home, tag, A[1], A[2]) end)
+        h.expect_error("ignore.scope", function() I.how_ignored(home, tag, A[1], A[2]) end)
     end)
 end
 -- }}}

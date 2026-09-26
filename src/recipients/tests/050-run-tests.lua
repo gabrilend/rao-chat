@@ -5,14 +5,14 @@
 -- Usage:  luajit 050-run-tests.lua [project folder] [stand-in | real-101 | real]
 --
 -- The recipients module leans on two neighbours: the room folders (issue
--- 101: the room's entry, the bell) and the room tree (issue 102: the check
--- that a child room only takes members of its parent).  "stand-in" runs the
--- tests against the small copies kept in this tests folder; "real" runs them
--- against the real modules in src/; "real-101" uses the real room folders
--- with the stand-in tree (while 102 is being rewritten).  Each test prints one pass/FAIL line;
--- the last line is the tally, and the program ends with a failure status if
--- any test failed, so a build script can stop on it.  Files ending in -done
--- are retired and never run: the list below names each test file.
+-- 101: the room's entry, the flagged and withheld files, the bell) and the
+-- room tree (issue 102: whether a member of a child room belongs by the
+-- rooms declared above it).  "stand-in" runs the tests against the small
+-- copies kept in this tests folder; "real" runs them against the real
+-- modules in src/; "real-101" uses the real room folders with the stand-in
+-- tree.  Each test prints one pass/FAIL line; the last line is the tally,
+-- and the program ends with a failure status if any test failed, so a
+-- build script can stop on it.  The list below names each test file.
 
 local DIR = arg[1] or "/home/ritz/programs/rao-chat"
 local neighbours = arg[2] or "stand-in"

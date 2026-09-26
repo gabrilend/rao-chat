@@ -20,11 +20,11 @@ local h = t.room(rooms, home, "home", "token-home", "", {})
 local k = t.room(rooms, home, "kitchen", "token-kitchen", h, {})
 t.room(rooms, home, "recipes", "token-recipes", k, {})
 local g = t.room(rooms, home, "garden", "token-garden", h, {})
-local p = rooms.make_room(home, {
+local p = t.make(rooms, home, {
     label = "programming", token = "token-prog", kind = "group",
     parent = rooms.token_fingerprint("token-ritz"), filed_under = "", members = {},
 })
-local sam = rooms.make_room(home, {
+local sam = t.make(rooms, home, {
     label = "sam", token = "token-sam", kind = "direct",
     parent = "", filed_under = "", members = t.members({ { "10.0.0.9", 7777 } }),
 })

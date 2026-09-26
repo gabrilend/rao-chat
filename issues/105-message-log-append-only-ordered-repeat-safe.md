@@ -8,10 +8,10 @@
 
 ## Current Behavior
 
-Rewritten for "a room is a contact" (round 2, 2026-09-25).  Every test
-passes, both against a stand-in of the round-2 room-folders module and
-against the real one.  Run `src/message-log/tests/098-run-tests` for
-current counts.
+Round 3 (2026-09-25): the owner's answered choices are fixed in place and
+their switches removed.  Every test passes, both against a stand-in of the
+room-folders module and against the real round-3 one (with mailboxes).
+Run `src/message-log/tests/098-run-tests` for current counts.
 
 What exists in `src/message-log/`:
 
@@ -23,49 +23,77 @@ What exists in `src/message-log/`:
   part, so two homes that hold the room under different folder tags show
   one order).  Each record holds `from`: `"me"` or the address the copy
   arrived from, as `"<address> <port>"`.  There is no author field.
-  A repeated id with the same contents answers `duplicate`.  If the
-  written time, kind, target or text differ, the result is an error that
-  names the id and describes both versions, and nothing is filed.  The
-  arrival time never counts.  A repeat that differs only in `from` goes by
-  `log.same-id-new-address` (`duplicate` or `error`).  That key is read
-  only in this case.  Filing rings the bell with `log`.  Copying one log
-  into another is retired.
+  A repeated id with the same written time, kind, target and text is
+  `duplicate`, whatever address it came from and whenever it arrived; the
+  first copy's `from` stays in the file (owner: "duplicate").  If any of
+  those four differ, the result is an error that names the id and
+  describes both versions, and nothing is filed.  Filing rings the bell
+  with `log`.  The one config key read is `log.duplicate-check`, by
+  `append`, `correct`, `delete` and `has_message`; reading needs none.
 - `082-message-ids.lua` — message ids, and the field checks.
   `check_from` accepts `"me"` or a non-whitespace address, one space, and
   a port from 1 to 65535.
-- `083-record-codecs.lua` — the three record shapes (tsv, block, jsonl),
-  field `from` in place of `author`.
-- `084-log-reader.lua` — log text back into records.  It can now also
-  decode the single record at a known position (`parse_one`), so a repeat
-  can be compared without decoding the whole log.
-- `085-duplicate-check.lua` — `find` gives the already-filed record, not
-  just yes/no.  `scan` finds it by marker and decodes that one record.
-  `remembered` now keeps whole records in memory (not just ids).
-- `086-edits.lua` — edits are always allowed, with no time limit.  Who may
-  edit (open question 2) is built both ways under `log.who-may-edit`:
-  `anyone`, or `same-address`.  That key is read only when an edit is
-  filed.  The rule governs filing; reading applies every edit in the
-  file.  Each view carries `changed_from`, the address of the edit
-  applied.  The `never` and `window` rules, and the keys `log.edits` and
-  `log.edit-window-seconds`, are retired.
-- `099-options.lua` — eight choices (five switchable), with measured figures.
-- `tests/` — codecs, log (all 12 setting combinations; the conflict
-  error; a repeat from another address under both values; the address
-  shapes; two homes with different tags showing one order), edits (both
-  `log.who-may-edit` values in every shape), mixing and memory, measure,
-  runner.
-- Retired round-1 files are kept beside the new ones as `<name>-done`.
+- `083-record-codecs.lua` — the one record shape, tsv: one line per
+  record, `id TAB from TAB written TAB arrived TAB kind TAB target TAB
+  text`, with backslash, tab, line feed and carriage return in the text
+  escaped.  It is still looked up in a table by name (`codecs.SHAPE`,
+  `codecs.SHAPES`), so a shape can be added back.  The block and jsonl
+  codecs are deleted, and with them `libs/dkjson.lua`, which nothing else
+  in the project required (checked with a project-wide search).
+- `084-log-reader.lua` — log text back into records, one line each; it can
+  also decode the single record at a known position (`parse_one`), so a
+  repeat can be compared without decoding the whole log.  Recognising a
+  record's shape by its first characters, and `log.shape-mixing`, are
+  deleted.  A line left in a retired shape is refused loudly.
+- `085-duplicate-check.lua` — `find` gives the already-filed record.
+  `scan` finds it by its id marker and decodes that one record (so it
+  does not notice a damaged line elsewhere until the log is read);
+  `remembered` keeps whole records in memory and decodes each new record
+  once (so a damaged line is an error at the next filing).
+- `086-edits.lua` — edits are always allowed, by anyone, with no time
+  limit (owner: anyone).  `check` only confirms the target is a message in
+  the room and not already deleted.  Reading applies every edit in the
+  file; each view carries `changed_from`, the address of the edit
+  applied.  A deleted message stays in the view, empty and marked
+  `deleted`; showing it as a gap or hiding it is the person's setting in
+  the client (owner: "This is a UI concern").  Its text stays in the file.
+- `099-options.lua` — four choices still open: `log-duplicate-check`
+  (switchable, waits on phase 2), `log-pictures`, `log-early-edits`
+  (waits on phase 2), and `log-retired-keys-in-config` (new).  Its header
+  lists the choices removed as answered.
+- `tests/` — codecs (tsv round trips, retired-shape lines refused), log
+  (both duplicate checks; the conflict error; a repeat from another
+  address answered duplicate with no key set; the exact line on disk; the
+  address shapes; two homes with different tags showing one order), edits
+  (anyone may edit; a leftover `log.who-may-edit` is ignored; deleted
+  messages stay marked), memory (the remembered check against outside
+  appends and replaced files; a retired-shape line under both checks),
+  measure, runner.  The test harness makes each room a top-level room in
+  its own mailbox (make_room's round-3 `mailbox_port`); the stand-in
+  insists on that field as the real module does.
+- The round-1 and round-2 `-done` files are deleted (git history holds
+  them).
+
+Removed this round (answered by the owner): `log.record-shape` (tsv; the
+block and jsonl variants went), `log.shape-mixing` (per-record and fixed
+went), `log.who-may-edit` (anyone; same-address went),
+`log.same-id-new-address` (duplicate; error went), and the deleted-view
+choice (marked, shown as the client chooses).
+
+Measured against the real round-3 room-folders module, 10,000 messages
+(`tests/095-measure.lua "" real 10000`): 124.3 bytes per message; filing
+all 10,000 takes 0.42 s with `remembered` and 5.7 s with `scan`;
+delivering all 10,000 again takes 0.26 s and 3.6 s; reading them back
+takes 0.03 s, in written order 0.04 s.
 
 From room-folders, the log uses only `config_value`, `log_path`,
 `notify` and the empty log made at birth.  The tests also use
-`make_room` and `new_local_tag`.  The size and speed figures in the
-options file were measured with the stand-in.  To re-measure against the
-real module, run `tests/095-measure.lua "" real 10000`.
+`make_room` (with `mailbox_port`) and `new_local_tag`.
 
 ## Intended Behavior
 
-- **One record per message**, plain text, appended, never rewritten: the
-  message id, **the address it arrived from** (`me` for your own), time
+- **One record per message**, one tab-separated line, appended, never
+  rewritten: the message id, **the address it arrived from** (`me` for your own), time
   written and time arrived (whole seconds since 1970), kind (`message`,
   `correction`, `deletion`), the id it changes (empty for a message), and
   the text.  A person can read a room with `cat` or `less`, back it up by
@@ -78,45 +106,37 @@ real module, run `tests/095-measure.lua "" real 10000`.
   belongs.  Ties are broken by message id alone, so every reader sees the
   same order.  Ordering happens when reading, never by rewriting the file.
 - **Ids make delivery safe to repeat.**  The same id with the same contents
-  is `duplicate` and not filed again.  **The same id with different
+  is `duplicate` and not filed again, even when it came from another
+  address (owner: "duplicate").  **The same id with different
   contents is an error** — raised to the person, not quietly settled
   (owner: "If there's ever a discrepancy it's raised as an error, not a
   silent warning in some log somewhere that gets auto-corrected").
-- **Edits are always allowed**, with no time limit.  An edit is its own
+- **Edits are always allowed**, by anyone, with no time limit.  An edit is its own
   record with its own id, naming the one it changes; the original stays in
-  the file, and the view shows the latest.  Owner: "Everything is
+  the file, and the view shows the latest and the address the change came
+  from.  A deleted message stays in the view, marked; the client decides
+  how to show it.  Owner: "Everything is
   edit-able by design with no record, so nothing can be trusted unless
   you make local copies yourself."  The log is that local copy.
 - **Filing rings the bell** with `log`.
 
 ## Suggested Implementation Steps
 
-1. Rename the `author` field to `from` (an address, or `me`) in every
-   record shape and in reading.
-2. Duplicate check: compare contents when an id repeats; equal is
-   `duplicate`, different is an error naming both.
-3. Edits: keep `corrections`; retire `never` and `window` and the
-   `log.edits` / `log.edit-window-seconds` keys.  Remove the "only the
-   author may edit" rule (see open question 2).
-4. Tie-break by message id only.
-5. Retire copying one log into another.
-6. Keep the three record shapes, both mixing rules and both duplicate
-   checks as switchable choices until the owner picks.
-7. Tests: the conflict error; ordering identical on two homes whose local
-   tags differ.
-
-### Round 3 (2026-09-25)
-
-1. **Answered choices fixed in place, switches removed:** record shape
-   `tsv` only (the `block` and `jsonl` codecs, and with them
-   `log.shape-mixing`, go — they are in history); `log.who-may-edit` =
-   anyone; `log.same-id-new-address` = duplicate.  The codec table stays a
-   table, so a shape can be added back.
-2. **Deleted messages** stay marked in the view (built); how they are shown
-   is the client's setting.
-3. Delete this module's `-done` files (and `libs/dkjson.lua` if nothing
-   else uses it — check first).
-4. Re-run the measurement for tsv against the real 101.
+1. Records carry `from` (an address, or `me`), never an author, in the
+   one record shape, tsv; keep the codec a table so a shape can be added.
+2. Duplicate check: compare contents (written, kind, target, text) when an
+   id repeats; equal is `duplicate` whatever address it came from,
+   different is an error naming both.  Build both ways of finding the
+   filed record (`scan`, `remembered`) under `log.duplicate-check` until
+   phase 2 settles whether the server runs continuously.
+3. Edits: corrections and deletions, by anyone, no time limit; the view
+   applies the latest by (written, id) and names the address of the change;
+   a deleted message stays in the view, marked.
+4. Order by written time, ties by message id only.
+5. No copying one log into another.
+6. Tests: the conflict error; a repeat from another address; ordering
+   identical on two homes whose local tags differ; lines in retired
+   shapes refused.
 
 ## Blockers that are not the owner's
 
@@ -124,48 +144,46 @@ real module, run `tests/095-measure.lua "" real 10000`.
 
 ## Open questions
 
-Every choice this module holds open — those below, and those found while
-building (named in Current Behavior) — is in its options file with what
+Every choice this module holds open is in its options file with what
 building each variant showed; `scripts/tally-options --walk` goes through
 them one at a time.  An issue with any of them unanswered is in progress.
 
-1. **Record shape** (planning question 8, `log.record-shape`): `tsv`
-   (116 bytes per message, reads 10,000 in 0.02 s), `block` (167, 0.04 s),
-   `jsonl` (185, 0.10 s).  Builder's leaning: `tsv`.
-2. **Who may edit a message?**  The first build allowed only its author,
-   but the author is now unknowable.  Any edit accepted (the original is
-   always kept and viewable), or only edits arriving from the same address
-   as the original?  (Found while rewriting.)
-3. **Mixing shapes** (`log.shape-mixing`): may one log hold records in
-   several shapes after the setting changes (`per-record`), or not
-   (`fixed`)?  Builder's leaning: `per-record`.
 4. **Duplicate check** (`log.duplicate-check`, waits on phase 2):
-   `remembered` (ids kept in memory, about 0.1 ms per message) or `scan`
-   (about 1 ms per message at 10,000).  Depends on whether the phase 2
-   server is one long-running program.
-5. **A deleted message** is shown as empty and marked, so links to it still
-   work; its text stays in the file, so deletion hides rather than erases.
-   Right?
+   `remembered` (records kept in memory; 0.42 s to file 10,000) or `scan`
+   (5.7 s; about 1 ms per message at 10,000).  Depends on whether the
+   phase 2 server is one long-running program.
 6. **An edit that arrives before its message** (phase 2): refused now;
-   phase 2 will need to hold it until the message arrives.
+   phase 2 will need to hold it until the message arrives.  Reading
+   already applies such an edit once its message is filed.
 7. **Pictures** (planning question 9): text only for now.
-8. **The same message from another address** (`log.same-id-new-address`,
-   found while rewriting).  Suppose a repeat matches the filed message in
-   everything but the address it came from.  That can be honest: a member
-   who moved, or a missing message fetched from another member during the
-   cross-check.  Should it be answered `duplicate`, or raised as an
-   `error`?  Builder's leaning: `duplicate`, because the address proves
-   nothing either way.
+9. **A retired key still in a home's config** (found in round 3).  A home
+   set up before round 3 may still say `log.who-may-edit = same-address`
+   or `log.record-shape = block`.  The log now never reads those lines, so
+   the first silently stops applying.  (The second cannot pass unnoticed:
+   its old logs are refused when read.)  Should a retired key in config be
+   an error the person sees once?  If so, 101's config reader is the one
+   place to check every module's retired keys.  Builder's leaning: yes,
+   refuse, in 101.
+
+Answered (2026-09-25) and built as answered: record shape (1: tsv), who
+may edit (2: anyone), mixing shapes (3: gone with the other shapes), a
+deleted message (5: kept marked; the client chooses how to show it), the
+same message from another address (8: duplicate).
 
 ## Earlier design (first model, built 2026-09-25)
 
 Records carried an author (`me` or a contact name), edits could be
 forbidden, allowed, or allowed within a time window, and a repeated id
-was answered `duplicate` without comparing contents.  Measured then: the
-figures in open question 1; no index of ids needed at 10,000 messages.
+was answered `duplicate` without comparing contents.  Three record shapes
+were built and measured at 10,000 messages (bytes per message / seconds to
+read all): tsv 116 / 0.02, a labelled block 167 / 0.04, one JSON object
+per line 185 / 0.10; no index of ids was needed.  Round 2 kept all three
+shapes, a switch for logs mixing them, and switches for who may edit and
+for a repeat from another address; round 3 removed them as answered.
 
 ## Related documents
 
 - `notes/vision-planning.md` sections 3 ("Order", "Edits", "Checking each
-  other"), 4; section 14 ("Answers", 6, 7)
+  other"), 4; section 14 ("Answers", 6, 7); section 15 ("Answers from
+  the tally, round 2", "Five more from the tally", 1 and 3)
 - `docs/phase-1-module-contract.md`

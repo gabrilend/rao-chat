@@ -7,6 +7,13 @@ its tests use: `open_home`, `read_config`, `set_config`, `config_value`,
 `read_entry`, `write_label`, `write_members`, `write_heard`, `write_parent`,
 `write_filed_under`, `change_token` (re-points held children first, as the
 contract says), `list_rooms`, `find_by_fingerprint`, `room_exists`,
-`room_dir`, `on_change`, `notify`.  Entries are stored as Lua tables, not
+`room_dir`, `on_change`, `notify`; and, since round 3, mailboxes:
+`make_mailbox` (the direct kind only; rings `mailbox` with `""`),
+`direct_mailbox`, `write_mailbox_port` (rings `mailbox` with `""`),
+`write_mailbox` (rings `mailbox` with the room's tag), and `make_room`'s
+`mailbox_port` rule (integer exactly when the room starts a new mailbox;
+a parent not held here reads `mailboxes.unheld-parent`, and only
+`own-mailbox` is built).  Entries carry `mailbox`; `make_room` also makes
+an empty `flagged`.  Entries are stored as Lua tables, not
 rmail's format; nothing is refused (no loop, repeated-token or address
 checks).

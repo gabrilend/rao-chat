@@ -1,6 +1,7 @@
 -- 051-test-options.lua — checks the options file is in the shape the options
 -- tally expects, that every switchable choice's variants are the ones the
--- module accepts, and that the first model's choices are gone.
+-- module accepts, and that the first model's choices and the answered
+-- ignore choices are gone.
 
 -- {{{ local function run
 local function run(h)
@@ -35,9 +36,8 @@ local function run(h)
 
     h.check("options: config keys and variants are exactly the built ones", function()
         local want = {
-            ["ignore.hide-files"] = "filed,not-filed",
             ["ignore.scope"] = "home,home-and-room",
-            ["ignore.match"] = "pair,host",
+            ["recipients.flag-after-passing"] = "kept,cleared",
             ["recipients.shared-address-label"] = "all-labels,address",
         }
         local seen = 0
@@ -50,13 +50,14 @@ local function run(h)
                 seen = seen + 1
             end
         end
-        h.equal(seen, 4, "switchable choices")
+        h.equal(seen, 3, "switchable choices")
     end)
 
     h.check("options: the first model's choices are retired", function()
         for _, choice in ipairs(options) do
-            -- any split or arrival choice left over is stale
-            if choice.id:find("split") or choice.id:find("arrival") then
+            -- any split or arrival choice, or an answered ignore choice, is stale
+            if choice.id:find("split") or choice.id:find("arrival")
+                or choice.id == "ignore-hide-files" or choice.id == "ignore-match" then
                 error("retired choice still listed: " .. choice.id)
             end
         end
