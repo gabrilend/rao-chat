@@ -122,6 +122,16 @@ outputs, not descriptions.  Scenes, each in its own scratch home:
 4. Tests: every scene on the real modules; the whole demo through
    `run-phase-demo 1`.
 
+### Round 3 (2026-09-25)
+
+1. Scenes for what changed: mailboxes (a top room and its child in one,
+   the direct-message mailbox, a shared port reported); the tree scene
+   shows a flag raised, the member off the send list, then approved; the
+   ignore scene without the retired variants; the log scene in tsv only.
+2. Drop scenes' use of retired keys; check the tally still reads every
+   options file.
+3. Delete this module's `-done` files.
+
 ## Blockers that are not the owner's
 
 - Needs 101–105 and 103a rewritten.  Scenes whose module is not ready are

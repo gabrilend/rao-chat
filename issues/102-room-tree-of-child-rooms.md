@@ -135,6 +135,26 @@ view the contents in the tree. Very Microsoft Windows Explorer core."
    `cannot-check` when the parent is not held; a child whose
    parent is not held is a top room.
 
+### Round 3 (2026-09-25)
+
+1. **Detection, not refusal.**  The check answers `yes` / `no` /
+   `cannot-check`; `tree.unheld-parent-join` goes.
+2. **Every room above** (owner's answer to `tree-rule-depth`): an address
+   is `yes` only if it is a member of every declared ancestor this home
+   holds; a declared ancestor not held gives `cannot-check`.
+3. **Re-checking**: "which members of this room's declared descendants now
+   fail the check?", for 103 to flag when a room's members change.
+4. **A room's mailbox** follows its declared parent (101 stores it); a
+   child made while its parent is not held — see open question below.
+5. Delete this module's `-done` files.
+6. Tests: a grandchild member missing from the grandparent is `no`; an
+   unheld ancestor is `cannot-check`; dropping someone from `home` shows
+   them failing in `home`'s grandchildren.
+
+**Open (found while writing):** a child room whose declared parent is not
+held here — which mailbox?  Its own new one (needs a port), or held in a
+waiting mailbox until the parent arrives?  Build both, switched.
+
 ## Blockers that are not the owner's
 
 - Needs 101's entry, token fingerprint and bell kinds.

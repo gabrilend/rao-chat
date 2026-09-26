@@ -147,6 +147,27 @@ A home server keeps everything under one folder, `rao-home/`:
    by the same code; changing a token keeps the log; the fingerprint is
    the same on two homes for the same token; every bell kind.
 
+### Round 3 (2026-09-25)
+
+1. **Mailboxes.**  `rao-home/mailboxes`, rmail's format, one entry per
+   mailbox named by its local tag: `label`, `kind` (`tree` or `direct`),
+   `port` (whole number, no default).  Each room's entry gains `mailbox`
+   (a mailbox tag).  A top-level group room is made with a new tree
+   mailbox (its port given by the maker); a child room joins its declared
+   parent's mailbox; every direct message goes in the one `direct`
+   mailbox.  Two mailboxes may name the same port: allowed, but reported
+   every time it is read (not recommended).  Listing rooms by mailbox and
+   mailboxes by port, for phase 2's trial opening.  New bell kind
+   `mailbox`.  Owner: "listening port, but we can accept from the same
+   port and route to the right location if necessary. It's not
+   recommended though."; direct messages: "this one is just a more simple
+   rmail inbox. Just one."
+2. **Six-word suggested tokens**, fixed: the `rooms.suggested-token-words`
+   switch goes; a caller may still ask for another count.
+3. Delete this module's `-done` files; one commit has carried them.
+4. Tests: a top room and its child in one mailbox; a direct message in the
+   direct mailbox; a shared port reported; mailboxes by port.
+
 ## Blockers that are not the owner's
 
 None; this is the foundation the others plug into.  The contract document

@@ -130,6 +130,23 @@ Not integrated: nothing calls `heard_from` or `confirm_leave` yet (phase
    off the send list until approved; dropping someone from a parent flags
    them in its children.
 
+### Round 3 (2026-09-25)
+
+1. **Flagged members.**  An address 102 answers `no` or `cannot-check`
+   for is added with a flag, recorded beside it (private; never sent).
+   Flagged members are left off the send list until approved; approving
+   clears the flag, declining withholds the address and clears the flag.
+   When a room's `members` change, its declared descendants are re-checked
+   (102) and newly failing members flagged.  `add_member` answers `added`,
+   `added-flagged`, `already` or `ignored`; `not-in-parent` goes.
+2. **103a baked in:** `ignore.hide-files` is fixed at not-filed (a hidden
+   address's messages are dropped on arrival); `ignore.match` is fixed at
+   the whole IP address (every port).  Their switches go.
+3. Delete this module's `-done` files.
+4. Tests: a flagged member not on the send list until approved; declining
+   withholds; dropping someone from a parent flags them in its children;
+   ignoring one port of an address ignores the others.
+
 ## Blockers that are not the owner's
 
 - Needs 101's entry and bell kinds, and 102's parent-membership check.

@@ -1,6 +1,6 @@
 # Conversation Summary: 1d5c453f-a553-4ffa-9c95-7be3f588866f
 
-Generated on: 2026-09-25 21:01:38
+Generated on: 2026-09-25 21:14:05
 Models: claude-opus-5-5
 
 ## Contents
@@ -70,6 +70,11 @@ Models: claude-opus-5-5
     where each room is a contact list, and just recorded your "detect, don't
     block" answer in the plan and issues. Next: your go-ahead to have builders
     change the code to flag instead of refuse.
+17. 2026-09-25 21:04, after Request 37 - We're rebuilding rao-chat's phase 1
+    around rooms as contacts, and I'm walking you through the undecided design
+    choices. Next, answer the five I just listed (editing, hidden messages,
+    deletion, check depth, where direct messages live); then I'll start the next
+    round of builders.
 
 --------------------------------------------------------------------------------
 
@@ -5028,6 +5033,149 @@ contact.
   writes don't collide.
 - *Builder suggests:* **own folders** for now, joined up when the rmail link is
   built.
+
+--------------------------------------------------------------------------------
+
+### User Request 38
+
+> 1. Who may edit or delete a message, now that nobody can tell who wrote it?
+> - Anyone: any edit naming a message is filed. The original always stays in
+> your log, and the room shows which address the change came from, so an edit
+> made from another address can be marked as such.
+
+let's make the local copies part of the UI we build. That's the "the room shows
+which address the change came from" part.
+
+> 2. Messages from an address you've hidden entirely: saved to your log but
+> never shown, or not saved at all?
+
+Not saved, and also, anyone can delete anyone else's messages, so ignoring
+someone, removing them from your list, would cause a catastrophic deletion
+cascade. Maybe that's... not ideal actually? Maybe we should not send the
+deletion notices when ignoring someone, and just delete them on our end and go
+quiet instead. Then, if we re-add them, the messages can be brought back because
+the sender will notice "hey this person on the sending list doesn't have this
+message, I should send it" on their next sync cycle.
+
+> 3. A deleted message: does the room keep an empty space marked "deleted", or
+> does it vanish?
+
+This is a UI concern, the user should be able to choose. It doesn't matter to
+the backend, really.
+
+> 4. How far up the tree the membership check looks (now a flag, not a refusal):
+> - Every room above: checked against ritz and home. It catches someone who left
+> home but is still in ritz. Now that leaving only flags and never removes, that
+> case will be common.
+>
+> 5. Where direct messages are stored. A direct message is exactly an rmail
+> contact.
+
+I think we should have one mailbox per top-level "server" that a person is part
+of. The lower level "rooms" should be sorted according to the rules we're
+working through now.
+
+--------------------------------------------------------------------------------
+
+### Assistant Response 38
+
+> Taking them in order. Two of your answers raise things I need to check with
+> you.
+>
+> **1. Anyone may edit or delete.** The app shows your local copy: the original,
+> the change, and which address the change came from.
+>
+> **2. Messages from a hidden address are not saved.** On the "deletion cascade"
+> worry: ignoring never sends anything, so there's nothing to cascade. The
+> mechanism:
+> - **A deletion from someone else doesn't destroy anything.** It's a new record
+>   in your log saying "hide message X". The original stays beside it, and your
+>   app decides how to show it. Anyone can send one, but each reader keeps the
+>   original.
+> - **Ignoring is entirely local.** Your server drops the hidden address's
+>   messages on arrival and tells no one. No deletion notices go anywhere.
+>   That's already the "go quiet" behaviour you described.
+>
+> Your resend idea is a genuinely new piece for the periodic cross-check. At
+> present the design says "a missing message is normal" and does nothing about
+> gaps. You're proposing: **when a sender's server sees that someone on its send
+> list lacks one of the sender's own messages, it sends that message again.**
+> Two limits keep that safe:
+> - **Only the sender's own messages** are resent, and only to addresses it
+>   hasn't withheld. Passing along other people's messages would override their
+>   choice of who hears them.
+> - **Going quiet has to cover the cross-check too.** If your server kept
+>   sending its summaries to someone you ignore, their server would see you hold
+>   none of their messages and resend them every cycle. That's wasted traffic,
+>   and it tells them they've been ignored. So your server **sends no summaries
+>   to an ignored address**. They see nothing, and once you un-ignore them, the
+>   next summary shows the gaps and their messages come back, as you described.
+>
+> **3. Deleted messages: the person chooses in the app.** The server keeps them
+> marked, which it already does, and the app offers "show a marked gap" or "hide
+> it".
+>
+> **4. The membership check looks at every room above**, not just the parent.
+>
+> **5. One mailbox per top-level room.** I want to check what "mailbox" means,
+> because two readings lead to different designs:
+> - **(a) A folder.** Each top-level room and everything nested under it lives
+>   together in one folder, `rao-home/<top-level room>/…`. This is
+>   organisation only: one listening port as now, and every room's key still
+>   tried on every incoming message.
+> - **(b) A folder with its own listening port.** Same folder, but each
+>   top-level room also gets its own port. A message arriving on that port is
+>   tried only against that tree's keys. That's the key saving we discussed
+>   earlier.
+>   - **Cost:** every new top-level room needs a new port forwarded on the home
+>     router, by hand or with automatic port opening, which is off by default.
+>   - **Someone watching** can tell which top-level room a message belongs to by
+>     its port.
+>
+> **And where do direct messages go?** Each one as its own mailbox, all of them
+> in one shared direct-messages mailbox, or read from rmail's contacts?
+>
+> I'll write down what's settled now:
+
+> The resend-gaps idea changes the cross-check issue, and going quiet reaches
+> into the ignore list's issue. Updating both:
+
+I've recorded and committed all five answers (`71aff22c4`). Nine tally choices
+are now settled in the planning document and issues. The code still has them as
+switches; turning them into fixed behaviour is the next builder round.
+
+What changed in the design this round:
+- **Anyone may edit or delete.** The app shows the original, the change, and the
+  address the change came from.
+- **A hidden address's messages are dropped on arrival, and ignoring sends
+  nothing.**
+- **New for the periodic cross-check:** a sender whose server sees that someone
+  on its send list is missing one of its own messages sends that message again.
+  - It only resends its own messages, never someone else's.
+  - It never sends to anyone it has withheld.
+  - No summaries go to an ignored address. That address can't tell it's being
+    ignored, and doesn't resend every cycle.
+  - When you un-ignore someone, the gaps fill on the next cycle.
+- **How a deleted message is shown** is a setting in the app. The server keeps
+  it marked either way.
+- **The membership check looks at every room above**, not just the parent.
+- **Someone who leaves a parent room** is only flagged in its children. The flag
+  stays on your server and is never sent.
+
+Two questions are still open, both from your mailbox answer:
+1. **What a "mailbox" per top-level room means.** It could be (a) only a folder
+   grouping that room and everything under it, or (b) also its own listening
+   port. With (b), incoming messages are only tried against that tree's keys.
+   The costs are one forwarded router port per top-level room, and anyone
+   watching can tell which tree a message belongs to.
+2. **Where direct messages live:** each as its own mailbox, all together in one
+   direct-messages mailbox, or read from rmail's contacts?
+
+After those, the next builder round would:
+- replace refusal with flagging;
+- fix the nine answered choices in place;
+- add the resend-gaps rule to the phase 2 plan;
+- remove the `-done` files.
 
 --------------------------------------------------------------------------------
 

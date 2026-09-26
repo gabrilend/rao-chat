@@ -98,11 +98,15 @@ listed apart, but are built the same way, by the same code.
   simply two rooms, with different tokens.  Rename freely.
 - **Rooms form a tree**, shown like a file explorer: folders that open and
   collapse.  A room made as a **child** of another carries its parent in
-  its invitation, and can only hold people who are in the parent — tiers
+  its invitation; someone in it who is not in the rooms above is flagged
+  for your review (nothing is enforced) — tiers
   of trust.  Owner: "The farther down in the directory structure you go,
   the more people you'll need to have invited you ... it encourages task
   focus to specialize, rather than power to hierarchicalize".  Anyone in a
   room may start a child room.
+- **Mailboxes.**  Each top-level room and everything under it is one
+  mailbox with its own listening port; all direct messages share one more.
+  A message arriving on a port is tried only against that mailbox's keys.
 
 Each person reaches their home server from:
 
@@ -143,6 +147,8 @@ rao-chat and back, the way Facebook's app and Messenger link to each other.
 | **child room** | a room made inside another, whose invitation names its parent.  Your server only accepts a member into a child room if it is a member of the parent. |
 | **withheld** | a member you have chosen not to send to in a room.  Everyone else keeps their own choices. |
 | **ignore list** | addresses whose messages you do not want: hidden entirely, or marked ("someone you ignore spoke").  Yours alone; holds until that address changes. |
+| **mailbox** | a group of rooms with its own listening port: one per top-level room (its child rooms go in it), and one for all direct messages.  A message arriving on a mailbox's port is tried only against that mailbox's keys.  Two mailboxes may share a port (not recommended; the server says so). |
+| **flagged** | a member of a child room who is not a member of every room above it, as your server sees it, or whose rooms above your server does not hold.  Shown highlighted; sent nothing until you approve.  Private to your server. |
 | **signature** | the last line of a message, typed by its writer in a persistent "signature" field, or nothing.  Signing as someone else is taboo, not prevented. |
 | **device** | one of your own clients (a phone, a browser) paired with your home server, as in rmail (`own = true`). |
 | **message** | one entry in a room: its id, the address it arrived from, when it was written and arrived, and its text (signature included). |
@@ -173,8 +179,11 @@ rao-chat and back, the way Facebook's app and Messenger link to each other.
   send it for someone else.  Speaking again brings you back.  Addresses are
   added freely: a move adds the new address beside the old.
 - **Child rooms.**  Anyone in a room may make a child room and invite
-  people to it.  A member of the child must be a member of the parent, as
-  each server sees it; each server refuses anyone else.
+  people to it.  Nothing is enforced: a member of a child room who is not
+  a member of every room above it, as your server sees it, is **flagged**
+  — shown highlighted, sent nothing until you approve.  Flags are private
+  to your server.  Someone who leaves a parent is flagged in its children;
+  nothing removes them.
 - **Signatures.**  The sender of a message is unknowable by design: an
   address can change or pass through Tor.  The signature is what a message
   says about itself.
@@ -203,6 +212,7 @@ easily accessible as easily as accessing the name."
 ```
 rao-home/
   config                      settings (rmail's config format)
+  mailboxes                   one entry per mailbox: its label, kind (tree | direct), and port
   ignore                      one address per line, with its level (hide | mark)
   rooms/
     <local tag>/
@@ -210,6 +220,7 @@ rao-home/
                                 label, token, kind (group | direct),
                                 address[N] with port[N] (always paired),
                                 parent (the parent room's fingerprint, or empty),
+                                mailbox (the local tag of the mailbox it is in),
                                 filed-under (where you placed it in your tree)
       withheld                members you do not send to here, one per line
       where                   this folder's path, and the label
@@ -1558,3 +1569,19 @@ What follows:
    forwarded router port per top-level room, and an observer seeing which
    tree a frame belongs to)?  And where do direct messages live: each its
    own mailbox, one mailbox for all of them, or rmail's contacts?
+
+### Mailboxes, 2026-09-25
+
+- **A mailbox per top-level room, with its own listening port.**  Owner:
+  "listening port, but we can accept from the same port and route to the
+  right location if necessary. It's not recommended though."  A frame
+  arriving on a mailbox's port is tried only against that mailbox's rooms'
+  keys.  Two mailboxes may share a port — the server then tries every key
+  on that port — but it says so each time (not recommended, so treated as
+  a warning).
+- **Direct messages share one mailbox.**  Owner: "this one is just a more
+  simple rmail inbox. Just one."
+- On the way it was recorded: rooms stay stored flat; a mailbox is a group
+  with a port, named in each room's entry, listed with its port in a
+  `mailboxes` file.  A child room belongs to its declared parent's
+  mailbox.

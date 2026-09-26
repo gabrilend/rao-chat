@@ -105,6 +105,19 @@ real module, run `tests/095-measure.lua "" real 10000`.
 7. Tests: the conflict error; ordering identical on two homes whose local
    tags differ.
 
+### Round 3 (2026-09-25)
+
+1. **Answered choices fixed in place, switches removed:** record shape
+   `tsv` only (the `block` and `jsonl` codecs, and with them
+   `log.shape-mixing`, go — they are in history); `log.who-may-edit` =
+   anyone; `log.same-id-new-address` = duplicate.  The codec table stays a
+   table, so a shape can be added back.
+2. **Deleted messages** stay marked in the view (built); how they are shown
+   is the client's setting.
+3. Delete this module's `-done` files (and `libs/dkjson.lua` if nothing
+   else uses it — check first).
+4. Re-run the measurement for tsv against the real 101.
+
 ## Blockers that are not the owner's
 
 - Needs 101's room folders and bell.
