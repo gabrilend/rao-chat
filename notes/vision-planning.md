@@ -1509,3 +1509,52 @@ What follows:
   change.
 - The declared parent's only job is now this detection; filing and
   declaring are both organisation.
+- **Someone who leaves a parent room** (issue 102, open question 2):
+  **only flagged** in its children; nothing removes them.  Owner: "I think
+  it's fine if they're just flagged if they no longer appear in the parent
+  rooms that you know of. They won't know they're flagged for you - it's a
+  personal setting."  A flag is private to your own home server and never
+  sent.
+
+### Five more from the tally, 2026-09-25
+
+1. **Who may edit or delete** (`log.who-may-edit`): **anyone**.  Owner:
+   "let's make the local copies part of the UI we build. That's the "the
+   room shows which address the change came from" part."  The client shows
+   the original, the change, and the address the change came from.
+2. **Messages from a hidden address** (`ignore.hide-files`): **not saved**.
+   Owner: "Not saved, and also, anyone can delete anyone else's messages,
+   so ignoring someone, removing them from your list, would cause a
+   catastrophic deletion cascade. Maybe that's... not ideal actually?
+   Maybe we should not send the deletion notices when ignoring someone, and
+   just delete them on our end and go quiet instead. Then, if we re-add
+   them, the messages can be brought back because the sender will notice
+   "hey this person on the sending list doesn't have this message, I
+   should send it" on their next sync cycle."
+   - No cascade exists: ignoring sends nothing, and a deletion from anyone
+     is only a record ("hide message X") beside an original each reader
+     keeps.  Ignoring already goes quiet.
+   - **New for the periodic cross-check (issue 209): resending gaps.**  A
+     sender whose server sees that an address on its send list lacks one of
+     the sender's *own* messages sends it again.  Only its own messages
+     (passing on others' would override their choice of whom to send to),
+     and only to addresses it does not withhold.
+   - **Going quiet covers the cross-check**: no summaries are sent to an
+     ignored address, so it cannot tell it is ignored and does not resend
+     every cycle.  Un-ignoring lets the next summary show the gaps, and the
+     messages come back.
+3. **A deleted message** (`log-deleted-view`): **the person chooses, in the
+   client.**  Owner: "This is a UI concern, the user should be able to
+   choose. It doesn't matter to the backend, really."  The server keeps it
+   marked (built); the client offers a marked gap or hiding it.
+4. **How far up the tree the membership check looks** (`tree-rule-depth`):
+   **every room above**, not only the parent.
+5. **Where rooms live.**  Owner: "I think we should have one mailbox per
+   top-level "server" that a person is part of. The lower level "rooms"
+   should be sorted according to the rules we're working through now."
+   **Open**: is a mailbox (a) a folder per top-level room and everything
+   under it, organisation only, or (b) also its own listening port, so a
+   frame is tried only against that tree's keys (at the cost of one
+   forwarded router port per top-level room, and an observer seeing which
+   tree a frame belongs to)?  And where do direct messages live: each its
+   own mailbox, one mailbox for all of them, or rmail's contacts?

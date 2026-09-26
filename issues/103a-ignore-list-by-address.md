@@ -60,8 +60,8 @@ That'll stay valid until they change IP addresses."
 - **One list for the whole home**, `rao-home/ignore`: one address per
   line, with its level and when it was added.
 - **Two levels.**
-  - `hide` — their messages are filed (your log is your record) but never
-    shown.
+  - `hide` — their messages are dropped on arrival: not filed, not shown,
+    and nothing is sent back (answered 2026-09-25).
   - `mark` — their messages are not shown, but the room shows that they
     spoke ("someone you ignore spoke").
 - **Ignoring is separate from withholding.**  Withholding (103) is whether
@@ -94,9 +94,10 @@ building (named in Current Behavior) — is in its options file with what
 building each variant showed; `scripts/tally-options --walk` goes through
 them one at a time.  An issue with any of them unanswered is in progress.
 
-1. **Does `hide` file the message at all?**  Filed-but-never-shown keeps
-   your log a full record (useful for the periodic cross-check, phase 2);
-   not filing saves space.  Suggested: filed.
+1. *(answered 2026-09-25)* **`hide` does not file the message**: dropped on
+   arrival, nothing kept, and nothing sent (ignoring is quiet).  No
+   cross-check summaries go to an ignored address (issue 209), so it cannot
+   tell; un-ignoring lets its server fill the gaps on the next cycle.
 2. **Per room, or whole home?**  Written as whole home; would anyone want
    to ignore an address in one room only?
 

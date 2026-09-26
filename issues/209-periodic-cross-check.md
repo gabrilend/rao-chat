@@ -19,7 +19,18 @@ this is complex!"
 
 - **Periodically**, members send each other a `summary`: for a room, each
   message id they hold with a fingerprint of its contents.
-- **A missing message is normal** — everyone chooses whom they send to.
+- **A missing message is normal** — everyone chooses whom they send to —
+  **but a sender fills its own gaps.**  When a summary shows that an
+  address on this server's send list lacks one of this server's *own*
+  messages, the message is sent again (owner: "the sender will notice "hey
+  this person on the sending list doesn't have this message, I should send
+  it" on their next sync cycle").  Only its own messages, and never to a
+  withheld address: passing on others' messages would override their
+  choice of whom to send to.
+- **No summaries go to an ignored address** (103a), so ignoring stays quiet:
+  the ignored server cannot see the gaps, and does not resend every cycle.
+  Un-ignoring lets the next summary show the gaps and the messages come
+  back.
 - **The same id with a different fingerprint is an error**, raised to the
   person.  This catches someone showing different words to different
   people under one id.

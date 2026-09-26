@@ -1,6 +1,6 @@
 # Conversation Summary: 1d5c453f-a553-4ffa-9c95-7be3f588866f
 
-Generated on: 2026-09-25 20:34:06
+Generated on: 2026-09-25 21:01:38
 Models: claude-opus-5-5
 
 ## Contents
@@ -62,6 +62,14 @@ Models: claude-opus-5-5
     is a contact with a shared token, and the planning document and issues are
     now rewritten for that. Next, once you say go, I'll start the builders on
     the phase 1 code.
+15. 2026-09-25 20:37, after Request 35 - Phase 1 of rao-chat is rebuilt so a
+    room is a contact, all tests pass, and it's committed. Next I need your call
+    on whether a server that doesn't hold a child room's parent refuses or
+    accepts newcomers.
+16. 2026-09-25 20:54, after Request 36 - We're building phase 1 of rao-chat,
+    where each room is a contact list, and just recorded your "detect, don't
+    block" answer in the plan and issues. Next: your go-ahead to have builders
+    change the code to flag instead of refuse.
 
 --------------------------------------------------------------------------------
 
@@ -4831,6 +4839,195 @@ Two questions:
 1. Refuse or accept?
 2. Should shutting someone out also remove their address from your own copy of
    the member list, so the child rooms follow?
+
+--------------------------------------------------------------------------------
+
+### User Request 36
+
+> For the log's record shape, I read your "okay" as the builder's suggestion,
+> tab-separated. Please confirm.
+
+okay... wink ;)
+
+>   The child room whose parent your server doesn't hold
+
+Oh I see... I think the issue is that the "rooms" and "servers" are really just
+UI pretty-printing. A server is expected to have rooms sorted with slashes, like
+a directory structure, but it doesn't have to do that. And you could invite
+people to rooms even if they're not in higher tiers. The UI might flag them and
+highlight them in orange or something, to be manually reviewed by the user
+before sending messages to them... but it's a UI thing. At the end of the day,
+we can't control who gets to be in which room, because it's just a contact list
+on a person's computer. The "server" is really just for organizational purposes
+and holds no guarantees about authentication, however, we can *detect* when such
+things aren't true, and I believe we should.
+
+--------------------------------------------------------------------------------
+
+### Assistant Response 36
+
+> That's a clean way to put it, and it makes the design simpler. I'll say it
+> back in the project's terms.
+>
+> **Nothing is enforced; mismatches are detected.** A room is a contact list on
+> one person's computer, and nobody can control who else holds a token. So "a
+> child room only holds members of its parent" isn't a rule servers apply. It's
+> a check each server runs and reports on:
+>
+> - **Every address is accepted.** An address in a declared child room that
+>   isn't in the parent, *as your server sees it*, is added but **flagged**. The
+>   app shows it in orange.
+> - **A flagged member doesn't get your messages until you've reviewed them.**
+>   Approving makes them an ordinary member. Declining withholds them. That's
+>   the "manually reviewed before sending" part, and it's the only thing the
+>   server does about it.
+> - **A child room whose parent your server doesn't hold** can't be checked at
+>   all, so every newcomer there is flagged "can't check". That settles the
+>   refuse-or-accept question: neither. Accept and flag.
+> - **The shut-out hole** stops being a hole and becomes a detection: someone
+>   you removed from the parent shows up flagged in its children.
+>
+> One word check: when you said "server" here, you meant a **top-level room**
+> (the Discord-server-like level), not the home server program. I'll write it
+> that way to keep the two apart.
+>
+> Recording this and the tab-separated confirmation, then updating the issues
+> that assumed refusal:
+
+> Now the same change in the phase 2 issues and the demo scene:
+
+> The issues now say "detect and flag" everywhere they used to say "refuse", and
+> the checker still reports no problems. Committing the documentation change:
+
+I've written up your "detect, don't enforce" answer and the tab-separated
+confirmation, and committed both as `154c2208e`. The code hasn't changed yet.
+
+**What the design now says:**
+- Nobody can be refused from a room, because a room is just a contact list on
+  each person's computer. Instead, an address in a child room that isn't in the
+  parent is **flagged**, and so is one whose parent your home server doesn't
+  hold, since it can't be checked.
+- A flagged member is shown highlighted and gets none of your messages until you
+  approve them. Declining withholds them.
+- Someone dropped from a parent room turns up flagged in its children, so the
+  "shut out of the parent but still in the children" hole becomes something you
+  can see.
+- The refuse-or-accept setting for a child room whose parent your server doesn't
+  hold goes away. Those newcomers are flagged as "can't check".
+- **Where it's recorded:** the planning document quotes your words. Two phase 1
+  issues (the room tree, members) and five phase 2 issues (receiving, the
+  failed-decryption log, the hello, contact syncing, the phase 2 demo) now say
+  "flag" where they said "refuse". So does the demo issue.
+
+**The code still refuses, and still has switches for the four choices you
+answered.** The next round of builders would:
+1. Replace the refusal with the flag: the "can't check" answer, a "needs review"
+   state on members, approving and declining, and re-checking children when a
+   parent's members change.
+2. Fix your answered choices in place, removing their switches:
+   - 6-word suggested tokens;
+   - a repeat from a second address counted as a duplicate;
+   - ignoring by whole IP address;
+   - tab-separated log records.
+3. Remove the `-done` files, now that one commit has carried them into history,
+   as your rule allows.
+4. Update the demo's tree scene to show a flag being raised and then approved.
+
+That touches room folders, the room tree, members, the message log and the demo.
+The people view is unaffected.
+
+**Also still open:** my reading of your answer about someone leaving a parent
+room. It now reads: the app removes them from the child rooms, and until it
+does, the server flags them there. Does that match what you meant?
+
+Shall I start that round? Or would you rather walk more of the tally first?
+About 30 choices are still waiting on you.
+
+--------------------------------------------------------------------------------
+
+### User Request 37
+
+let's do 5 more tallies
+
+> Also still open: my reading of your answer about someone leaving a parent
+> room. It now reads: the app removes them from the child rooms, and until it
+> does, the server flags them there. Does that match what you meant?
+
+I think it's fine if they're just flagged if they no longer appear in the parent
+rooms that you know of. They won't know they're flagged for you - it's a
+personal setting.
+
+--------------------------------------------------------------------------------
+
+### Assistant Response 37
+
+> Recorded as: someone who leaves a parent room is **only flagged** in its
+> children, nothing removes them, and a flag is private to your own server,
+> never sent. I'll update that, then pull the next five choices from the tally.
+
+> Your answer settles the leaving question. Of the choices still waiting on you,
+> these five change the most. Pulling what building each one showed:
+
+Recorded in the planning document and in the room-tree issue: someone who leaves
+a parent room is flagged in its children and nothing removes them, and the flag
+stays on your server and is never sent to anyone. Here are the next five
+choices.
+
+**1. Who may edit or delete a message**, now that nobody can tell who wrote it?
+- **Anyone:** any edit naming a message is filed. The original always stays in
+  your log, and the room shows which address the change came from, so an edit
+  made from another address can be marked as such.
+- **Same address only:** an edit is accepted only from the address the original
+  arrived from. Building it showed this proves nothing, because addresses are
+  shared, move, or pass through Tor. It also stops anyone who moves from editing
+  their earlier messages.
+- *Builder suggests:* **anyone**. It's what you described: "everything is
+  edit-able … make local copies yourself".
+
+**2. Messages from an address you've hidden entirely:** saved to your log but
+never shown, or not saved at all?
+- **Saved:** your log stays a complete record. The periodic cross-check with
+  other members stays quiet, since you hold everything they hold. Un-ignoring
+  later shows everything said meanwhile. The cost is disk space for text you
+  never read.
+- **Not saved:** nothing of them is kept. Un-ignoring can't bring anything back,
+  and the cross-check sees gaps in your log.
+- A **marked** address (show that they spoke) is always saved either way,
+  because the room has to show it.
+- *Builder suggests:* **saved**.
+
+**3. A deleted message:** does the room keep an empty space marked "deleted", or
+does it vanish?
+- **Marked empty:** links to it (from a notice or a search result) still land
+  somewhere.
+- **Vanish:** those links break.
+- **Either way, deletion hides a message; it doesn't erase it.** The log is only
+  ever added to, so the original text stays in the file, and `cat` shows it.
+- *Builder suggests:* **marked empty**.
+
+**4. How far up the tree the membership check looks** (now a flag, not a
+refusal):
+- **Parent only:** someone in `programming` is checked against `ritz`. `ritz`'s
+  own members were checked against `home` when they joined.
+- **Every room above:** checked against `ritz` and `home`. It catches someone
+  who left `home` but is still in `ritz`. Now that leaving only flags and never
+  removes, that case will be common.
+- *Builder suggests:* **parent only**. That suggestion was made while the check
+  still refused people. With flags that are never cleaned up, I lean the other
+  way: **every room above**, since it's cheap and only ever adds flags.
+
+**5. Where direct messages are stored.** A direct message is exactly an rmail
+contact.
+- **Own folders (built):** every room, direct messages included, is a folder
+  with an entry in rmail's format. Printing all the entries together already
+  makes a valid rmail contacts file, so the two can meet later without
+  converting anything.
+- **Read rmail's contacts file directly:** not built. rmail lets an address fall
+  back to a default port, which rao-chat refuses, so some existing contacts
+  wouldn't load. Two programs writing one file would also need a lock so their
+  writes don't collide.
+- *Builder suggests:* **own folders** for now, joined up when the rmail link is
+  built.
 
 --------------------------------------------------------------------------------
 

@@ -151,7 +151,12 @@ them one at a time.  An issue with any of them unanswered is in progress.
    tag of the room it sits under, or empty), never sent, no rule applied.
    Declared children and filed rooms show in one tree; a room with both
    shows under its declared parent.  This module builds it.
-2. **When a member leaves the parent**, the client also removes them from
+2. *(answered 2026-09-25)* **When a member leaves the parent**, they are
+   only flagged in its children (owner: "I think it's fine if they're just
+   flagged if they no longer appear in the parent rooms that you know of.
+   They won't know they're flagged for you - it's a personal setting.");
+   nothing removes them, and a flag is never sent.  Earlier reading, kept
+   for the record: the client also removes them from
    the parent's child rooms; the server flags them in the children (detection, not refusal)
    (owner: "This is UI work").  This module offers "which child rooms hold
    this address?" for the client.  Reading to be confirmed by the owner.
