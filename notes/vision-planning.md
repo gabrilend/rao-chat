@@ -497,10 +497,10 @@ To be asked and answered one at a time before the roadmap is written.
    network; over HTTPS with a certificate (hard for a home address); or
    have people keep a copy of the page on their computer and open it from
    there, so only the encrypted connection crosses the internet?
-6. **Sharing code with rmail.**  Lift rmail's networking into a library
+6. *(answered 2026-09-26: rmail is a rubric; see section 15, "How rao-chat relates to rmail")*  **Sharing code with rmail.**  Lift rmail's networking into a library
    both use; copy it and let the two drift; or run rao-chat inside rmail's
    daemon on its own port?
-7. **One home server program or two?**  rmail's daemon and rao-chat's
+7. *(answered by 6, to be confirmed: two programs)*  **One home server program or two?**  rmail's daemon and rao-chat's
    server side by side (separate ports and folders), or one program doing
    both?
 8. **The shape of a message record in `log`.**  One line per message,
@@ -1616,3 +1616,31 @@ What follows:
   or `ask`.  Owner: "config setting. Might be confusing though. I prefer
   automatic."  `automatic` is listed first (the demo's starting value); as
   with every setting, it must be written in config — no silent default.
+
+### How rao-chat relates to rmail (2026-09-26)
+
+Planning questions 6 (sharing code with rmail) and 7 (one program or two)
+were asked as: lift rmail's networking into a library, copy it, or run
+inside rmail's server.  The owner answered with a fourth way — the
+strategem `strategems/other-peoples-software-as-a-rubric.md`, copied into
+this project:
+
+> check this out: /home/ritz/games/azeroth-core/wow-chat-2026/strategems/other-peoples-software-as-a-rubric.md
+>
+> that's what I think we should do. Make a copy to the project directory,
+> then use it as a rubric. Generate issue files. Use those that are there.
+> Describe everything you build with an issue file before you build it,
+> and build it to the spec of what's already built. But don't build it
+> exactly the same, do it different each time. Maybe make new notes. New
+> observations. Make it designed slightly differently, try out new
+> formations and finds.
+
+- **rmail is read, not called or copied.**  Its rules — what the network,
+  the operating system and the cipher require, and what its bugs taught —
+  are written down in `notes/rmail-rubric/`, apart from its choices.
+  rao-chat writes its own phase 2 to its own question and grades it with
+  referee tests written from those rules.
+- **Two programs** follows: rao-chat's home server is its own program.
+  (To be confirmed; it is what the strategem implies.)
+- **Every phase 2 issue carries a rubric part and a "where we differ"
+  part**, each trying a formation of its own rather than rmail's shape.

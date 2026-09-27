@@ -20,6 +20,19 @@ and issue files do not; they have their own indexes.
   Appendix A keeps the first model, which phase 1 was first built to;
   Appendix B keeps the second.
 
+- notes/rmail-rubric/ - rmail read as a rubric for phase 2, one note per
+  area (sealing and framing; delivery and retries; addresses and ports;
+  the server's shape and its defences): what rmail does, the rules any
+  correct answer must satisfy, the choices rmail made that rao-chat need
+  not, the bugs it already hit, referee tests written from the rules, and
+  different formations rao-chat could try.
+
+## Strategems
+- strategems/other-peoples-software-as-a-rubric.md - read a working
+  neighbour to learn what a correct answer must satisfy, then write our own
+  answer and grade it with referees built from those rules; copied from
+  wow-chat-2026 and adopted for phase 2, with rmail as the neighbour.
+
 ## Documentation
 - docs/table-of-contents.md - this file.
 - docs/phase-1-module-contract.md - how phase 1's five room modules and its
