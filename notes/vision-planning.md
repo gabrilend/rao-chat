@@ -1644,3 +1644,147 @@ this project:
   (To be confirmed; it is what the strategem implies.)
 - **Every phase 2 issue carries a rubric part and a "where we differ"
   part**, each trying a formation of its own rather than rmail's shape.
+
+### The server's shape, the outside port, and rooms as git history (2026-09-27)
+
+Answers to the first questions gathered in `notes/rmail-rubric/open-questions.md`.
+
+**The server's shape.**  Owner:
+
+> yes we want to have one mailbox per "server". the config and ignore list
+> can be managed in one collected UI - they'll each report to the RAM
+> directories as detailed in shape C. Many data gatherers, one viewer,
+> which is the android app or HTML page, both simply viewers for the rmail
+> inboxes located in RAM, pulled from disk by the gatherers at startup,
+> and synced periodically. The user types, and it creates messages and
+> puts them in the right place - the user never needs to touch the
+> filesystem at all, except for pointing out where to store the mailboxes.
+
+- One process per mailbox (one per top-level room, one for direct
+  messages): a **data gatherer**.  At start-up it loads its mailbox from
+  disk into RAM, works in RAM, reports into RAM folders (the pipeline of
+  shape C, split per mailbox as in shape B), and syncs to disk periodically.
+- **One viewer** — the Android app or the web page — reads the RAM inboxes
+  and writes what the person types into the right place.  Config and the
+  ignore list are managed in the same viewer.  The person never touches
+  the filesystem except to say where mailboxes are stored.
+
+**A frame opening under two rooms' keys.**  Owner: "this is impossible. One
+message cannot open correctly under two different tokens. It's hashed by
+the token, of course it'd resolve to nonsense if any other key was tried to
+open it."  Discussed below the answers (open).
+
+**The outside port**: configured by the person, per mailbox, in the viewer
+or the mailbox's config file.  (Formation F1 of the addresses note; no sweep
+tool.)
+
+**The log, the outbox, and git.**  Owner:
+
+> not just the outbox. We build on_receive hooks that create text files
+> and store them in git history, dynamically created per room. record
+> changes. encourage changes and deletions. perhaps, if desired, a shared
+> upstream, so you can coordinate more. In this one, the contact entry is
+> the room, and the IPs are the contacts. We don't know anything else
+> except what they sign it by. The last line in the message is the
+> signature. Only one 80 character line is allowed.
+
+- **Receive hooks** turn arriving messages into text files, committed to a
+  **git repository per room**, made when the room is.  Edits and
+  deletions are commits, so history keeps every version.  Optionally a
+  **shared upstream** repository lets members coordinate.
+- **Every address-and-port pair is a recipient** ("the contact entry is the
+  room, and the IPs are the contacts"): a member with two addresses gets
+  the message at both.  (Settles the contradiction between section 15 and
+  issue 202.)
+- **The signature is the message's last line, at most one line of 80
+  characters.**
+
+### Key-tying, the log and git, signatures (2026-09-27)
+
+**A frame opening under two rooms' keys** is possible by deliberate
+construction: AES-GCM's check value is computed from the sealed bytes by
+linear arithmetic, so someone holding both keys can solve for one frame that
+passes under both (published: Dodis, Grubbs, Ristenpart and Woodage 2018;
+Len, Grubbs and Ristenpart 2020).  Only a member of both rooms could; the
+harm is a frame landing in different rooms on different servers.  Owner:
+
+> got it, so add the token to the front of each message, before the regular
+> text but after the... nonce? I think? The thing that, when unencrypted,
+> validates that it was correct. Inside the encrypted payload, and strip it
+> out before displaying it to the user and after validating it. Right? That
+> might need an rmail patch too...
+
+- **Every sealed body begins with a key-tying value**, checked after
+  opening and stripped before anything is shown.  Proposed: the token's
+  32-byte fingerprint rather than the raw token — a short token such as
+  `coffee` (6 bytes) could be matched by brute force (about 2^48 tries);
+  32 bytes needs about 2^256.  It also lets trial opening stop at the first
+  key whose opened body starts with the right value.
+- The frame, outside to inside: length (4 bytes, clear) · nonce (12 bytes,
+  clear) · sealed body = key-tying value + message · check value (16 bytes,
+  clear).
+- No rmail patch is needed for rao-chat (its own server, its own frames);
+  rmail could adopt the same fix separately.
+
+**The log and git.**  Owner, choosing reading (b): "this one, I think. Also
+the output log for while it's been running is stored in git, even though
+it's in RAM, we'll make backups periodically (like every sync cycle maybe)
+and that gets put in git, always and eternally, once it's large enough we
+split into a new file."
+
+- The message log stays the delivery record (append-only, duplicate
+  checks); receive hooks write a human-editable text copy of each message
+  into the room's git repository.
+- The server's running log (in RAM) is committed to git every sync cycle,
+  kept forever, starting a new file past a size (a config setting).
+  Open: which repository — the mailbox's own?
+
+**Signatures.**  Owner: "body text, newline newline, signature. If the
+signature is longer than one line, then it is the body text still, and the
+last word is used."  A message is body, a blank line, then a one-line
+signature of at most 80 characters.  If the part after the last blank line
+is more than one line, it is all body, and its last word is used as the
+signature.  (To confirm: a last line over 80 characters; and that an
+ordinary closing paragraph is "signed" by its last word.)
+
+### Git per mailbox, signatures settled, sharing edits (2026-09-27)
+
+- **Each mailbox gets one git repository** (owner: "each mailbox gets a git
+  repository"), holding its rooms' text copies (a folder per room) and the
+  mailbox server's running log.  **File size before a new log file starts:**
+  "as large as is possible to upload to github, defined in a config file
+  with that as default."  GitHub refuses files over 100 MB pushed with git
+  (it warns above 50 MB; its browser upload stops at 25 MB), so the value is
+  100 MB, written into config when a home is made — a stated value in the
+  file, not a silent default in code.
+- **Signatures.**  Owner: "last line over 80 characters is a body text, not
+  a signature. Use the last word of the body text as the signature if
+  there's no signature."  So every message shows a signature: the
+  one-line signature after a blank line when there is one (80 characters
+  or fewer), otherwise the last word of the body.
+- **Edits to the git copy reach others only through a shared upstream.**
+  Owner: "only if they share an upstream. Ideally, git push when the server
+  starts up and shuts down, and maybe whenever it does random IP checks -
+  it's like once every 36 hours or so, I forget exactly how we planned it".
+  Push at start-up, at shut-down, and at each public-address recheck (rmail
+  rechecks "every day or two"; rao-chat's interval is a config setting).
+  Open: pulling from the upstream — at the same moments?
+- **Still open:** write a message to disk before acknowledging it, or accept
+  losing the last few seconds before a power cut.  Until answered, built
+  both ways, switched.
+- **The mailbox's git repository also carries the running source code.**
+  Owner: "the git repository should also have the source-code that the
+  user is running, potentially in their own branch, and it should be freely
+  downloadable for anyone sharing the same upstream."  This fits the AGPL,
+  which asks that people using the software over a network can get its
+  source.  Consequences recorded for the issues:
+  - Pulling brings other people's branches, including their code.  Pulled
+    code is never run or switched to automatically: running someone
+    else's code is a choice the person makes by hand.
+  - **Open:** a mailbox holds a whole tree of rooms, and a child room's
+    members are a subset of its parent's.  One repository per mailbox,
+    shared upstream, would let every member of the top room download the
+    text copies of child rooms they are not in.  A branch or repository per
+    room, or pushing only the rooms whose members all share the upstream?
+- **Pulling from the shared upstream** at the same moments as pushing
+  (start-up, shut-down, each public-address recheck).  Owner: "yeah probs".

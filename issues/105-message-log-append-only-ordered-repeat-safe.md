@@ -2,7 +2,7 @@
 
 **Phase:** 1 — Rooms on the home server
 **Blocked by:** 101
-**Blocks:** 106
+**Blocks:** 106, 211, 214, 215
 **Module folder:** `src/message-log/` (indexes 080–099)
 **Contract:** `docs/phase-1-module-contract.md`
 

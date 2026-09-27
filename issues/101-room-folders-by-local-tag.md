@@ -1,7 +1,7 @@
 # 101 — Room folders by a local tag, each holding a contact-style entry
 
 **Phase:** 1 — Rooms on the home server
-**Blocks:** 102, 103, 103a, 104, 105, 106, 201
+**Blocks:** 102, 103, 103a, 104, 105, 106, 201, 211, 212
 **Blocked by:** none
 **Module folder:** `src/room-folders/` (indexes 001–019)
 **Contract:** `docs/phase-1-module-contract.md`
