@@ -351,6 +351,7 @@ check("a confirmed leave removes the pair; a yes about one claim confirms no oth
     must(other.state == "refused", "a leave A never claimed was " .. other.state)
     must(recipients.is_member(n.b.home, n.b.tag, A_PAIR.address, A_PAIR.port), "an unclaimed leave removed A")
     local c = hear(n.b, leave_id, A_PAIR, "leave")
+    c.written = math.floor(sim.now)   -- the leave's own time, as 208's receiver sets it
     run_until(settled(c), 60)
     must(c.state == "confirmed", "A's own leave was " .. c.state)
     must(not recipients.is_member(n.b.home, n.b.tag, A_PAIR.address, A_PAIR.port), "a confirmed leave left A a member")

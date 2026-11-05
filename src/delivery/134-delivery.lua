@@ -28,6 +28,12 @@
 -- pair never heard from (`write`), at start-up to every send-list pair
 -- (`start`), and afresh after a confirmed move (`moved`).
 --
+-- Leaves (208).  `leave` sends a leave to every pair on the room's send
+-- list, one job each, run like the hellos (145's `attempt`) and kept in
+-- the same table.  The room's pending hellos are dropped, and the room
+-- gets no start-up hellos until this home writes in it again (147's
+-- `left-by-me`).
+--
 -- What runs where is 211's: it calls `write` from the viewer's stage,
 -- `pass` from a sender stage that never blocks the receiving stage (R6),
 -- and may run the jobs of one pass in parallel workers, as long as one
@@ -53,6 +59,7 @@ local timer = require("131-retry-timer")
 local send = require("132-send")
 local call_back = require("142-call-back")
 local hello = require("145-hello")
+local leaving = require("147-leaving")
 
 local M = {}
 
@@ -153,11 +160,40 @@ function Stage:hello(tag, pair, now, fresh)
     local job = self.hellos[k]
     if job and not fresh then return job end
     if not job then self.hello_order[#self.hello_order + 1] = k end
-    job = { tag = tag, pair = { address = pair.address, port = pair.port },
+    job = { kind = "hello", tag = tag, pair = { address = pair.address, port = pair.port },
             timer = timer.new(self.floor, self.ceiling), tries = 0 }
     job.timer:due_now(now)
     self.hellos[k] = job
     return job
+end
+-- }}}
+
+-- {{{ function Stage:leave
+-- 208: tag, now → the leave jobs, one per pair on the send list, due now.
+-- The leave states this mailbox's pairs (own_pairs, as a hello does) and
+-- carries `now` as its written time.  Leaving again makes fresh jobs.
+function Stage:leave(tag, now)
+    if not self.seams.own_pairs then
+        error("delivery: a leave states where this mailbox is (212's own_pairs); nothing is guessed", 2)
+    end
+    local written = math.floor(now)
+    leaving.mark_own(self.home, tag, written)
+    for _, k in ipairs(self.hello_order) do
+        local job = self.hellos[k]
+        if job.tag == tag and job.kind == "hello" then job.done = true end
+    end
+    local made = {}
+    for _, pair in ipairs(recipients.send_list(self.home, tag)) do
+        local k = "leave " .. job_key(tag, pair)
+        if not self.hellos[k] then self.hello_order[#self.hello_order + 1] = k end
+        local job = { kind = "leave", written = written, tag = tag,
+                      pair = { address = pair.address, port = pair.port },
+                      timer = timer.new(self.floor, self.ceiling), tries = 0 }
+        job.timer:due_now(now)
+        self.hellos[k] = job
+        made[#made + 1] = job
+    end
+    return made
 end
 -- }}}
 
@@ -184,7 +220,10 @@ end
 function Stage:announce(now, fresh)
     if not self.seams.own_pairs then return end
     for _, tag in ipairs(rooms.list_rooms(self.home)) do
-        for _, pair in ipairs(recipients.send_list(self.home, tag)) do self:hello(tag, pair, now, fresh) end
+        -- a room this home has left gets no hello (208)
+        if not leaving.own_left(self.home, tag) then
+            for _, pair in ipairs(recipients.send_list(self.home, tag)) do self:hello(tag, pair, now, fresh) end
+        end
     end
 end
 -- }}}
@@ -223,6 +262,8 @@ end
 -- write, then wake the send list: what the viewer's stage calls.
 function Stage:write(tag, record, now)
     local word, id, send_list = M.write(self.home, tag, record, now)
+    -- 208: writing in a room this home left is rejoining it
+    leaving.clear_own(self.home, tag)
     if self.seams.own_pairs then
         -- 205: a hello before the first message to a pair never heard from
         for _, member in ipairs(recipients.members(self.home, tag)) do
@@ -294,6 +335,22 @@ function Stage:run_job(job, now)
 end
 -- }}}
 
+-- {{{ function Stage:leave_pending
+-- 208: whether a leave from this pair of this room is being checked.  Its
+-- deliveries wait until the check settles (decision of 2026-11-05): the
+-- leave frame itself makes the pair due (heard_at), and a delivery run
+-- before the confirmation would send what the leave should drop.
+function Stage:leave_pending(tag, pair)
+    for _, check in pairs(self.checks) do
+        if check.kind == "leave" and not check.done and check.tag == tag
+            and check.pair.address == pair.address and check.pair.port == pair.port then
+            return true
+        end
+    end
+    return false
+end
+-- }}}
+
 -- {{{ function Stage:pass
 -- now (whole seconds; read again after each job through seams.now, if
 -- given) → the jobs run, in the order they were made.
@@ -311,7 +368,7 @@ function Stage:pass(now)
     for _, k in ipairs(self.order) do
         local job = self.jobs[k]
         local at = self.seams.now and self.seams.now() or now
-        if job.timer:is_due(at) then
+        if job.timer:is_due(at) and not self:leave_pending(job.tag, job.pair) then
             self:run_job(job, at)
             ran[#ran + 1] = job
         end

@@ -92,3 +92,13 @@ owner, most blocking first: `notes/rmail-rubric/open-questions.md`.
   Left: the mailbox's pairs (212, a seam until then), the members a
   joiner receives (207), and the old port kept served after a merge
   (211).
+- **208** — built 2026-11-05 in `src/delivery/` (147–148), with the
+  `leave` row in 126.  Leaving sends a leave with a claim to every pair
+  on the send list.  A receiver calls the leaving pair back, then removes
+  it, writes its `left` line and drops its `delivered` line.  A forged
+  leave is answered `no`.  The leaver's own newer message or hello
+  re-adds it, and a leave older than its newest message is ignored.
+  Referees 1–5 and a sixth for open question 1 run in the simulated
+  world.  Open questions 1–2 answered as dated decisions the owner may
+  overturn.  Left: 207's members lists, which must call
+  `may_add_from_list`.

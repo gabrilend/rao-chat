@@ -85,19 +85,23 @@ end
 -- }}}
 
 -- {{{ function M.attempt
--- home, job ({tag, pair, claim, pairs}), seams, now → true when the
--- receiver's ack named the claim; or false and why.  The claim is made on
--- the first try and kept on the job, so a retry is the same record.
+-- home, job ({kind, tag, pair, claim, pairs; a leave's `written`}), seams,
+-- now → true when the receiver's ack named the claim; or false and why.
+-- The claim is made on the first try and kept on the job, so a retry is
+-- the same record.  208's leave jobs are sent here too: the same record
+-- shape with the leave's written time.
 function M.attempt(home, job, seams, now)
     if not job.claim then
         local stated = M.stated_pairs(seams, job.tag, job.pair)
-        job.claim = claims.make_for(home, job.tag, "hello", stated, math.floor(now))
+        job.claim = claims.make_for(home, job.tag, job.kind, stated, math.floor(now))
         job.pairs = stated
     end
     local keys = room_key.key_pair(rooms.read_entry(home, job.tag).token)
     local conn, problem = seams.connect(job.pair)
     if not conn then return false, "no connection: " .. tostring(problem) end
-    local line = records.encode({ kind = "hello", claim = job.claim, pairs = job.pairs })
+    local record = { kind = job.kind, claim = job.claim, pairs = job.pairs }
+    if job.kind == "leave" then record.written = job.written end
+    local line = records.encode(record)
     local ok, why = frames.write_frame(conn, seal.seal(keys, line))
     if not ok then if conn.close then conn:close() end; return false, "writing: " .. tostring(why) end
     local after, failed = frames.read_frame(conn)
@@ -121,6 +125,18 @@ local function recently_heard(home, tag, pair, ceiling, now)
 end
 -- }}}
 
+-- {{{ function M.word_for
+-- The ack's word for a claim heard by this stage: "filed" the first time,
+-- "duplicate" after (kept in memory, like the stage's timers).
+function M.word_for(stage, tag, claim)
+    stage.claims_heard = stage.claims_heard or {}
+    local k = tag .. " " .. claim
+    local word = stage.claims_heard[k] and "duplicate" or "filed"
+    stage.claims_heard[k] = true
+    return word
+end
+-- }}}
+
 -- {{{ function M.receive
 -- stage (134), tag, the decoded hello, peer (the connection's {host,
 -- port}: never called), now (whole seconds) → the ack's word ("filed", or
@@ -128,9 +144,7 @@ end
 -- made.
 function M.receive(stage, tag, record, peer, now)
     local home = stage.home
-    stage.hellos_heard = stage.hellos_heard or {}
-    local word = stage.hellos_heard[tag .. " " .. record.claim] and "duplicate" or "filed"
-    stage.hellos_heard[tag .. " " .. record.claim] = true
+    local word = M.word_for(stage, tag, record.claim)
     local made = {}
     -- this home's own claim, sent back: nothing of ours becomes a member
     if claims.find(home, tag, record.claim) then return word, made end

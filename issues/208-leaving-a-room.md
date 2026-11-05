@@ -91,6 +91,63 @@ record behind, and only the leaver's own newer speech removes it.
 2. **Leaving a parent**: phase 1 flags the leaver in its children (nothing
    removes them).  Should leaving a parent offer to leave its children too?
 
+## Decisions (2026-11-05)
+
+Made by the builder.  The owner's standing instruction is to answer open
+questions rather than wait, choosing the option that is easiest to undo.
+The owner can overturn each one; what overturning costs is said with it.
+Built in `src/delivery/` (147 leaving, 148's referees), the `leave` row
+of `src/sealing/126-inner-records.lua`, `drop` in 130, leave jobs in
+134's stage, the leave action in 142, and the rejoining path in 133.
+207 (members lists) is not built: 147's `may_add_from_list` is the guard
+it must call, and referee 4 replays a list through a stand-in receiver
+that calls it.
+
+1. **A replayed leave after the leaver returned** (open question 1): the
+   proposal, as built.  A leave whose written time is older than the
+   newest message filed from that pair is ignored: no call-back, nothing
+   removed (referee 6).  Undo: one comparison in 147's `receive`.
+2. **Leaving a parent** (open question 2): it does not offer to leave the
+   children, for now.  Phase 1 already flags the leaver in each child
+   room, and a person who wants out of a child leaves it too.  Undo: the
+   viewer offers it when 211's viewer exists; nothing here changes.
+3. **The `leave` record**: `claim`, `written` (the leaver's own clock),
+   and `pairs` in the hello's form, all of this mailbox's pairs from
+   212's `own_pairs` seam, with `home-network` pairs only to housemates,
+   as for a hello.  Each stated pair that is a member is called back on
+   its own.
+4. **The `left` line has a fifth field**, the leave's written time, after
+   the four the issue lists.  "Newer than the leave" then compares the
+   leaver's own written times, as the issue's Costs describe, and never
+   this home's confirmation time against the leaver's clock.  Undo: drop
+   the field and compare with `confirmed`, accepting clock skew.
+5. **The leaver keeps the room.**  Its `claims` file must keep answering
+   `did-you` until every member has called back, so leaving deletes
+   nothing.  A `left-by-me` file holds the leave's written time; while it
+   is there the room gets no start-up hellos, because a hello would undo
+   the leave.  Writing in the room again removes it (speaking again).
+   The leaver's own members are not changed.  Removing the room from the
+   person's view is the viewer's (211).
+6. **Leaving drops the room's pending hellos** and sends one leave job
+   per send-list pair, resent until an ack names its claim (the hello's
+   machinery, 145's `attempt`).
+7. **Speaking again re-adds by address.**  133 finds a message's sender
+   among the members by address.  When no member is at that address and
+   exactly one pair in `left` is, the message is from that pair.  If it
+   was written after the leave, the pair is re-added (103's `heard_from`)
+   and its line cleared.  An older message, delivered late, is filed and
+   re-adds nobody.
+8. **A confirmed hello also undoes a leave**: 142's hello action clears
+   the pair's `left` line once the pair is a member again.
+9. **Deliveries wait while a leave is checked.**  The leave frame makes
+   the pair due at once (202's decision 1), and a delivery run before the
+   confirmation would send what the leave drops.  So a pair with a leave
+   check not yet settled gets no delivery attempt until it settles.  A
+   forged leave delays a pair's deliveries by one call-back.
+10. **A confirmed leave for a pair no longer a member** still writes the
+    `left` line and drops the `delivered` line, and gives "recorded"
+    instead of calling 103's `confirm_leave`, which would error.
+
 ## Related documents
 
 - `notes/vision-planning.md` section 3 ("Leaving"); section 14 ("Answers"

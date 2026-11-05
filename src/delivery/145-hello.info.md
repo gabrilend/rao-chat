@@ -9,11 +9,12 @@ mailbox, with its kind, under one claim id (141's `make_for`).
   state, is an error: no port is ever guessed.
 - `attempt`: one try at one hello job (134's stage).  The claim is made on
   the first try and the same record is resent on retries; it succeeds
-  when the receiver's `ack` names the claim.
-- `receive`: what 133 hands a decoded hello to.  It adds nothing for this
+  when the receiver's `ack` names the claim.  208's leave jobs are sent the same way.
+- `receive`: what 133 hands a decoded hello to (through 147's `on_claim`).  It adds nothing for this
   home's own hello sent back, skips ignored pairs and members heard from
   within the retry ceiling, and hands every other pair to 142's `heard`
   (a call-back to the stated pair, then the add).  It never answers with
   a hello.
 - `join`: makes a room from a token and one member's pair, adds that
   pair, and makes a hello to it due now.
+- `word_for`: the ack's word for a claim, `filed` or `duplicate`.
