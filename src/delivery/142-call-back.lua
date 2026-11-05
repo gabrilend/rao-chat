@@ -23,7 +23,8 @@
 --
 -- What a confirmed claim does (decision of 2026-11-05; the owner may
 -- overturn it): a hello adds the pair as a member (103's add_member; the
--- room tree's check and the ignore list still apply there), a leave
+-- room tree's check and the ignore list still apply there; since 205,
+-- through heard_from, which also records the pair as heard), a leave
 -- removes it (103's confirm_leave, "the only removal").  A `no` ends the
 -- check: the home at that pair says it made no such claim, and asking
 -- again will not change that.  205 and 208 make and send the claims; 207
@@ -118,9 +119,15 @@ end
 -- }}}
 
 -- {{{ M.ACTIONS
--- What a confirmed claim does.
+-- What a confirmed claim does: home, tag, pair, now (whole seconds).
+-- Decision of 2026-11-05 (issue 205; the owner may overturn it): a
+-- confirmed hello is hearing from that pair, so it is added and its
+-- last-heard time moved to the confirmation (103's heard_from: add_member
+-- with its refusals and flag, then the time).  205's receiver does not call
+-- back a pair heard within the retry ceiling, so this is what keeps idle
+-- homes from calling each other back on every start-up hello.
 M.ACTIONS = {
-    hello = function(home, tag, pair) return recipients.add_member(home, tag, pair.address, pair.port) end,
+    hello = function(home, tag, pair, now) return recipients.heard_from(home, tag, pair.address, pair.port, now) end,
     leave = function(home, tag, pair) return recipients.confirm_leave(home, tag, pair.address, pair.port) end,
 }
 -- }}}
@@ -145,11 +152,13 @@ end
 
 -- {{{ function M.run
 -- One try at one check (the stage's): ask, then act on the answer.
--- Gives "confirmed", "refused" or "unconfirmed", and why.
-function M.run(home, check, answer_time, seams)
+-- now: when it is tried (whole seconds).  Gives "confirmed", "refused" or
+-- "unconfirmed", and why.
+function M.run(home, check, answer_time, seams, now)
     local answer, why = M.ask(home, check.tag, check.pair, check.claim, answer_time, seams)
     if answer == "yes" then
-        local ok, result = pcall(M.ACTIONS[check.kind], home, check.tag, check.pair)
+        local at = math.floor(seams.now and seams.now() or now)
+        local ok, result = pcall(M.ACTIONS[check.kind], home, check.tag, check.pair, at)
         return "confirmed", ok and result or ("confirmed, but " .. tostring(result))
     elseif answer == "no" then
         return "refused", "the home at that pair made no such claim"

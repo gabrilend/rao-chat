@@ -23,6 +23,13 @@
 -- What is answered for each frame (decisions of 2026-11-05):
 --   a did-you (204)          a did-you-answer, from this room's claims
 --                            (141): yes or no; nothing is filed
+--   a hello (205)            handed to seams.on_claim (145's receive, in
+--                            the sender stage: the call-backs), and
+--                            answered with an ack naming its claim id,
+--                            `filed` or `duplicate`; nothing is filed in
+--                            the log, and no hello is ever sent back.
+--                            Without on_claim it is refused (no word, so
+--                            the sender tries again later)
 --   filed / duplicate        the log's own word
 --   hidden (ignored, hide)   `filed`: the record is dropped, and the sender
 --                            is not told it is ignored, so it stops
@@ -49,6 +56,8 @@
 --   seams.on_unopened(peer, length)    optional (139 gives it: 203)
 --   seams.on_refused_length(peer, length)  optional (139 gives it: 203)
 --   seams.on_opened(tag, peer)         optional (134 uses it: question 1)
+--   seams.on_claim(tag, record, peer)  optional (145's receive, 205) →
+--                                      the ack's word
 -- Receiving never sends anything but these answers, and never waits on
 -- the sender stage (R6): 211 runs this in its own stage.
 
@@ -63,6 +72,10 @@ local send = require("132-send")
 local call_back = require("142-call-back")
 
 local M = {}
+
+-- The records that carry a claim to call back (205's hello; 208's leave
+-- joins it), handed to seams.on_claim.
+M.CLAIMS = { hello = true }
 
 -- {{{ function M.sender_of
 -- home, tag, host, source_port → from_address, from_port, is_member.
@@ -139,6 +152,17 @@ function M.serve(conn, seams)
         if asked_ok and asked.kind == "did-you" then
             -- 204: answered from this room's claims (141); changes nothing
             answer = call_back.answer_frame(home, tag, asked)
+        elseif asked_ok and M.CLAIMS[asked.kind] then
+            -- 205: a claim to call back; the stage's, not the log's
+            local answers = {}
+            local ok, word = false, "nothing here hears claims"
+            if seams.on_claim then ok, word = pcall(seams.on_claim, tag, asked, seams.peer) end
+            if ok and send.WORDS[word] then
+                answers[1] = { id = asked.claim, word = word }
+            elseif seams.on_problem then
+                seams.on_problem(tag, "a " .. asked.kind .. ": " .. tostring(word))
+            end
+            answer = records.encode({ kind = "ack", answers = send.write_answers(answers) })
         else
             local word, id, problem = M.file_record(home, tag, opened, seams.peer, seams.now())
             local answers = {}
