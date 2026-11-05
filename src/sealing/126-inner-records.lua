@@ -14,11 +14,18 @@
 -- else.
 --
 -- The table holds the kinds whose fields are settled: the log's three
--- (message, correction, deletion).  Every other kind 201 names (hello,
--- members, members-ask, leave, did-you, did-you-answer, summary, ack,
--- discover, here) gets its row from the issue that defines its fields
--- (202, 204, 205, 207, 208, 209, 213), when that issue is built.  Until
+-- (message, correction, deletion) and 202's `ack`.  Every other kind 201
+-- names (hello, members, members-ask, leave, did-you, did-you-answer,
+-- summary, discover, here) gets its row from the issue that defines its
+-- fields (204, 205, 207, 208, 209, 213), when that issue is built.  Until
 -- then it is an unknown kind, and an unknown kind is an error.
+--
+-- `ack` (issue 202, decision of 2026-11-05; the owner may overturn it):
+-- one field, `answers`: the ids the answer covers, each followed by the
+-- receiver's word, `filed` or `duplicate`, all separated by single spaces
+-- ("q7Kd2 filed x1 duplicate").  Ids hold no spaces, so no escaping is
+-- needed.  An empty `answers` is allowed and delivers nothing; there is no
+-- bare "ok" (question 10).  132 and 133 read and write the field.
 --
 -- Errors over fallbacks: an unknown kind, a missing field, an extra field,
 -- an unknown escape, or a `written` that is not a whole number is refused,
@@ -38,6 +45,7 @@ local LOG_FIELDS = {
 KINDS.message = LOG_FIELDS
 KINDS.correction = LOG_FIELDS
 KINDS.deletion = LOG_FIELDS
+KINDS.ack = { { name = "answers", type = "text" } }
 
 local ESCAPE = { ["\\"] = "\\\\", ["\t"] = "\\t", ["\n"] = "\\n", ["\r"] = "\\r" }
 local UNESCAPE = { ["\\"] = "\\", t = "\t", n = "\n", r = "\r" }

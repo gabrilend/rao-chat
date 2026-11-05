@@ -524,8 +524,15 @@ local AWKWARD = "tab\there, line\nbreak, cr\r, back\\slash, \\n literal, nul\0by
 -- impl {encode, decode}
 local function referee_records(impl)
     for _, kind in ipairs(records.kinds()) do
-        local record = { kind = kind, id = "abc123", written = 1700000000, target = kind == "message" and "" or "xyz",
-                         text = AWKWARD }
+        -- every field of the kind's row: whole numbers one value, text the
+        -- awkward bytes (an id-like field a plain id)
+        local record = { kind = kind }
+        for _, field in ipairs(records.KINDS[kind]) do
+            if field.type == "whole" then record[field.name] = 1700000000
+            elseif field.name == "id" then record[field.name] = "abc123"
+            elseif field.name == "target" then record[field.name] = kind == "message" and "" or "xyz"
+            else record[field.name] = AWKWARD end
+        end
         local line = impl.encode(record)
         must(not line:find("\n", 1, true), "an encoded record holds a raw line break")
         local back = impl.decode(line)

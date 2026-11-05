@@ -68,7 +68,8 @@ writing those issues are listed at the end.
    that create text files and store them in git history" — the log stays
    the delivery record (the owner's reading (b)); text copies go to git
    (215).  **Held by** 202 (question 10): confirm that an acknowledgement
-   names its ids.
+   names its ids.  *Answered 2026-11-05 by the builder: it does, and a
+   bare "ok" is refused (202 decision 10).*
 6. **A member with two addresses: send to both, or the first that
    answers?**  (delivery-and-retries, question 1)  The planning document
    (section 15) says every pair is a recipient; issue 202 says the one that
@@ -78,7 +79,10 @@ writing those issues are listed at the end.
 7. **What makes a slowed-down address worth trying again?**  (delivery,
    question 2; structure, question 9)  rmail resets on hearing from the
    contact; rao-chat cannot tell which member a frame came from.
-   **Held by** 202 (question 1).
+   **Held by** 202 (question 1).  *Answered 2026-11-05 by the builder: a
+   frame that opens in a room, from an address, makes that room's pairs at
+   that address due now; only a delivered attempt resets the interval (202
+   decision 1).*
 8. **Replays.**  (sealing R9; structure, "three risks")  Anyone who records
    a frame can deliver it again to every member.  Ids stop repeated
    messages; a replayed members list could re-add someone whose leave was
@@ -139,7 +143,9 @@ writing those issues are listed at the end.
     (question 6) and 213 (question 1).
 21. **Who receives the open-router warning.**  **Held by** 212 (question 7).
 22. **Does a new or un-withheld member get the room's past messages?**
-    **Held by** 202 (question 3) and 205 (question 1).
+    **Held by** 202 (question 3) and 205 (question 1).  *For 202, answered
+    2026-11-05 by the builder: no — a pair gets what is written from when
+    it is on the send list (202 decision 3); 205's question stands.*
 
 ## The failed-decryption log (203)
 
@@ -168,21 +174,29 @@ writing those issues are listed at the end.
     in the clear, a health check included; a sealed ping from the person's
     own viewer, to be built in 212 (decision 6).*
 30. **Growing piles of undelivered messages**: shown to the person?  What
-    number "strains the engine"?  **Held by** 202 (question 6).
+    number "strains the engine"?  **Held by** 202 (question 6).  *Answered
+    2026-11-05 by the builder: a count and the oldest waiting time per pair
+    are offered for the viewer (130's pile); the measure is the count of
+    messages, and nothing is done about it yet (202 decision 6).*
 31. **Force the log to disk before acknowledging?**  **Still open** (owner,
     2026-09-27: "Still open ... Until answered, built both ways,
     switched").  **Held by** 211 (question 1; the `gatherer.acknowledge-after`
     switch).
 32. **Retry timers across a restart.**  **Held by** 202 (question 2).
+    *Answered 2026-11-05 by the builder: not kept; every pair missing
+    something is due at start-up (202 decision 2).*
 33. **Writing a line into a room's log by hand**: a way to send?  (If not,
     no file watcher is needed.)  Read as no from "The user types, and it
     creates messages and puts them in the right place"; **to confirm**,
     held by 211 (question 4).
 34. **The 30-second floor** once sends are immediate.  **Held by** 202
-    (question 4).
+    (question 4).  *Answered 2026-11-05 by the builder: the floor is the
+    first wait after a failure (202 decision 4).*
 35. **A forged acknowledgement** from another member: betrayal (outside the
     threat model), or checked?  **Held by** 202 (question 5) and 204
-    (question 3).
+    (question 3).  *For 202, answered 2026-11-05 by the builder: outside
+    the threat model here; 209's cross-check refills what such an answer
+    hid (202 decision 5); 204's question stands.*
 
 ## The phase 2 demo (210)
 

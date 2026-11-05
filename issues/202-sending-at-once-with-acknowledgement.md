@@ -189,6 +189,117 @@ a fault-injecting relay where named.
 10. *(to confirm)* **An acknowledgement names its ids** and a bare "ok" is
     refused.
 
+## Decisions (2026-11-05)
+
+Made by the builder: the owner's standing instruction is to answer open
+questions rather than wait, choosing the option easiest to undo.  Each is
+written so the owner can overturn it; what overturning costs is said.
+Built in `src/delivery/` (130–137) and the `ack` row of
+`src/sealing/126-inner-records.lua`; 211's stages, sockets and workers
+are seams (see "Left for 211" below).
+
+1. **What resets a backed-off pair early** (question 1): a frame that
+   opens in a room, arriving from an address, makes every pair of that
+   room at that address due now (`Stage:heard_at`, called by the
+   receiver).  The interval is kept; only a delivered attempt puts it back
+   to the floor.  Undo: one call in the receiving stage.
+2. **Timers across a restart** (question 2): not kept.  At start-up every
+   pair missing something is due at once (`Stage:start`), as in rmail.
+   Undo: a small file of (pair, interval, due) per home; nothing reads one
+   today.
+3. **A new or un-withheld pair gets what is written from then on**
+   (question 3).  Before an own record is filed, every pair on the send
+   list without a line gets one that counts everything already filed as
+   acknowledged, and lines of pairs no longer on the list are dropped, so
+   a withheld pair that returns starts again then.  Chosen because a
+   message sent cannot be unsent, while a missed one can still be sent
+   (209's gap filling, or a line reset by hand).  Undo: `starting_line` in
+   `130-delivered.lua` makes the mark 0 instead (and `join` keeps lines).
+4. **The floor is the first wait after a failure** (question 4), as
+   proposed.  Nothing healthy is polled.
+5. **A forged acknowledgement from another member** (question 5): outside
+   the threat model here.  An answer counts only if it opens with the
+   room's key (so its tying value, 201a) and names ids sent on that same
+   connection, which stops an old answer delivering a new message and an
+   answer from another room (R5).  A member who forges answers for
+   another member can only hide a gap, which 209's cross-check refills.
+   204's question stands.
+6. **Showing the pile** (question 6): `pile(home, tag)` gives, per pair,
+   how many records wait and the written time of the oldest, for the
+   viewer (301).  The measure is the count of messages; nothing is done
+   about a large one yet.  Measured (step 6): working out what one pair
+   misses in a log of 10,000 own messages takes about 0.07 s, and
+   acknowledging 5,000 of them out of order about 0.09 s (test 137 prints
+   it).  Both read the log from disk; 211 holds it in memory.
+7. **An edit that arrives before its message** (question 7): refused, as
+   105 builds it.  The receiver answers that frame with no word for its
+   id, so the sender keeps it missing and sends it again on a later
+   attempt.  A connection carries a pair's missing records in log order,
+   a message before its edits, so this happens only when the message's
+   own frame failed.
+8. *(answered by the owner)* Both addresses.  Referee 8.
+9. *(answered by the owner)* The log is the outbox.
+10. **An acknowledgement names its ids** (question 10): confirmed.  The
+    `ack` row has one field, `answers`: each id followed by `filed` or
+    `duplicate`, separated by single spaces.  An odd count, another word
+    or a malformed id makes the whole answer count for nothing; an empty
+    one is allowed and delivers nothing; there is no bare "ok".  The
+    receiver answers every frame with one `ack`.  Undo: the row and
+    `read_answers` / `write_answers` in `132-send.lua`.
+11. **Who an arriving frame is from.**  A connection shows the peer's
+    address and a source port the system picked, not the port it listens
+    on.  If exactly one member of the room is at that address, `from` is
+    that member's pair and 103's `heard_from` records it; otherwise `from`
+    is the address and the source port, and nobody is recorded heard,
+    because `heard_from` would add the source port as a sendable member.
+    205's hello says where to call back.  Undo: `sender_of` in
+    `133-receive.lua`.
+12. **A message from an address ignored at `hide`** is dropped and
+    answered `filed`, so the sender stops resending and is not told it is
+    ignored.  Undo: answer nothing, and the sender retries at the ceiling
+    forever.
+13. **A window of 32 frames**: a long backlog goes out 32 frames at a
+    time, then their 32 answers are read, so answers never pile up in the
+    sender's buffer while it writes (two blocking ends could otherwise
+    wait on each other).  Undo: `WINDOW` in `132-send.lua`.
+14. **The deck**: the eleven cards -5 .. 5, each worth floor(interval /
+    12) seconds, so a wait is 7/12 to 17/12 of the interval and one deck
+    at one interval adds up to exactly 11 intervals.  The same device
+    answers the planning document's question 4 for the phone only if the
+    owner wants it to; it is not applied there.  Undo: `CARDS` and
+    `SPREAD` in `131-retry-timer.lua`.
+15. **Own written times never go back in file order.**  `write` gives a
+    record the time of your last own record when the clock reads earlier
+    (a clock stepped back), because the mark ("everything written at or
+    before it is acknowledged") would otherwise cover a record nobody
+    received.  Undo: costs a mark that is a position in the log instead
+    of a time.
+16. **A new message wakes a healthy pair at once; a pair waiting out a
+    failure keeps its time**, so a pile written while it is away is one
+    attempt (R8).  A pair found with nothing missing is "held": not a
+    failure, the interval does not move, and it is no longer waiting out a
+    failure.
+17. **The `due/` entries of step 2 are `Stage:wake` calls.**  Whether a
+    wake crosses a process boundary (a file) or stays in memory is 211's
+    design.
+18. **The referees run in a simulation**: real homes on disk, the real
+    modules, and in between a fake clock, cooperative threads for each
+    home's stages and an in-memory relay.  Referee 2's broken version is
+    a home whose one loop sends (waiting for each answer) and accepts.
+    211 brings real sockets; 210's demo runs the same scenes between
+    homes on one machine.
+19. **Referee 6's tolerance is ± 2 attempts a day**, not ± 1: a day cuts
+    the decks at arbitrary cards, and in 3,000 trial runs of the timer 12
+    ± 1 held 99.7% of the time, with 10 and 14 in the rest.
+
+### Left for 211
+
+Running the stages (a receiving stage that never waits on the sender
+stage), real connections and their timeouts, workers for the trial
+opening and for a pass's jobs, and keeping one writer per room's
+`delivered` file.  `Stage:pass`, `receive.serve` and `send.attempt` take
+these as seams.
+
 ## Related documents
 
 - `notes/vision-planning.md` sections 5 ("The one change for chat"), 6 (the
