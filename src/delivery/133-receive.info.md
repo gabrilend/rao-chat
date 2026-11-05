@@ -16,5 +16,8 @@ A message from the address of a pair that left, written after its leave,
 re-adds the pair and clears its `left` line (208).  A frame that no key opens
 closes the connection, and so does a frame refused for its length; each
 is reported through a seam, which 139 turns into a failed-decryption
-line (203).  The stage it runs in comes from 211's seams.  Issue 202,
-step 5.
+line (203).  `answer_frame` is one frame's whole work, frame in and
+answer out, so 211's gatherer can run it apart from the connection that
+brought the frame; `on_filed` is called after a record is filed and
+before its answer exists (211's acknowledge-after switch).  `serve` is a
+loop of read, `answer_frame`, write.  Issue 202, step 5; issue 211.

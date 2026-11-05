@@ -446,8 +446,13 @@ end
 
 -- {{{ function Stage:pass
 -- now (whole seconds; read again after each job through seams.now, if
--- given) → the jobs run, in the order they were made.
-function Stage:pass(now)
+-- given) → the jobs run, in the order they were made.  `run(item, fn)`,
+-- when given, is handed each due hello, job and check with the function
+-- that runs it, and may run it later or in a thread of its own (211's
+-- gatherer runs each in its own thread, so a dead pair delays no other:
+-- R4); without it each runs here, one after another.
+function Stage:pass(now, run)
+    run = run or function(_, fn) fn() end
     local ran = {}
     -- 209's round, on the stage's own clock
     if self.crosscheck and now >= self.crosscheck.next then
@@ -459,7 +464,7 @@ function Stage:pass(now)
         local job = self.hellos[k]
         local at = self.seams.now and self.seams.now() or now
         if not job.done and job.timer:is_due(at) then
-            self:run_hello(job, at)
+            run(job, function() self:run_hello(job, self.seams.now and self.seams.now() or at) end)
             ran[#ran + 1] = job
         end
     end
@@ -467,7 +472,7 @@ function Stage:pass(now)
         local job = self.jobs[k]
         local at = self.seams.now and self.seams.now() or now
         if job.timer:is_due(at) and not self:leave_pending(job.tag, job.pair) then
-            self:run_job(job, at)
+            run(job, function() self:run_job(job, self.seams.now and self.seams.now() or at) end)
             ran[#ran + 1] = job
         end
     end
@@ -476,7 +481,7 @@ function Stage:pass(now)
         local check = self.checks[k]
         local at = self.seams.now and self.seams.now() or now
         if not check.done and check.timer:is_due(at) then
-            self:run_check(check, at)
+            run(check, function() self:run_check(check, self.seams.now and self.seams.now() or at) end)
             ran[#ran + 1] = check
         end
     end

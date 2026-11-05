@@ -256,6 +256,107 @@ From the rules above (structure note, section 5, rewritten for this shape).
 11. *(to confirm)* **One program or two** (planning question 7): the
     gatherer is rao-chat's own program, not rmail's daemon.
 
+## Decisions (2026-11-05)
+
+Made by the builder.  The owner's standing instruction is to answer open
+questions rather than wait, choosing the option that is easiest to undo.
+The owner can overturn each one; what overturning costs is said with it.
+Built in `src/gatherer/` (161 RAM folders, 162 the wait loop, 163 the
+gatherer, 164 the home starter, 165 settings, 166 options, 167 the
+referees, 168 loopback for the demo), with two changes to 202's code:
+133's `answer_frame` (one frame's work, apart from the connection) with
+an `on_filed` seam, and 134's `pass(now, run)`.  167 passes 13 of 13
+checks against real processes on 127.0.0.2 to .4 inside `unshare -rn`,
+each referee that names a broken version catching it.
+
+1. **Write before acknowledging** (open question 1): built both ways,
+   still the owner's.  `gatherer.acknowledge-after` has no default; the
+   first variant, which demo homes start with, is `disk`.  Measured
+   (referee 2 and the demo's acknowledge scene): with the RAM folder
+   discarded right after 10 answers, `disk` lost 0 and `ram` lost 10; on
+   loopback both answered all 10 in under a second.  Undo: none needed,
+   the setting chooses.
+2. **Stages** (open question 2): coroutines under one wait loop (162) in
+   the one process per mailbox, for the listener, each held connection,
+   the filer, the typed stage, the sender (each due item a thread of its
+   own) and the sync cycle.  No opener pool: opening is 201's trial
+   opening, cheap next to the network for a handful of keys, so opening
+   and filing are one stage and there is no `opened/` folder.  Undo: the
+   filer already takes `arrived/` files one at a time by rename, so a pool
+   of processes taking from the same folder can be added without
+   changing the folders.
+3. **Hand edits to the disk home while a gatherer runs** (open question
+   3): refused.  The sync compares each disk file with what it last
+   loaded or wrote; one changed since is left as it is, not written over,
+   and named in `state` (`problem.hand-edit`) and the running log.
+   Home-wide files (the plain files at the top of the home: `config`,
+   `mailboxes`, `ignore` and the like) go the other way: disk wins,
+   reloaded into RAM at each sync.  Undo: one
+   branch in 161's `sync_file`.
+4. **A line written into a room's log by hand** (open question 4): not a
+   way to send.  Sending is a file in `typed/` (`room = <tag>`, a blank
+   line, the text), which the gatherer writes through 202's stage; a hand
+   edit to the log is refused as in 3.  Undo: none needed.
+5. **A port that cannot be claimed** (open question 5): only that
+   gatherer stops.  It claims its port before anything else, names the
+   port and its `mailboxes` line in `state` and the running log, makes no
+   connection, and exits within 1 s.  The starter starts it again,
+   waiting twice as long each time it dies within 5 s, up to 60 s, so a
+   port freed later is taken without a loop that fights for it.  Undo:
+   have the starter stop the home on that exit status.
+6. **A connection limit** (open question 6): a setting,
+   `gatherer.connection-limit`, first variant 64; a new connection past it
+   closes the one held longest.  It is a bound on what one peer can make
+   the gatherer hold, applied to everyone alike, not a ban on an address,
+   so it is not the flood defence 203 rules out.  Referee 3, with 500
+   connections trickling a byte a second: at most 64 held, a genuine
+   frame on connection 501 filed in 0.35 s, about 13 MB of memory.
+   Undo: the setting.
+7. **Problems that belong to no room** (open question 7): `state` (one
+   `problem.<name>` line each, rewritten in place) and the running log
+   (at most once per sync interval each, with a count).  The viewer's
+   error strip is 301's.
+8. **Waiting for a frame's pieces** (open question 8): one deadline for
+   the whole frame, `gatherer.frame-deadline`, first variant 10 s.  A
+   peer trickling a byte a second is closed after 10 s however many bytes
+   it sends; a per-read deadline would hold it forever.  Undo: the
+   setting, or a per-read deadline in 162's `receive`.
+9. **The RAM root** (open question 9): the setting `gatherer.ram-root`,
+   first variant `/dev/shm/rao-chat`.  Each home gets
+   `<home folder's name>-<12 hex of its path's SHA-256>` under it, so
+   homes sharing a machine share nothing (referee 8).  Where the root
+   cannot be written, `/tmp/rao-chat-ram` is used and the starter says so
+   in `state` and the running log.  There is no home-making tool yet to
+   write it at making; the demo and tests write the first variants.
+10. **One program** (open question 11): confirmed; the gatherer is
+    rao-chat's own program (LuaJIT, LuaSocket), not rmail's daemon.
+11. **`due/` is a written view, not a queue.**  202's stage keeps its jobs
+    in memory and its truth in each room's `delivered` file; `due/` holds
+    one file per (pair, room) still owed something (room, address, port,
+    how many missing, next try), rewritten after each pass and each
+    attempt, so anyone can `ls` the pile.  Nothing reads it back.
+12. **A crash loses nothing in RAM.**  A gatherer started again keeps the
+    RAM home a previous process loaded (marked `.loaded`) instead of
+    reloading from disk, and puts back what was in `working/`.  Only a
+    reboot (the RAM folder gone) reloads from disk.
+13. **Hellos only once the address is known.**  The stage is given
+    `own_pairs` only when 212's fact exists in the home's RAM folder;
+    until the starter's first confirmed lookup, the gatherer sends no
+    hello, and the starter restarts every gatherer when one is confirmed
+    or moves.
+14. **Ports are claimed with `tcp4`/`tcp6` sockets** and `reuseaddr`, so a
+    gatherer started again after a crash takes its port back at once.
+15. **Referee 1 under `ram`** crashes the gatherer at the two points the
+    referee names (after filing before answering, and after answering)
+    and checks each message is filed once; the broken filer (answers
+    first) loses one, and is caught.
+16. **Not wired here:** the old port kept served after a merge (205's
+    referee 7) needs the merge to leave a line naming the old port and
+    the members still to call back; the gatherer for that port can then
+    be kept by the starter until the line is empty.  213's housemate
+    datagrams need a UDP socket in the gatherer.  `inbox/` for the viewer
+    is 301's.  Each is left for its issue.
+
 ## Related documents
 
 - `notes/vision-planning.md` section 15 ("The server's shape, the outside port, and rooms as git history")

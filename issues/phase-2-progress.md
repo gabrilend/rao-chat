@@ -160,8 +160,25 @@ owner, most blocking first: `notes/rmail-rubric/open-questions.md`.
   to every pair with acknowledgement times, a member down and its pile,
   joining and a direct message, keys tried per frame, a child room's
   flag, contact syncing, a token changed by hand, leaves, the
-  cross-check, housemates, failed decryption, and phase 1's tools.  10
-  of 15 scenes run in full.  Open questions 1–3 answered as dated
-  decisions the owner may overturn.  Left: real gatherer processes and
-  the acknowledge-after switch (211), signatures (214), git (215, 215a,
-  215b), and `fail2ban-regex` itself where it is installed.
+  cross-check, housemates, failed decryption, and phase 1's tools.  Open
+  questions 1–3 answered as dated decisions the owner may overturn.
+  With 211, two scenes run real gatherer processes on loopback (a
+  starter per home, a member down and its `due/` pile, the
+  acknowledge-after switch both ways): 13 of 16 scenes run in full.
+  Left: signatures (214), git (215, 215a, 215b), and `fail2ban-regex`
+  itself where it is installed.
+- **211** — built 2026-11-05 in `src/gatherer/` (161–168).  One gatherer
+  process per mailbox: it claims its port first, loads the mailbox's
+  rooms into a RAM home, and runs listener, filer, typed, sender and sync
+  as coroutines under one wait loop, handing work through RAM folders
+  (`arrived/`, `answers/`, `typed/`, `due/`) by write-then-rename and
+  take-by-rename.  `gatherer.acknowledge-after` is built both ways
+  (`disk` forces the room's log to disk before answering).  A home
+  starter starts one gatherer per mailbox, restarts one that dies, and
+  runs 212's public-address recheck.  Referees 1–9 and a starter check
+  run against real processes on loopback in `unshare -rn`, each against
+  its broken version.  Open questions 1–9 and 11 answered as dated
+  decisions the owner may overturn (1 stays the owner's: both built).
+  This runs 202's stage, 203's failed-decryption files, 204–209's
+  records and 212's recheck for real.  Left: the old port kept served
+  after a merge (205), 213's datagram socket, `inbox/` (301).

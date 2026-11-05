@@ -29,4 +29,8 @@ keeps one job and one retry timer per (room, pair):
   pair that is not ignored (156's `attempt`). `M.Stage` is the method
   table, for tests.
 
-211 runs the stage.  Issue 202, steps 2 and 4.
+- `pass(now, run)`: each due item is handed to `run(item, fn)`; without
+  one, items run one after another as before.  211's gatherer gives each
+  its own thread, so one black-holed pair delays no other.
+
+211 runs the stage.  Issue 202, steps 2 and 4; issue 211.

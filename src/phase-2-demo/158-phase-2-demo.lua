@@ -3,9 +3,10 @@
 --
 -- Shows phase 2 (planning document sections 5-9: delivery to every pair,
 -- keys, joining, contact syncing, leaving, cross-checking, housemates,
--- failed decryption) through the phase 2 modules, on real home folders in
--- RAM, three homes at 127.0.0.2, .3 and .4, and prints what is really on
--- disk and on the wire after each step.  In order it:
+-- failed decryption, the gatherer processes and their RAM folders) through
+-- the phase 2 modules, on real home folders in RAM, three homes at
+-- 127.0.0.2, .3 and .4, and prints what is really on disk and on the wire
+-- after each step.  In order it:
 --
 --   1. reads the project's input/ folder (the owner's rule: a program's first
 --      act is to read what it was given there) and shows what it found;
@@ -67,6 +68,8 @@ local MODULES = {
     { short = "members",     file = "152-members",         issue = "207" },
     { short = "housemates",  file = "154-housemates",      issue = "213" },
     { short = "crosscheck",  file = "156-cross-check",     issue = "209" },
+    { short = "ram",         file = "161-ram-folders",     issue = "211" },
+    { short = "loopback",    file = "168-loopback",        issue = "211" },
 }
 
 local RULE = string.rep("-", 78)
@@ -224,8 +227,9 @@ local function main()
     say("")
     say("homes: real rao-homes in " .. (ctx.scratch or "(none)") .. ", each with its own RAM folder;")
     say("  each listens on and sends from its own loopback address, 127.0.0.2, .3, .4 (and .5 for a second pair),")
-    say("  on ports written in its own mailboxes file.  The stages run in 143's world: a simulated clock")
-    say("  and an in-memory relay that records who connected from where, so times below are that clock's.")
+    say("  on ports written in its own mailboxes file.  Most scenes run the stages in 143's world: a simulated")
+    say("  clock and an in-memory relay that records who connected from where, so their times are that clock's.")
+    say("  The gatherers and acknowledge scenes run real gatherer processes (211) on loopback, on the real clock.")
 
     local scenes = require("159-phase-2-scenes")
     local outcomes = {}

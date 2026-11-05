@@ -19,10 +19,11 @@
 -- c (from 158): T (143's world), dir, scratch, m (the modules by short
 -- name), break_scene (a scene to fail on purpose: 160's broken version).
 --
--- The real processes the issue asks for (each gatherer of each home its
--- own process, the demo watching from outside) wait on 211, which builds
--- the gatherer; until then the stages run as threads of this program, on
--- the simulated clock.  Times are given on that clock and say so.
+-- Two scenes run real processes (211): each home's gatherer its own
+-- process on its own loopback address, the demo watching from outside
+-- through the gatherers' RAM folders and the homes on disk, on the real
+-- clock: `gatherers` and `acknowledge`.  The others run the stages as
+-- threads of this program on the simulated clock, and say so.
 
 local M = {}
 
@@ -31,6 +32,7 @@ local M = {}
 M.ORDER = {
     { key = "delivery",   title = "A message to every pair at once (202)", issues = "202" },
     { key = "down",       title = "A member down, its pile, and delivery when it returns (202)", issues = "202" },
+    { key = "gatherers",  title = "Real gatherer processes: a starter per home, a member down, due/ (211)", issues = "211" },
     { key = "join",       title = "Joining with a token and one pair; a direct message (204, 205, 212)", issues = "204 205 212" },
     { key = "keys",       title = "Two rooms with one label, and the keys tried per frame (201, 201a)", issues = "201 201a" },
     { key = "child",      title = "A child room flags an outsider of its parent; approving clears it (207, 103)", issues = "207" },
@@ -280,7 +282,7 @@ function M.down(c)
     local listener = w.world.listeners[b.pair.address .. " " .. b.pair.port]
     listener.up = false
     out[#out + 1] = "  B stops listening.  A writes one message every 60 s; what A holds for B, read from A's"
-    out[#out + 1] = "  delivered file after each (202's pile; the gatherer's due/ folder is 211's, not built):"
+    out[#out + 1] = "  delivered file after each (202's pile; the next scene shows it in a real gatherer's due/):"
     out[#out + 1] = string.format("      %-10s %-14s %-12s %s", "minute", "missing for B", "attempts", "next try in")
     local ids = {}
     for minute = 1, 5 do
@@ -300,7 +302,7 @@ function M.down(c)
     out[#out + 1] = string.format("  B listens again: all %d messages in B's log %s after it came back (A's retry timer);",
         #ids, all and seconds(w.sim.now - back) or "NOT within 900 s")
     out[#out + 1] = string.format("  missing for B now: %d", w.T.missing(a, b.pair.address, b.pair.port))
-    return { lines = out, gaps = { "the pile as the gatherer's due/ folder: 211 (the gatherer) is not built" } }
+    return { lines = out, gaps = {} }
 end
 -- }}}
 
@@ -796,11 +798,306 @@ for path in sys.argv[2:]:
 end
 -- }}}
 
+------------------------------------------------------------------------------
+-- Real gatherer processes (211)
+------------------------------------------------------------------------------
+-- These scenes leave 143's world: each home's gatherer (163) is its own
+-- process, listening on and sending from its own loopback address, and
+-- the scene watches from outside, through the files the gatherers keep in
+-- their RAM folders (state, running-log, due/) and the homes on disk.
+-- Times here are real seconds.
+
+local socket = require("socket")
+
+-- {{{ local function real_world
+-- The real-process tools for one scene, in a folder of its own under the
+-- demo's scratch folder: home, link, start, starter, stop, kill, stop_all,
+-- type, wait_until, state, copies, missing.  Gives nil and why when
+-- loopback cannot be brought up.
+local function real_world(c, name)
+    local m = c.m
+    local up, why = m.loopback.bring_up()
+    if not up then return nil, "loopback could not be brought up (" .. tostring(why) .. ")" end
+    local root = c.scratch .. "/" .. name
+    os.execute("rm -rf " .. quote(root) .. " && mkdir -p " .. quote(root .. "/homes"))
+    local r = { root = root, ram_root = root .. "/ram", pids = {}, count = 0,
+                no_lookups = m.loopback.only_loopback() }
+    function r.wait_until(condition, limit)
+        local stop = socket.gettime() + limit
+        while socket.gettime() < stop do
+            if condition() then return true end
+            socket.sleep(0.05)
+        end
+        return condition()
+    end
+    -- a home with one room on its own mailbox, at address:port
+    function r.home(home_name, address, port, overrides)
+        r.count = r.count + 1
+        local dir = root .. "/homes/" .. home_name .. "-" .. r.count
+        local h = m.rooms.open_home(dir)
+        for key, value in pairs(c.T.START_CONFIG) do m.rooms.set_config(h, key, value) end
+        local config = { ["gatherer.ram-root"] = r.ram_root, ["gatherer.address"] = address,
+            ["gatherer.sync-interval"] = "2", ["delivery.retry-floor"] = "1", ["delivery.retry-ceiling"] = "4",
+            ["callback.answer-time"] = "2" }
+        for key, value in pairs(overrides or {}) do config[key] = value end
+        for key, value in pairs(config) do m.rooms.set_config(h, key, value) end
+        local tag = m.rooms.make_room(h, { label = "the room", token = "the demo's real room", kind = "group",
+            parent = "", members = {}, filed_under = "", mailbox_port = port })
+        local mailbox = m.rooms.read_entry(h, tag).mailbox
+        local home_ram = m.ram.home_ram(r.ram_root, dir)
+        return { name = home_name, dir = dir, disk = h, tag = tag, mailbox = mailbox, port = port,
+                 pair = pair(address, port), home_ram = home_ram, folder = home_ram .. "/" .. mailbox }
+    end
+    function r.link(list)
+        for _, a in ipairs(list) do
+            for _, b in ipairs(list) do
+                if a ~= b then m.recipients.add_member(a.disk, a.tag, b.pair.address, b.pair.port) end
+            end
+        end
+    end
+    -- running: there, and not a zombie waiting to be reaped
+    local function alive(pid)
+        local f = pid and io.open("/proc/" .. pid .. "/stat", "rb")
+        if not f then return false end
+        local stat = f:read("*a")
+        f:close()
+        return stat:match("%) (%a)") ~= "Z"
+    end
+    r.alive = alive
+    function r.state(h) return m.ram.read_state(h.folder) end
+    local function launch(command, log)
+        local p = io.popen(command .. " </dev/null >>" .. quote(log) .. " 2>&1 & echo $!")
+        local pid = tonumber(p:read("*l"))
+        p:close()
+        r.pids[#r.pids + 1] = pid
+        return pid
+    end
+    -- the home's one gatherer, started by hand
+    function r.start(h)
+        os.execute("mkdir -p " .. quote(h.folder))
+        h.pid = launch("luajit " .. quote(c.dir .. "/src/gatherer/163-gatherer.lua") .. " " .. quote(c.dir) .. " "
+            .. quote(h.dir) .. " " .. quote(h.mailbox), h.folder .. "/stderr")
+        r.wait_until(function() return r.state(h).pid == tostring(h.pid) end, 5)
+        return h.pid
+    end
+    -- the home's starter (164), which starts its gatherer
+    function r.starter(h)
+        os.execute("mkdir -p " .. quote(h.home_ram))
+        local before = r.state(h).pid
+        h.starter = launch("luajit " .. quote(c.dir .. "/src/gatherer/164-home-starter.lua") .. " " .. quote(c.dir)
+            .. " " .. quote(h.dir), h.home_ram .. "/stderr")
+        r.wait_until(function()
+            local pid = r.state(h).pid
+            return pid ~= before and alive(tonumber(pid or ""))
+        end, 5)
+        h.pid = tonumber(r.state(h).pid or "")
+        return h.starter
+    end
+    -- asks a home's starter (or its lone gatherer) to stop, and waits
+    function r.stop(h)
+        if h.starter and alive(h.starter) then
+            os.execute("touch " .. quote(h.home_ram .. "/stop"))
+            r.wait_until(function() return not alive(h.starter) end, 12)
+        elseif alive(h.pid) then
+            os.execute("touch " .. quote(h.folder .. "/stop"))
+            r.wait_until(function() return not alive(h.pid) end, 5)
+        end
+    end
+    function r.kill(h)
+        if alive(h.pid) then os.execute("kill -9 " .. h.pid) end
+        r.wait_until(function() return not alive(h.pid) end, 3)
+    end
+    -- every process this scene started, gone
+    function r.stop_all()
+        for _, pid in ipairs(r.pids) do if alive(pid) then os.execute("kill -9 " .. pid .. " 2>/dev/null") end end
+        os.execute("pkill -9 -f " .. quote(root) .. " 2>/dev/null")
+        r.wait_until(function()
+            for _, pid in ipairs(r.pids) do if alive(pid) then return false end end
+            return true
+        end, 3)
+    end
+    function r.type(h, text)
+        m.ram.put(h.folder .. "/typed", m.ram.new_name(socket.gettime()), "room = " .. h.tag .. "\n\n" .. text .. "\n")
+    end
+    -- records carrying `text` in a home's RAM log, or with on_disk its disk log
+    function r.copies(h, text, on_disk)
+        local path = (on_disk and h.dir or (h.folder .. "/home")) .. "/rooms/" .. h.tag .. "/log"
+        local n = 0
+        for line in (read_all(path) or ""):gmatch("[^\n]+") do
+            if line:sub(-#text - 1) == "\t" .. text then n = n + 1 end
+        end
+        return n
+    end
+    -- what a home's RAM copy still owes a pair
+    function r.missing(h, p)
+        local ok, list = pcall(function()
+            return m.delivered.missing_for(m.rooms.open_home(h.folder .. "/home"), h.tag, p)
+        end)
+        return ok and #list or math.huge
+    end
+    return r
+end
+-- }}}
+
+-- {{{ local function process_line
+-- One home's gatherer as ps would show it, read from /proc.
+local function process_line(r, h)
+    local cmdline = (read_all("/proc/" .. tostring(h.pid) .. "/cmdline") or ""):gsub("%z", " ")
+    local program = cmdline:match("(%d%d%d%-[%w%-]+%.lua)") or "?"
+    return string.format("      %s: pid %-7s %-20s %s:%d   %s", h.name, tostring(h.pid), program, h.pair.address,
+        h.port, r.alive(h.pid) and "running" or "NOT RUNNING")
+end
+-- }}}
+
+-- {{{ scene gatherers
+function M.gatherers(c)
+    local r, why = real_world(c, "gatherers")
+    if not r then error(why, 0) end
+    local out, gaps = {}, {}
+    local ok, failed = pcall(function()
+        local a = r.home("A", "127.0.0.2", 7602)
+        local b = r.home("B", "127.0.0.3", 7603)
+        local cc = r.home("C", "127.0.0.4", 7604)
+        r.link({ a, b, cc })
+        if r.no_lookups then
+            -- each home's starter starts its gatherer; the starter's
+            -- public-address check finds no way out of this namespace
+            for _, h in ipairs({ a, b, cc }) do r.starter(h) end
+            out[#out + 1] = "  three homes, each started by its own starter (164), each gatherer a process of its own:"
+        else
+            for _, h in ipairs({ a, b, cc }) do r.start(h) end
+            gaps[#gaps + 1] = "the home starters (outside a loopback-only namespace their public-address check "
+                .. "would look outside, so each gatherer was started by hand)"
+            out[#out + 1] = "  three homes, each gatherer started by hand, a process of its own:"
+        end
+        for _, h in ipairs({ a, b, cc }) do out[#out + 1] = process_line(r, h) end
+        out[#out + 1] = "  each home's RAM folder, under " .. r.ram_root .. ":"
+        for _, h in ipairs({ a, b, cc }) do
+            out[#out + 1] = "      " .. h.name .. ": " .. h.home_ram:sub(#r.ram_root + 2)
+        end
+
+        local t0 = socket.gettime()
+        r.type(a, "from a real process")
+        local got = r.wait_until(function()
+            return r.copies(b, "from a real process") == 1 and r.copies(cc, "from a real process") == 1
+                and r.missing(a, b.pair) == 0 and r.missing(a, cc.pair) == 0
+        end, 15)
+        out[#out + 1] = ""
+        out[#out + 1] = string.format("  a file in A's typed/ became a message, in B's and C's logs and acknowledged "
+            .. "%s after (real time)", got and seconds(socket.gettime() - t0) or "NOT within 15 s")
+        r.wait_until(function() return tonumber(r.state(b).answered or 0) > 0 end, 3)
+        out[#out + 1] = string.format("  B's state file: answered = %s, connections = %s",
+            tostring(r.state(b).answered), tostring(r.state(b).connections))
+
+        if r.no_lookups then
+            local first = a.pid
+            os.execute("kill -9 " .. first)
+            r.wait_until(function()
+                local pid = tonumber(r.state(a).pid or "")
+                return pid and pid ~= first and r.alive(pid)
+            end, 6)
+            a.pid = tonumber(r.state(a).pid or "")
+            out[#out + 1] = "  A's gatherer killed (kill -9 " .. first .. "); A's starter's running log:"
+            for line in (read_all(a.home_ram .. "/running-log") or ""):gmatch("[^\n]+") do
+                if line:find("gatherer for mailbox", 1, true) then
+                    out[#out + 1] = "      " .. (line:gsub(a.mailbox, a.mailbox:sub(1, 8) .. "..."))
+                end
+            end
+            out[#out + 1] = process_line(r, a)
+        end
+
+        r.stop(b)
+        out[#out + 1] = string.format("  B's home stopped (its gatherer synced once more and exited): %s",
+            r.alive(b.pid) and "STILL RUNNING" or ("pid " .. tostring(b.pid) .. " gone"))
+        for i = 1, 3 do r.type(a, "while B is down, " .. i) end
+        local due_name = b.pair.address .. "-" .. b.port .. "-" .. a.tag:sub(1, 8)
+        r.wait_until(function()
+            return (read_all(a.folder .. "/due/" .. due_name) or ""):find("missing = 3", 1, true) ~= nil
+        end, 10)
+        r.wait_until(function() return tonumber(r.state(a)["pile.due"] or 0) == 1 end, 3)
+        out[#out + 1] = "  A writes 3 messages.  A's due/ folder, one file per member owed something:"
+        for _, line in ipairs(shell("ls -p " .. quote(a.folder .. "/due"))) do
+            if line:sub(-1) ~= "/" then out[#out + 1] = "      due/" .. line end
+        end
+        out[#out + 1] = "  due/" .. due_name .. ":"
+        file_lines(out, a.folder .. "/due/" .. due_name, 6, "      ")
+        out[#out + 1] = string.format("  A's state file: pile.due = %s; C has all 3: %s", tostring(r.state(a)["pile.due"]),
+            tostring(r.copies(cc, "while B is down, 1") == 1 and r.copies(cc, "while B is down, 3") == 1))
+
+        local back = socket.gettime()
+        if r.no_lookups then r.starter(b) else r.start(b) end
+        local all = r.wait_until(function()
+            for i = 1, 3 do if r.copies(b, "while B is down, " .. i) ~= 1 then return false end end
+            return true
+        end, 20)
+        local took = socket.gettime() - back
+        r.wait_until(function() return tonumber(r.state(a)["pile.due"] or 1) == 0 end, 5)
+        out[#out + 1] = string.format("  B started again: all 3 in B's log %s later; A's due/ now holds %s file(s)",
+            all and seconds(took) or "NOT within 20 s", tostring(r.state(a)["pile.due"]))
+
+        for _, h in ipairs({ a, b, cc }) do r.stop(h) end
+        local on_disk = r.copies(b, "from a real process", true)
+        for i = 1, 3 do on_disk = on_disk + r.copies(b, "while B is down, " .. i, true) end
+        out[#out + 1] = string.format("  every home stopped; B's log on disk holds %d of the 4 messages "
+            .. "(each gatherer syncs once more at its stop)", on_disk)
+        out[#out + 1] = "  A's gatherer's running log, its last lines:"
+        local lines = {}
+        file_lines(lines, a.folder .. "/running-log", nil, "      ")
+        for i = math.max(1, #lines - 5), #lines do
+            out[#out + 1] = (lines[i]:gsub(a.mailbox, a.mailbox:sub(1, 8) .. "..."))
+        end
+    end)
+    r.stop_all()
+    if not ok then error(failed, 0) end
+    return { lines = out, gaps = gaps }
+end
+-- }}}
+
+-- {{{ scene acknowledge
+function M.acknowledge(c)
+    local r, why = real_world(c, "acknowledge")
+    if not r then error(why, 0) end
+    local out = {}
+    local ok, failed = pcall(function()
+        out[#out + 1] = "  For each setting, two real gatherers: A sends B 10 messages.  Once A has all 10 answers,"
+        out[#out + 1] = "  B's process and its RAM folder are removed at once (a power cut), and B's home on disk is"
+        out[#out + 1] = "  counted.  The sync interval is 3600 s, so only the switch decides what reached disk."
+        out[#out + 1] = string.format("      %-18s %-13s %-12s %-6s %s", "acknowledge-after", "acknowledged",
+            "on B's disk", "lost", "all 10 answered after (real time)")
+        for _, mode in ipairs({ "disk", "ram" }) do
+            local over = { ["gatherer.acknowledge-after"] = mode, ["gatherer.sync-interval"] = "3600" }
+            local a = r.home("A", "127.0.0.2", 7602, over)
+            local b = r.home("B", "127.0.0.3", 7603, over)
+            r.link({ a, b })
+            r.start(a)
+            r.start(b)
+            local t0 = socket.gettime()
+            for i = 1, 10 do r.type(a, mode .. " " .. i) end
+            local done = r.wait_until(function()
+                for i = 1, 10 do if r.copies(a, mode .. " " .. i) ~= 1 then return false end end
+                return r.missing(a, b.pair) == 0
+            end, 20)
+            local took = socket.gettime() - t0
+            r.kill(b)
+            os.execute("rm -rf " .. quote(b.folder))
+            local kept = 0
+            for i = 1, 10 do if r.copies(b, mode .. " " .. i, true) == 1 then kept = kept + 1 end end
+            out[#out + 1] = string.format("      %-18s %-13s %-12d %-6d %s", mode, done and "10" or "NOT ALL",
+                kept, 10 - kept, seconds(took))
+            r.stop_all()
+        end
+        out[#out + 1] = "  (ram loses what was acknowledged since the last sync; disk waits for one fsync per frame)"
+    end)
+    r.stop_all()
+    if not ok then error(failed, 0) end
+    return { lines = out, gaps = {} }
+end
+-- }}}
+
 -- Scenes whose issues are not built: what each waits on.
 M.signatures = { waits = "214 (signatures read from each message's text by one rule) is not built" }
 M.git = { waits = "215, 215a and 215b (one git repository per mailbox: text copies, the running log, "
     .. "the shared upstream) are not built" }
-M.acknowledge = { waits = "211 (the gatherer, whose gatherer.acknowledge-after switch this is) is not built" }
 
 -- {{{ scene phase1
 function M.phase1(c)
