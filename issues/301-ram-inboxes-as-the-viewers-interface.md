@@ -56,7 +56,7 @@ for pointing out where to store the mailboxes."
 
 ## Status
 
-Steps 1 and 2 built 2026-11-05.
+Built 2026-11-05: steps 1, 2 and 3.
 
 - Step 1: every gatherer keeps `inbox/<room local tag>/<written>-<id>` in
   its RAM folder, in the shape above (`src/gatherer/181-inbox-files.lua`),
@@ -64,10 +64,15 @@ Steps 1 and 2 built 2026-11-05.
 - Step 2: the filer reads `typed/` files in the shape above (`room:`,
   `written:`, a blank line, the text with its signature); 211's first
   shape is still read.
+- Step 3: the reference viewer, `src/viewer/183-viewer.lua` (`tree`,
+  `room`, `write`, `follow`, `problems`), reading and writing only the
+  home's RAM folder.
 - Referees 1 to 5 pass and catch their broken versions
-  (`src/gatherer/tests/182-test-inbox-files.lua`).
+  (`src/gatherer/tests/182-test-inbox-files.lua`), and the viewer's
+  (`src/viewer/tests/184-test-viewer.lua`).
 
-Left: step 3, the reference viewer (the next pull request).
+What is left belongs to the next phase 3 issues: open questions 1 and 2
+(how a phone or a browser reaches the home and mirrors the folder).
 
 ## Decisions (2026-11-05)
 
@@ -146,6 +151,27 @@ Made by the builder; the owner can overturn each.
     (lost).  Referee 5 for `typed/` (a slow writer is never read before
     its rename) is 211's referee 6, which already covers every queue.
 
+
+### Step 3 (the reference viewer), 2026-11-05
+
+17. **A command-line text viewer in Lua**, like the rest of the
+    project: one command per look (`tree`, `room`, `write`, `follow`,
+    `problems`) rather than a full-screen program, so its output can be
+    read by a test and by a person alike.  It is the reference: the
+    app and the page do what it does.
+18. **It is given the home's RAM folder**, not the disk home: the issue
+    says the viewer reads only RAM, and the folder's name already joins
+    the home's path to it (211).
+19. **`follow` polls once a second** and compares each file's text with
+    what it last showed, so a listing is a hint to re-read, never the
+    record of what changed (delivery note R10).  No `inotify` binding is
+    needed, and it works the same on any system.
+20. **The signature is given with `--signature`** and checked by 214's
+    one rule before anything is written: a signature that would be read
+    back as body text, or not as itself, is refused rather than sent.
+21. **Problems that belong to no room come from each gatherer's
+    `state`** (decision 7), printed by `problems` with the mailbox they
+    came from.
 
 ## Rubric
 
