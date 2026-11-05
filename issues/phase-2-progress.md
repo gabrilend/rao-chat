@@ -50,5 +50,9 @@ owner, most blocking first: `notes/rmail-rubric/open-questions.md`.
   sealing and opening, frames on a connection, the inner record table,
   keyrings per mailbox, trial opening split for workers; open questions
   1–5 answered as dated decisions the owner may overturn.  Left: the
-  workers and the port (211), the other kinds' rows (their issues), and
-  201a's referee.
+  workers and the port (211), the other kinds' rows (their issues).
+- **201a** — built 2026-11-05: the tying value was already sealed,
+  checked and stripped by 201's code; 201a adds its four referees
+  (`src/sealing/tests/129-test-key-tying.lua`, including a frame built to
+  pass GCM under two keys) and the bound beside the check.  Question 2
+  answered as a dated decision the owner may overturn.

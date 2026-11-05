@@ -14,5 +14,5 @@ Referee 4 forks two processes through the ffi.
 Not covered here, and why: referee 6's second half (a mailbox port answers
 `GET / HTTP/1.0` with zero bytes) needs a listening port, which is 211's;
 referee 5's "every reader in the project agrees" has one reader so far,
-this one; 201a's own referee (a frame built to pass GCM under two keys)
-belongs to 201a.
+this one; 201a's referees (a frame built to pass GCM under two keys,
+among them) are in `129-test-key-tying.lua`.

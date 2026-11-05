@@ -218,7 +218,9 @@ writing those issues are listed at the end.
     trailing punctuation; a closing paragraph "signed" by its last word.
     **Held by** 214 (questions 1–4).
 46. **The key-tying value is the fingerprint, not the raw token** —
-    confirm.  **Held by** 201a (question 2).
+    confirm.  **Held by** 201a (question 2).  *Answered 2026-11-05 by the
+    builder: the fingerprint's 32 raw bytes, as proposed (201a decision
+    1); the owner may overturn it.*
 47. **A replayed leave after the leaver returned.**  **Held by** 208
     (question 1).
 48. **Start-up hellos at scale.**  **Held by** 205 (question 2).

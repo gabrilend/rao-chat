@@ -113,9 +113,61 @@ own key — on average half the keys of its mailbox.
 
 1. *(answered 2026-09-27)* **Key-tying value or try-every-key.**  Owner:
    the value, inside the sealed body, stripped after validating.
-2. *(proposed, to confirm)* **The fingerprint rather than the raw token.**
+2. *(answered 2026-11-05 by the builder — decision 1 below; the owner may
+   overturn it)* **The fingerprint rather than the raw token.**
    The owner said "the token"; the fingerprint is proposed for the brute-
    force reason above.  Confirm.
+
+## Decisions (2026-11-05)
+
+Made by the builder: the owner's standing instruction is to answer open
+questions rather than wait, choosing the option easiest to undo.  Each is
+written so the owner can overturn it; what overturning costs is said.
+
+1. **The tying value is the fingerprint's 32 raw bytes, not the raw
+   token** (question 2).  A raw token of a few letters could be found by
+   trying every short string against one captured frame; the fingerprint
+   is one fixed length, and is a value phase 1 already writes.  Referee 4
+   checks that no opened body holds the token or the key.  Undo: change
+   `tying_value` and `key_pair` in `123-room-key.lua`; every reader and
+   writer must change together, since the value is inside every frame
+   (nothing is deployed, so today that is one commit).
+2. **Where it was built.**  201's code already sealed the value in front
+   of every record, checked it after GCM's check inside `124-seal.lua`'s
+   `open` (so no caller can skip it), stripped it, and stopped the trial
+   at the first key that passes both (`127-keyring.lua`).  201a adds the
+   referees and the bound; it changes no behaviour.
+3. **Referee 1 is met by the frame opening as room A in either order,
+   never as B — not by filing it under neither.**  With the tying value,
+   the built frame is a genuine frame of room A: its builder holds A's
+   key and sealed A's tying value into it, and could have sent the same
+   record to A honestly.  What R7 forbids is the trial order deciding;
+   here every order, and every worker split, gives A, and B's key gives
+   "the tying value is another room's", the same nothing a failed check
+   gives.  "Under neither, reported" is formation A's answer (try every
+   key, two openings an error), which the owner's answer of 2026-09-27
+   replaced; nothing is reported because the receiver stops at A and
+   never learns B's key would have passed GCM.  Undo: if the owner wants
+   such frames reported, the trial would have to go on past the first
+   opening, which gives up the early stop.
+4. **The two-key frame is built for real** (not the stand-in opener the
+   referee allows when the builder cannot): GF(2^128) arithmetic in the
+   test, checked against OpenSSL's tags before it is used, so a mistake
+   in it is a setup failure, never a pass.
+5. **The bound and its source** are in the comment beside the check in
+   `124-seal.lua`: about 2^128 key choices for a frame that opens under
+   two keys, from the padding fix of Albertini, Duong, Gueron, Kölbl,
+   Luykx and Schmieg (USENIX Security 2022), here with a per-key 256-bit
+   prefix.  **Unchecked**: written from the paper as remembered; the
+   build had no network, so the paper was not re-read.  The arithmetic
+   is argued in the comment itself and does not lean on the citation.
+6. **Referee 2 checks the record and the log, not a viewer file**: phase 1
+   writes no viewer file (that is 301's), and the viewer reads records
+   from the log, which the referee shows never holds the value.
+7. **Referee 3's count is with one worker.**  With several workers each
+   slice stops at its own first opening, so the total tried is the sum of
+   the slices' counts and is not bounded by the room's position; the
+   referee checks the answer with four workers and the count with one.
 
 ## Related documents
 
