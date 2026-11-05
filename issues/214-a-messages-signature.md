@@ -109,6 +109,31 @@ implementation's test reads:
 5. *(answered 2026-09-27)* **The signature is at most one line of 80
    characters, after a blank line; otherwise the last word of the body.**
 
+## Decisions (2026-11-05)
+
+Steps 1 and 2 were built with 215, whose text copies carry a
+`signature:` line: 169 (the reader), 170 (the table of examples, a text
+file any language can read), 171 (the referees: every row, and the two
+broken readers, bytes and first blank line, caught).  Step 3, the
+viewer's signature field, waits on 301.  Made by the builder; the owner
+can overturn each by changing one row of the table and the reader.
+
+1. **80 characters** (open question 1): Unicode code points, as proposed.
+2. **An empty message, or only spaces** (open question 2): the signature
+   is empty; nothing is refused (the reader only reads).
+3. **Trailing punctuation** (open question 3): kept, as proposed ("last
+   word" is the last run of characters that are not spaces, tabs or line
+   breaks).
+4. **A short closing line** (open question 4): read as the signature,
+   which is the rule's consequence; recorded as a row of the table for
+   the owner to confirm.
+5. **A final line break**: one line break after the signature line is
+   allowed and not part of it (a text file's last line ends with one);
+   two or more make the part after the blank line more than one line.
+6. **Referee 8** (a blank line and then another): the split is at the
+   last run of two or more line breaks, so `"hi\n\n\nsorelu"` reads as
+   case 1, as proposed.
+
 ## Related documents
 
 - `notes/vision-planning.md` sections 2 (signature), 15 ("Key-tying, the

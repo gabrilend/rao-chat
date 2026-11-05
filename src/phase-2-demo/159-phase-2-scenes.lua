@@ -22,7 +22,7 @@
 -- Two scenes run real processes (211): each home's gatherer its own
 -- process on its own loopback address, the demo watching from outside
 -- through the gatherers' RAM folders and the homes on disk, on the real
--- clock: `gatherers` and `acknowledge`.  The others run the stages as
+-- clock: `gatherers`, `acknowledge` and `git`.  The others run the stages as
 -- threads of this program on the simulated clock, and say so.
 
 local M = {}
@@ -838,7 +838,7 @@ local function real_world(c, name)
         for key, value in pairs(c.T.START_CONFIG) do m.rooms.set_config(h, key, value) end
         local config = { ["gatherer.ram-root"] = r.ram_root, ["gatherer.address"] = address,
             ["gatherer.sync-interval"] = "2", ["delivery.retry-floor"] = "1", ["delivery.retry-ceiling"] = "4",
-            ["callback.answer-time"] = "2" }
+            ["callback.answer-time"] = "2", ["git.home-name"] = home_name .. "-" .. r.count }
         for key, value in pairs(overrides or {}) do config[key] = value end
         for key, value in pairs(config) do m.rooms.set_config(h, key, value) end
         local tag = m.rooms.make_room(h, { label = "the room", token = "the demo's real room", kind = "group",
@@ -1094,10 +1094,142 @@ function M.acknowledge(c)
 end
 -- }}}
 
--- Scenes whose issues are not built: what each waits on.
-M.signatures = { waits = "214 (signatures read from each message's text by one rule) is not built" }
-M.git = { waits = "215, 215a and 215b (one git repository per mailbox: text copies, the running log, "
-    .. "the shared upstream) are not built" }
+-- {{{ local function cut
+-- text → at most `most` characters, ending "..." when cut, never inside
+-- a UTF-8 character; padded with spaces to `most` characters.
+local function cut(text, most)
+    local chars = {}
+    for ch in text:gmatch("[%z\1-\127\194-\244][\128-\191]*") do chars[#chars + 1] = ch end
+    if #chars > most then
+        chars = { table.concat(chars, "", 1, most - 3), "..." }
+        return table.concat(chars)
+    end
+    return table.concat(chars) .. string.rep(" ", most - #chars)
+end
+-- }}}
+
+-- {{{ scene signatures
+-- 214's table, read by 169's rule: each example's text and what it reads
+-- as.  (214's viewer field, step 3, waits on 301.)
+function M.signatures(c)
+    local out = {}
+    local list = c.m.signature.examples()
+    local agree = 0
+    out[#out + 1] = string.format("  %d examples in 170-signature-examples.txt, each read by 169's rule:", #list)
+    out[#out + 1] = string.format("      %-4s %-38s %-26s %s", "line", "text", "signature", "as the table says")
+    for _, e in ipairs(list) do
+        local body, sig = c.m.signature.read(e.text)
+        local same = body == e.body and sig == e.signature
+        if same then agree = agree + 1 end
+        local shown = cut(string.format("%q", e.text):gsub("\\\n", "\\n"):gsub("\\13", "\\r"), 38)
+        local sig_shown = cut(string.format("%q", sig), 26)
+        out[#out + 1] = string.format("      %-4d %s %s %s", e.line, shown, sig_shown, same and "yes" or "NO")
+    end
+    out[#out + 1] = string.format("  %d of %d read as the table says; an 80-character signature of 3-byte letters "
+        .. "is %d bytes", agree, #list, #("€"):rep(80))
+    return { lines = out, gaps = { "214's step 3, the viewer's signature field (it waits on 301, the viewer)" } }
+end
+-- }}}
+
+-- {{{ scene git
+-- 215 between two real gatherers: each mailbox's repository, the text
+-- copies (byte-identical on both homes), a commit per sync cycle, a hand
+-- edit committed and never sent, labels, and the code branch.
+function M.git(c)
+    local r, why = real_world(c, "git")
+    if not r then error(why, 0) end
+    local out, gaps = {}, {}
+    local m = c.m
+    local ok, failed = pcall(function()
+        local a = r.home("A", "127.0.0.2", 7602)
+        local b = r.home("B", "127.0.0.3", 7603)
+        r.link({ a, b })
+        if r.no_lookups then
+            for _, h in ipairs({ a, b }) do r.starter(h) end
+        else
+            for _, h in ipairs({ a, b }) do r.start(h) end
+            gaps[#gaps + 1] = "the code branch (outside a loopback-only namespace the home starter's public-address "
+                .. "check would look outside, so the gatherers were started by hand)"
+        end
+        local repo_a, repo_b = m.copies.repository(a.dir, a.mailbox), m.copies.repository(b.dir, b.mailbox)
+        out[#out + 1] = "  two homes, one room; each mailbox's repository (215, open question 1):"
+        out[#out + 1] = "      A: " .. repo_a:sub(#r.root + 2)
+        out[#out + 1] = "      B: " .. repo_b:sub(#r.root + 2)
+        r.type(a, "bring bread\n\nsorelu")
+        r.type(b, "and milk")
+        local function list(repo)
+            return shell("cd " .. quote(repo) .. " && find rooms -type f | sort")
+        end
+        r.wait_until(function()
+            return #list(repo_a) == 2 and #list(repo_b) == 2 and r.missing(a, b.pair) == 0 and r.missing(b, a.pair) == 0
+        end, 15)
+        r.wait_until(function()
+            return m.git.ref(repo_a, "HEAD") ~= nil and m.git.ref(repo_b, "HEAD") ~= nil
+        end, 6)
+        out[#out + 1] = "  each home wrote one message; A's working tree (the room folder is the token's fingerprint):"
+        for _, line in ipairs(list(repo_a)) do out[#out + 1] = "      " .. line end
+        local same, both = 0, 0
+        for _, path in ipairs(list(repo_a)) do
+            both = both + 1
+            if read_all(repo_a .. "/" .. path) == read_all(repo_b .. "/" .. path) then same = same + 1 end
+        end
+        out[#out + 1] = string.format("  copies byte-identical on A and B: %d of %d (no from, no arrived: those stay "
+            .. "in each home's log)", same, both)
+        for _, path in ipairs(list(repo_a)) do
+            if (read_all(repo_a .. "/" .. path) or ""):find("bring bread", 1, true) then
+                out[#out + 1] = "  " .. path:match("[^/]+$") .. " (the file whole, between the bars):"
+                for line in ((read_all(repo_a .. "/" .. path) or "") .. "\n"):gmatch("([^\n]*)\n") do
+                    out[#out + 1] = "      | " .. line
+                end
+            end
+        end
+        out[#out + 1] = "  A's history (git log), one commit per sync cycle that changed something:"
+        for _, line in ipairs(shell("git -C " .. quote(repo_a) .. " log --format='%h %an: %s' rooms --")) do
+            out[#out + 1] = "      " .. line
+        end
+
+        -- a hand edit on B: committed, never sent
+        local log_a = read_all(a.folder .. "/home/rooms/" .. a.tag .. "/log")
+        local log_b = read_all(b.folder .. "/home/rooms/" .. b.tag .. "/log")
+        local before = tonumber(m.git.must(repo_b, { "rev-list", "--count", "HEAD" }))
+        for _, path in ipairs(list(repo_b)) do
+            local text = read_all(repo_b .. "/" .. path) or ""
+            if text:find("and milk", 1, true) then
+                local f = io.open(repo_b .. "/" .. path, "wb")
+                f:write((text:gsub("and milk$", "and milk, and eggs (added by hand on B)")))
+                f:close()
+            end
+        end
+        r.wait_until(function() return tonumber(m.git.must(repo_b, { "rev-list", "--count", "HEAD" })) > before end, 8)
+        out[#out + 1] = "  B's copy of \"and milk\" edited by hand; B's next sync commit:"
+        for _, line in ipairs(shell("git -C " .. quote(repo_b) .. " log -1 --stat --format='%h %an: %s' | grep -v '^$'")) do
+            out[#out + 1] = "      " .. line
+        end
+        socket.sleep(2.5)
+        out[#out + 1] = string.format("  both logs unchanged by it (nothing sent): A %s, B %s",
+            read_all(a.folder .. "/home/rooms/" .. a.tag .. "/log") == log_a and "same bytes" or "CHANGED",
+            read_all(b.folder .. "/home/rooms/" .. b.tag .. "/log") == log_b and "same bytes" or "CHANGED")
+        out[#out + 1] = "  B's labels file (never tracked: " .. (m.git.must(repo_b, { "ls-files" }):find("labels", 1, true)
+            and "TRACKED" or "git ls-files does not list it") .. "):"
+        file_lines(out, repo_b .. "/labels", 4, "      ")
+        if r.no_lookups then
+            local branch = "code/A-" .. a.dir:match("A%-(%d+)$")
+            local files = m.git.must(repo_a, { "ls-tree", "-r", "--name-only", branch })
+            local n = select(2, files:gsub("\n", "")) + 1
+            out[#out + 1] = string.format("  A's branch %s (the program its starter runs from): %d files, %s; "
+                .. "checked out: %s", branch, n,
+                files:find("src/gatherer/163-gatherer.lua", 1, true) and "the gatherer's source among them" or "NO gatherer",
+                m.git.must(repo_a, { "symbolic-ref", "--short", "HEAD" }))
+        end
+        for _, h in ipairs({ a, b }) do r.stop(h) end
+    end)
+    r.stop_all()
+    if not ok then error(failed, 0) end
+    gaps[#gaps + 1] = "215a (the running log committed each sync cycle) is not built"
+    gaps[#gaps + 1] = "215b (sharing through a shared upstream) is not built"
+    return { lines = out, gaps = gaps }
+end
+-- }}}
 
 -- {{{ scene phase1
 function M.phase1(c)

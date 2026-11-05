@@ -22,6 +22,15 @@ these threads under 162's loop:
 - state: written every second; a repeated problem is logged at most once
   per sync interval, with a count.
 
+Text copies (215): git is required (without it the problem names the
+program and it exits, status 1); the mailbox's repository is made at
+start-up (173).  After each frame is answered, and after each typed
+message is written, the filing hook brings that room's copies up to date;
+a hook that fails is a `hook-text-copy` problem line and ends nothing.
+Each sync cycle brings every room's copies up to date from its log and
+commits once.  It reads `git.home-name`.
+
+`RAO_COPIES_BROKEN` and `RAO_COPIES_FAIL` are 175's.
 `RAO_GATHERER_BROKEN` and `RAO_GATHERER_CRASH` select the broken
 versions and crash points that 167's referees must catch; nothing else
 reads them.

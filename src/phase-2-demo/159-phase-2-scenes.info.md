@@ -25,8 +25,16 @@ and .4; it kills one gatherer and shows the starter start it again,
 stops B and shows A's `due/` file for B, then starts B and shows `due/`
 empty.  `acknowledge` runs two gatherers with
 `gatherer.acknowledge-after` set each way, cuts the power under B after
-10 answers, and counts what reached B's disk.  Both bring the
+10 answers, and counts what reached B's disk.  `git` (215) runs two
+gatherers that each write a message, shows A's repository and a copy
+whole, compares A's and B's copies byte for byte, edits one of B's by
+hand and shows the commit and both logs unchanged, B's `labels`, and A's
+`code/<name>` branch (from its starter).  All three bring the
 namespace's loopback up (168) and stop every process they started.
+
+`signatures` reads 214's table (170) with 169's rule and shows each
+example's signature; 214's viewer field is named as not run (it waits on
+301).
 
 Addresses: every home has its own address and stated ports.  Most scenes
 use 127.0.0.2, .3, .4 (.5 for a second pair, .6 for a joiner).  The
@@ -36,5 +44,6 @@ syncing scene first shows the loopback homes' list coming out empty.
 Nothing leaves the in-memory relay either way.
 
 The scenes: delivery, down, join, keys, child, syncing, token, leaving,
-crosscheck, housemates, failed, signatures (waits on 214), git (waits on
-215, 215a, 215b), acknowledge, phase1; `gatherers` comes after `down`.
+crosscheck, housemates, failed, signatures, git (215a's and 215b's
+parts named as not built), acknowledge, phase1; `gatherers` comes after
+`down`.

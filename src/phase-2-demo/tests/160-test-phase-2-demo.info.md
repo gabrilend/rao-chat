@@ -6,7 +6,7 @@ scene it can run and says why for each it cannot.
 
 It checks input/ first and the goodbye last, that the exit status agrees
 with the goodbye's counts, that each runnable scene ran and printed
-figures, that the waiting scenes name 214 and 215, that a missing
+figures, that a waiting scene names its issue, that a missing
 `fail2ban-regex` is named, and figures only the real stages give (three
 acknowledgement times, connections from each home's own address, five
 frames stopping at five different keys, flag then approve, the forged and
@@ -14,7 +14,10 @@ genuine leaves, the two-faced sender).  From the real-process scenes
 (211): three gatherer processes on their own addresses, a killed one
 started again, `due/` holding B's pair with 3 missing and empty once B is
 back, and 0 of 10 lost under `acknowledge-after = disk`, 10 of 10 under
-`ram`.
+`ram`.  From the signatures scene, every row of 214's table as it says;
+from the git scene (215), both homes' copies byte-identical under the
+token's fingerprint, a hand edit committed with both logs unchanged, and
+commits by the home's name.
 
 Broken versions it must catch:
 1. A scene made to fail (`RAO_PHASE2_DEMO_BREAK=keys`): reported as

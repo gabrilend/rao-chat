@@ -70,6 +70,9 @@ local MODULES = {
     { short = "crosscheck",  file = "156-cross-check",     issue = "209" },
     { short = "ram",         file = "161-ram-folders",     issue = "211" },
     { short = "loopback",    file = "168-loopback",        issue = "211" },
+    { short = "signature",   file = "169-signature",       issue = "214" },
+    { short = "git",         file = "172-git",             issue = "215" },
+    { short = "copies",      file = "173-text-copies",     issue = "215" },
 }
 
 local RULE = string.rep("-", 78)

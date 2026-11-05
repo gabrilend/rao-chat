@@ -38,6 +38,15 @@
 --                   sync, piles, connections, problems); a `stop` file in
 --                   the folder makes the gatherer sync once more and exit.
 --
+-- Text copies (issue 215, 173).  git is required: without it the
+-- gatherer writes the problem to `state` and stderr, naming the program,
+-- and exits with status 1.  The mailbox's repository is made at start-up
+-- when it is not there.  The filing hook runs after every record filed
+-- into a room of the mailbox (the filer, once the frame is answered) or
+-- written there (typed): it writes that record's text copy.  A hook that
+-- fails is a problem line and ends nothing; each sync cycle brings every
+-- room's copies up to date from its log and makes one commit.
+--
 -- Problems that belong to no room are kept one line per distinct problem
 -- in `state` (`problem.<name>`), rewritten in place, and written to the
 -- running log at most once per sync interval each, with a count (R16).
@@ -52,7 +61,12 @@
 -- once), other-port (another port when the mailbox's is held),
 -- fixed-folder (one RAM folder for every home, in 161) and skip-entry (a
 -- sync that misses `entry`, in 161) are the broken versions the referees
--- must catch.
+-- must catch.  For 215's referees (175): RAO_COPIES_FAIL=hook:<n> makes
+-- the n-th run of the filing hook throw (hook:all, every run); RAO_COPIES_BROKEN=receive-only
+-- (no hook for own messages), hook-unguarded (the hook inside filing,
+-- unguarded), edits-to-corrections (hand edits of copies sent as
+-- corrections) and no-git (running on without git, and without copies)
+-- are the broken versions.
 
 local DIR, HOME_DIR, MAILBOX = arg[1], arg[2], arg[3]
 if not (DIR and HOME_DIR and MAILBOX) then
@@ -80,10 +94,14 @@ local members = require("152-members")
 local crosscheck = require("156-cross-check")
 local ram = require("161-ram-folders")
 local wait = require("162-wait-loop")
+local git = require("172-git")
+local copies_m = require("173-text-copies")
 
 ffi.cdef [[ int getpid(void); ]]
 
 local BROKEN = os.getenv("RAO_GATHERER_BROKEN") or ""
+local COPIES_BROKEN = os.getenv("RAO_COPIES_BROKEN") or ""
+local HOOK_FAIL = (os.getenv("RAO_COPIES_FAIL") or ""):match("^hook:(%w+)$")
 local CRASH_POINT, CRASH_AT = (os.getenv("RAO_GATHERER_CRASH") or ""):match("^([%w%-]+):(%d+)$")
 CRASH_AT = tonumber(CRASH_AT)
 
@@ -172,6 +190,18 @@ if not claimed then
 end
 server:settimeout(0)
 ram.log(FOLDER, now(), string.format("started: pid %d, mailbox %s, port %d on %s", PID, MAILBOX, mailbox.port, ADDRESS))
+
+-- git, required (215): refuse to start rather than run without copies
+local git_path, no_git = git.find()
+if not git_path and COPIES_BROKEN ~= "no-git" then
+    problem("git", no_git)
+    state.stopped = "git"
+    write_state()
+    io.stderr:write("rao-chat gatherer: " .. no_git .. "\n")
+    server:close()
+    os.exit(1)
+end
+local HOME_NAME = git.check_name(setting("git.home-name"))
 if root_note then problem("ram-root", root_note) end
 
 ------------------------------------------------------------------------------
@@ -190,6 +220,10 @@ local returned = ram.return_working(FOLDER .. "/arrived") + ram.return_working(F
 os.execute("rm -f " .. disk.shell_quote(FOLDER .. "/answers") .. "/* " .. disk.shell_quote(FOLDER .. "/answers/working") .. "/* 2>/dev/null")
 local sync_record, kept = ram.load(HOME_DIR, FOLDER .. "/home", rooms.list_rooms_by_mailbox(disk_home, MAILBOX))
 local home = rooms.open_home(FOLDER .. "/home")
+local copies = git_path and copies_m.open(home, HOME_DIR, MAILBOX, HOME_NAME)
+if copies and copies.made then
+    ram.log(FOLDER, now(), "made the mailbox's git repository at " .. copies.repo)
+end
 ram.log(FOLDER, now(), string.format("%s %d room(s); %d file(s) put back from working/; acknowledge after %s",
     kept and "kept the RAM copy (newer than disk) of" or "loaded from disk", #sync_record.rooms, returned, ACK_AFTER))
 state["acknowledge-after"] = ACK_AFTER
@@ -214,6 +248,22 @@ end)
 ------------------------------------------------------------------------------
 -- 3. The stages
 ------------------------------------------------------------------------------
+
+-- {{{ local function run_hooks
+-- The filing hook (215): after a record is filed or written into room
+-- `tag`, its text copy.  It never stops or undoes filing: a failure is a
+-- problem line, and the next sync makes the copy from the log.
+local hook_runs = 0
+local function copy_hook(tag)
+    hook_runs = hook_runs + 1
+    if HOOK_FAIL == "all" or tonumber(HOOK_FAIL) == hook_runs then error("the filing hook failed on purpose (referee)", 0) end
+    if copies then copies:catch_up(tag) end
+end
+local function run_hooks(tag)
+    local ok, why = pcall(copy_hook, tag)
+    if not ok then problem("hook-text-copy", "room " .. tostring(tag):sub(1, 8) .. ": " .. tostring(why), SYNC_EVERY) end
+end
+-- }}}
 
 local held = {}            -- the connections held, oldest first
 local arrived_pending = returned > 0
@@ -317,6 +367,9 @@ local function file_seams(item)
         on_summary = function(tag, record) return crosscheck.answer(stage, tag, record, peer, math.floor(now())) end,
         on_filed = function(tag)
             filed_frames = filed_frames + 1
+            item.filed_tags = item.filed_tags or {}
+            item.filed_tags[#item.filed_tags + 1] = tag
+            if COPIES_BROKEN == "hook-unguarded" then copy_hook(tag) end
             if ACK_AFTER == "disk" and BROKEN ~= "disk-answers-first" then
                 -- the room's log on disk, forced, before the answer exists
                 ram.sync_file(sync_record, room_log_relative(tag), true)
@@ -378,6 +431,9 @@ loop:spawn("filer", function()
                         ram.put(FOLDER .. "/answers", name, frame or "")
                         os.remove(taken)
                     end
+                    if COPIES_BROKEN ~= "hook-unguarded" then
+                        for _, tag in ipairs(item.filed_tags or {}) do run_hooks(tag) end
+                    end
                 end
             end
         end
@@ -393,7 +449,8 @@ loop:spawn("typed", function()
                 if typed then
                     local ok, failed = pcall(stage.write, stage, typed.room, { kind = "message", text = typed.text },
                         math.floor(now()))
-                    if not ok then problem("typed", name .. ": " .. tostring(failed), SYNC_EVERY) end
+                    if not ok then problem("typed", name .. ": " .. tostring(failed), SYNC_EVERY)
+                    elseif COPIES_BROKEN ~= "receive-only" then run_hooks(typed.room) end
                 else
                     problem("typed", name .. ": " .. why, SYNC_EVERY)
                 end
@@ -482,6 +539,29 @@ else
     end)
 end
 
+-- {{{ local function sync_copies
+-- Each sync cycle: every room's copies brought up to date and committed
+-- (215).  The broken version of referee 4 first sends each hand-changed
+-- copy as a correction.
+local function sync_copies()
+    local tags = rooms.list_rooms_by_mailbox(home, MAILBOX)
+    if COPIES_BROKEN == "edits-to-corrections" then
+        for _, item in ipairs(copies:changed_since_commit()) do
+            local fp, id = item.path:match("^rooms/(%x+)/%d+%-([%w_%-]+)%.txt$")
+            if fp and item.status == "M" then
+                for _, tag in ipairs(tags) do
+                    if copies:folder(tag) == fp then
+                        local text = disk.read_all(copies.repo .. "/" .. item.path):match("\n\n(.*)$") or ""
+                        pcall(stage.write, stage, tag, { kind = "correction", target = id, text = text }, math.floor(now()))
+                    end
+                end
+            end
+        end
+    end
+    return copies:sync(tags)
+end
+-- }}}
+
 -- {{{ local function sync_now
 local function sync_now()
     local result = ram.sync(sync_record)
@@ -492,6 +572,11 @@ local function sync_now()
     end
     if #result.hand_edits > 0 then
         problem("hand-edit", "changed on disk by hand, not written over: " .. table.concat(result.hand_edits, ", "), SYNC_EVERY)
+    end
+    if copies then
+        local ok, counts = pcall(sync_copies)
+        if not ok then problem("copies", tostring(counts), SYNC_EVERY)
+        elseif counts then ram.log(FOLDER, now(), "git: " .. counts.message .. " (" .. counts.commit:sub(1, 12) .. ")") end
     end
 end
 -- }}}
