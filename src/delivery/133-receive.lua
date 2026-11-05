@@ -77,6 +77,8 @@
 --                                      the record to answer with
 --   seams.on_summary(tag, record, peer) optional (156's answer, 209) →
 --                                      the record to answer with
+--   seams.on_filed(tag, id, word)      optional (211: runs after filing,
+--                                      before the answer is made)
 -- Receiving never sends anything but these answers, and never waits on
 -- the sender stage (R6): 211 runs this in its own stage.
 
@@ -160,11 +162,70 @@ local function keys_for(ring, tag)
 end
 -- }}}
 
+-- {{{ function M.answer_frame
+-- after (a frame without its 4 length bytes), seams → the answer frame
+-- (sealed, length first) and the room's tag; or nil and "unopened" when
+-- no key opens it (seams.on_unopened is told).  Filing comes first, then
+-- the answer (R3): seams.on_filed(tag, id, word), when given, runs after
+-- a record is filed and before its answer is made (211's
+-- gatherer.acknowledge-after = disk forces the room's log to disk there).
+-- 211's filer calls this on each frame its listener wrote to arrived/.
+function M.answer_frame(after, seams)
+    local home = seams.home
+    local ring = seams.ring()
+    local tag, opened = keyring.open_frame(ring, after, seams.workers or 1)
+    if not tag then
+        -- the length it announced: what was read after those 4 bytes
+        if seams.on_unopened then seams.on_unopened(seams.peer, #after) end
+        return nil, "unopened"
+    end
+    if seams.on_opened then seams.on_opened(tag, seams.peer) end
+    local answer
+    local asked_ok, asked = pcall(records.decode, opened)
+    if asked_ok and asked.kind == "did-you" then
+        -- 204: answered from this room's claims (141); changes nothing
+        answer = call_back.answer_frame(home, tag, asked)
+    elseif asked_ok and M.CLAIMS[asked.kind] then
+        -- 205: a claim to call back; the stage's, not the log's
+        local answers = {}
+        local ok, word = false, "nothing here hears claims"
+        if seams.on_claim then ok, word = pcall(seams.on_claim, tag, asked, seams.peer) end
+        if ok and send.WORDS[word] then
+            answers[1] = { id = asked.claim, word = word }
+        elseif seams.on_problem then
+            seams.on_problem(tag, "a " .. asked.kind .. ": " .. tostring(word))
+        end
+        answer = records.encode({ kind = "ack", answers = send.write_answers(answers) })
+    elseif asked_ok and (M.MEMBERS[asked.kind] or M.SUMMARY[asked.kind]) then
+        -- 207 and 209: the stage's (152, 156), never the log's
+        local seam = M.MEMBERS[asked.kind] and seams.on_members or seams.on_summary
+        local ok, reply = false, "nothing here hears " .. asked.kind .. " records"
+        if seam then ok, reply = pcall(seam, tag, asked, seams.peer) end
+        if ok and type(reply) == "table" then
+            answer = records.encode(reply)
+        else
+            if seams.on_problem then seams.on_problem(tag, "a " .. asked.kind .. ": " .. tostring(reply)) end
+            answer = records.encode({ kind = "ack", answers = send.write_answers({}) })
+        end
+    else
+        local word, id, problem = M.file_record(home, tag, opened, seams.peer, seams.now())
+        local answers = {}
+        if word then
+            if seams.on_filed then seams.on_filed(tag, id, word) end
+            answers[1] = { id = id, word = word }
+        elseif seams.on_problem then
+            seams.on_problem(tag, (id and ("record " .. id .. ": ") or "") .. tostring(problem))
+        end
+        answer = records.encode({ kind = "ack", answers = send.write_answers(answers) })
+    end
+    return seal.seal(keys_for(ring, tag), answer), tag
+end
+-- }}}
+
 -- {{{ function M.serve
 -- conn, seams → why it ended ("closed", "timeout", "unopened", "length", ...).
 -- Reads frames until the connection ends, answering each.
 function M.serve(conn, seams)
-    local home = seams.home
     while true do
         local after, why, refused_length = frames.read_frame(conn)
         if not after then
@@ -172,53 +233,12 @@ function M.serve(conn, seams)
             if conn.close then conn:close() end
             return refused_length and "length" or why
         end
-        local ring = seams.ring()
-        local tag, opened = keyring.open_frame(ring, after, seams.workers or 1)
-        if not tag then
-            -- the length it announced: what was read after those 4 bytes
-            if seams.on_unopened then seams.on_unopened(seams.peer, #after) end
+        local frame = M.answer_frame(after, seams)
+        if not frame then
             if conn.close then conn:close() end
             return "unopened"
         end
-        if seams.on_opened then seams.on_opened(tag, seams.peer) end
-        local answer
-        local asked_ok, asked = pcall(records.decode, opened)
-        if asked_ok and asked.kind == "did-you" then
-            -- 204: answered from this room's claims (141); changes nothing
-            answer = call_back.answer_frame(home, tag, asked)
-        elseif asked_ok and M.CLAIMS[asked.kind] then
-            -- 205: a claim to call back; the stage's, not the log's
-            local answers = {}
-            local ok, word = false, "nothing here hears claims"
-            if seams.on_claim then ok, word = pcall(seams.on_claim, tag, asked, seams.peer) end
-            if ok and send.WORDS[word] then
-                answers[1] = { id = asked.claim, word = word }
-            elseif seams.on_problem then
-                seams.on_problem(tag, "a " .. asked.kind .. ": " .. tostring(word))
-            end
-            answer = records.encode({ kind = "ack", answers = send.write_answers(answers) })
-        elseif asked_ok and (M.MEMBERS[asked.kind] or M.SUMMARY[asked.kind]) then
-            -- 207 and 209: the stage's (152, 156), never the log's
-            local seam = M.MEMBERS[asked.kind] and seams.on_members or seams.on_summary
-            local ok, reply = false, "nothing here hears " .. asked.kind .. " records"
-            if seam then ok, reply = pcall(seam, tag, asked, seams.peer) end
-            if ok and type(reply) == "table" then
-                answer = records.encode(reply)
-            else
-                if seams.on_problem then seams.on_problem(tag, "a " .. asked.kind .. ": " .. tostring(reply)) end
-                answer = records.encode({ kind = "ack", answers = send.write_answers({}) })
-            end
-        else
-            local word, id, problem = M.file_record(home, tag, opened, seams.peer, seams.now())
-            local answers = {}
-            if word then
-                answers[1] = { id = id, word = word }
-            elseif seams.on_problem then
-                seams.on_problem(tag, (id and ("record " .. id .. ": ") or "") .. tostring(problem))
-            end
-            answer = records.encode({ kind = "ack", answers = send.write_answers(answers) })
-        end
-        local ok, failed = frames.write_frame(conn, seal.seal(keys_for(ring, tag), answer))
+        local ok, failed = frames.write_frame(conn, frame)
         if not ok then
             if conn.close then conn:close() end
             return "answering: " .. tostring(failed)

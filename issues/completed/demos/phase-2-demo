@@ -9,15 +9,18 @@
 # joining and direct messages, the keys tried per frame, a child room
 # flagging an outsider, contact syncing, a token changed by hand, a genuine
 # and a forged leave, a two-faced sender caught, housemates, and failed
-# decryption with fail2ban's matcher.  It prints what is really on disk and
-# on the wire.  Scenes whose issues are not built yet (214, 215, 211) say
-# what they wait on.  It reads input/ first and writes a goodbye into
-# output/ last.
+# decryption with fail2ban's matcher, and real gatherer processes (211):
+# a starter per home, a member down and its due/ pile, and the
+# acknowledge-after switch both ways.  It prints what is really on disk and
+# on the wire.  Scenes whose issues are not built yet (214, 215) say what
+# they wait on.  It reads input/ first and writes a goodbye into output/
+# last.
 #
-# The stages run in the delivery tests' simulated world (a clock of its own
-# and an in-memory relay), so nothing reaches a network; the demo runs in a
-# network namespace of its own (unshare -rn) as well, when the system
-# allows one.
+# Most scenes run the stages in the delivery tests' simulated world (a
+# clock of its own and an in-memory relay).  The real-process scenes open
+# sockets on loopback addresses only (127.0.0.2 and up).  The demo runs in
+# a network namespace of its own (unshare -rn), where it brings the
+# namespace's loopback up itself, so nothing can reach a network.
 #
 # Exit status: 0 every scene ran in full, 1 a scene could not run, 2 none
 # failed but some wait on an issue or ran with a part missing.
@@ -52,5 +55,5 @@ if unshare -rn true 2>/dev/null; then
     exec unshare -rn luajit "${DIR}/src/phase-2-demo/158-phase-2-demo.lua" "${DIR}"
 fi
 echo "phase-2-demo: unshare -rn is not allowed here, so running without a network namespace" \
-     "(the demo opens no sockets either way)" >&2
+     "(the demo opens loopback sockets only; the home starters are not run)" >&2
 exec luajit "${DIR}/src/phase-2-demo/158-phase-2-demo.lua" "${DIR}"

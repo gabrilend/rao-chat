@@ -9,8 +9,12 @@
 --     goodbye's counts (0 all ran, 1 one could not, 2 some wait or miss a
 --     part);
 --   - every scene whose issues are built ran, and printed figures;
---   - the scenes whose issues are not built (214, 215, 211) say so, naming
+--   - the scenes whose issues are not built (214, 215) say so, naming
 --     the issue, and are not counted as run;
+--   - the real-process scenes (211): each home's gatherer is a process of
+--     its own, the starter restarts one killed, due/ holds the pile for a
+--     member down and empties when it returns; acknowledge-after = disk
+--     loses none of 10 acknowledged messages at a power cut, ram all 10;
 --   - a missing part (fail2ban-regex, when it is not installed) is named;
 --   - the homes stated their own loopback addresses and ports;
 --   - broken version 1: a scene made to fail (RAO_PHASE2_DEMO_BREAK) is
@@ -82,6 +86,7 @@ end
 local RUNNABLE = {
     { key = "delivery",   title = "A message to every pair at once" },
     { key = "down",       title = "A member down, its pile" },
+    { key = "gatherers",  title = "Real gatherer processes" },
     { key = "join",       title = "Joining with a token and one pair" },
     { key = "keys",       title = "Two rooms with one label" },
     { key = "child",      title = "A child room flags an outsider" },
@@ -91,9 +96,10 @@ local RUNNABLE = {
     { key = "crosscheck", title = "A two-faced sender caught" },
     { key = "housemates", title = "Housemates found" },
     { key = "failed",     title = "Failed decryption" },
+    { key = "acknowledge", title = "The gatherer.acknowledge-after switch" },
     { key = "phase1",     title = "Phase 1's tools on phase 2's homes" },
 }
-local WAITING = { signatures = "214", git = "215", acknowledge = "211" }
+local WAITING = { signatures = "214", git = "215" }
 
 local goodbye_path = DIR .. "/output/phase-2-demo.goodbye"
 os.remove(goodbye_path)
@@ -104,7 +110,7 @@ local input_at = output:find("0. What input/ holds (read first)", 1, true)
 local modules_at = output:find("\nmodules:", 1, true)
 check("input/ is read and shown before anything else", input_at and modules_at and input_at < modules_at,
       output:sub(1, 300))
-check("run-phase-demo 2 finds the demo", output:find("16. Which scenes ran", 1, true) ~= nil, output:sub(-600))
+check("run-phase-demo 2 finds the demo", output:find("17. Which scenes ran", 1, true) ~= nil, output:sub(-600))
 local goodbye = read_all(goodbye_path)
 check("a goodbye is written to output/, ending with goodbye.", goodbye and goodbye:match("goodbye%.\n$"), goodbye)
 goodbye = goodbye or ""
@@ -115,7 +121,7 @@ check("the goodbye is written after the last scene",
 local ran, total, gaps, waits, could_not =
     goodbye:match("(%d+) of (%d+) scenes ran in full; (%d+) with a part missing; (%d+) wait on an issue; (%d+) could not run")
 ran, total, gaps, waits, could_not = tonumber(ran), tonumber(total), tonumber(gaps), tonumber(waits), tonumber(could_not)
-check("the goodbye counts the scenes", ran and total == 15, goodbye)
+check("the goodbye counts the scenes", ran and total == 16, goodbye)
 local expected = (could_not or 1) > 0 and 1 or (((gaps or 0) + (waits or 0)) > 0 and 2 or 0)
 check("the exit status agrees with the goodbye (0 all, 1 could not, 2 waits or parts missing)",
       status == expected, "exit " .. tostring(status) .. ", goodbye:\n" .. goodbye)
@@ -170,6 +176,20 @@ check("cross-check: both receivers raised the two-faced sender; the gap came bac
       crosscheck:find("B raised 1", 1, true) and crosscheck:find("C raised 1", 1, true)
       and crosscheck:find("with the same id: true", 1, true), crosscheck)
 
+local gatherers = scene_text(output, "Real gatherer processes") or ""
+local processes = 0
+for _ in gatherers:gmatch("pid %d+%s+163%-gatherer%.lua%s+127%.0%.0%.%d:76%d%d%s+running") do processes = processes + 1 end
+check("gatherers: three homes' gatherers, each a running process of its own, on its own address",
+      processes >= 3, gatherers)
+check("gatherers: a gatherer killed is started again by its home's starter, which says so",
+      gatherers:find("is gone after", 1, true) ~= nil or gatherers:find("started by hand", 1, true) ~= nil, gatherers)
+check("gatherers: due/ holds B's pair with 3 missing, and none once B is back",
+      gatherers:find("due/127.0.0.3-7603-", 1, true) and gatherers:find("missing = 3", 1, true)
+      and gatherers:find("A's due/ now holds 0 file(s)", 1, true), gatherers)
+local acknowledge = scene_text(output, "The gatherer.acknowledge-after switch") or ""
+check("acknowledge: at a power cut, disk lost 0 of 10 acknowledged messages and ram lost 10",
+      acknowledge:match("\n%s+disk%s+10%s+10%s+0%s") and acknowledge:match("\n%s+ram%s+10%s+0%s+10%s"), acknowledge)
+
 -- broken version 1: one scene made to fail
 local broken, broken_status = run("RAO_PHASE2_DEMO_BREAK=keys " .. quote(DIR .. "/issues/completed/demos/phase-2-demo")
                                   .. " " .. quote(DIR))
@@ -191,7 +211,7 @@ local missing, missing_status = run("luajit " .. quote(copy .. "/src/phase-2-dem
 local missing_goodbye = read_all(copy .. "/output/phase-2-demo.goodbye") or ""
 check("broken 2: the missing module is named", missing:find("156%-cross%-check%s+%(issue 209%s*%)%s+NOT LOADED") ~= nil,
       missing:sub(1, 2000))
-local none_ran = missing_goodbye:find("12 could not run", 1, true) ~= nil
+local none_ran = missing_goodbye:find("14 could not run", 1, true) ~= nil
 check("broken 2: every runnable scene could not run, saying which module", none_ran
       and missing_goodbye:match("\n  could not%s+delivery%s+modules did not load: [^\n]*crosscheck"), missing_goodbye)
 check("broken 2: the exit status is 1", missing_status == 1, missing_status)

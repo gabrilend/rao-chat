@@ -10,13 +10,23 @@ built, `{waits = "<issue>: why"}`.
 by short name: rooms, disk, tokens, tree, forest_text, recipients, ignore,
 people, message_log, room_key, seal, records, keyring, delivered,
 receive, delivery, fd, claims, call_back, hello, leaving, reach, public,
-members, housemates, crosscheck), `break_scene`.
+members, housemates, crosscheck, ram, loopback), `break_scene`.
 
 Each scene resets the world, makes real rao-homes (each with its own RAM
 folder), runs phase 2's stages between them on the simulated clock, and
 returns lines read from the homes' files and the stages' state.  `gaps`
-names a part that could not run (the pile in the gatherer's `due/`
-folder, waiting on 211; `fail2ban-regex` when it is not installed).
+names a part that could not run (`fail2ban-regex` when it is not
+installed; the home starters, when the demo is not in a loopback-only
+namespace).
+
+Two scenes run real processes instead (211): `gatherers` starts each
+home's starter (164), which starts its gatherer (163), on 127.0.0.2, .3
+and .4; it kills one gatherer and shows the starter start it again,
+stops B and shows A's `due/` file for B, then starts B and shows `due/`
+empty.  `acknowledge` runs two gatherers with
+`gatherer.acknowledge-after` set each way, cuts the power under B after
+10 answers, and counts what reached B's disk.  Both bring the
+namespace's loopback up (168) and stop every process they started.
 
 Addresses: every home has its own address and stated ports.  Most scenes
 use 127.0.0.2, .3, .4 (.5 for a second pair, .6 for a joiner).  The
@@ -27,4 +37,4 @@ Nothing leaves the in-memory relay either way.
 
 The scenes: delivery, down, join, keys, child, syncing, token, leaving,
 crosscheck, housemates, failed, signatures (waits on 214), git (waits on
-215, 215a, 215b), acknowledge (waits on 211), phase1.
+215, 215a, 215b), acknowledge, phase1; `gatherers` comes after `down`.

@@ -13,12 +13,14 @@ What it does, in order:
 1. Lists `input/` (each file's name, bytes, first line): read first.
 2. Loads the phase 1 and phase 2 modules (002, 003, 007, 021, 024, 041,
    042, 061, 081, 123, 124, 126, 127, 130, 133, 134, 139, 141, 142, 145,
-   147, 149, 150, 152, 154, 156), reporting any that fail.  If one fails,
+   147, 149, 150, 152, 154, 156, 161, 168), reporting any that fail.  If one fails,
    every runnable scene is reported as could-not, naming the modules:
    the stages run together, so a world missing one is not the design.
 3. Sets up 143's test world (the delivery tests' simulated clock and
    in-memory relay) with its scratch folder
-   `tmp/shared-memory/phase-2-demo/`.
+   `tmp/shared-memory/phase-2-demo/`.  The `gatherers` and `acknowledge`
+   scenes run real gatherer processes (211) under that folder instead, on
+   loopback addresses, and stop every one they start.
 4. Runs each scene in `159-phase-2-scenes.ORDER`.  A scene that is a
    `{waits = ...}` table prints "WAITS" and the issue it waits on; a scene
    that fails prints "COULD NOT RUN" with the error, and the rest go on; a

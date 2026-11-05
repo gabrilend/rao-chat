@@ -148,6 +148,22 @@ status 2).  160 passes 47 of 47 checks, including two broken versions.
    `gatherer.acknowledge-after` switch (211) print "WAITS" with the issue;
    the down scene's pile in the gatherer's `due/` folder is named as a
    part not run (211).  Nothing is faked.
+6. **With 211 built** (2026-11-05, later the same day): two scenes now
+   run real gatherer processes on loopback inside the demo's namespace,
+   which brings its own `lo` up (168, LuaJIT's FFI; `unshare -rn` leaves
+   it down).  `gatherers` (new, after `down`): each home's starter starts
+   its gatherer; one killed is started again and the starter's running
+   log says so; with B stopped, A's `due/` file for B says 3 missing, and
+   is gone once B is back.  `acknowledge` (no longer waiting): the switch
+   both ways, a power cut under B after 10 answers, 0 lost under `disk`,
+   10 under `ram`.  The `down` scene stays in the simulated world and
+   points to `gatherers` for `due/`.  Outside a loopback-only namespace the
+   starters are not run (their public-address check would look outside)
+   and the scene names that as a part not run.  Run here: 13 of 16 scenes
+   ran in full, 1 with a part missing (`fail2ban-regex`), 2 wait (214,
+   215), none failed, exit 2; 160 passes 54 of 54.  The other scenes keep
+   the simulated world: they show protocol steps over hours of retry
+   timers, which real processes would take hours to show.
 6. **Exit status:** 0 when every scene ran in full, 1 when any scene
    could not run, 2 when none failed but some wait or miss a part.  The
    goodbye in `output/` carries the same four counts.
