@@ -57,7 +57,9 @@ end
 -- {{{ local function read_frame
 -- conn → the frame without its length (nonce, sealed body, check value),
 -- ready for 124's open; or nil and why.  `cap` may be given smaller than
--- the project's CAP (a test does); it may never be larger.
+-- the project's CAP (a test does); it may never be larger.  A frame
+-- refused for its length alone also gives back the length it announced,
+-- as a third value (issue 203 logs it).
 local function read_frame(conn, cap)
     cap = cap or seal.CAP
     if cap > seal.CAP then error("frames: a reader's cap may not exceed " .. seal.CAP, 2) end
@@ -66,10 +68,10 @@ local function read_frame(conn, cap)
     local length = seal.read_uint32_be(head)
     -- Path: the length checked before a byte more is read.
     if length < seal.MIN_LENGTH then
-        return nil, "a length of " .. length .. " is under " .. seal.MIN_LENGTH
+        return nil, "a length of " .. length .. " is under " .. seal.MIN_LENGTH, length
     end
     if length > cap then
-        return nil, "a length of " .. length .. " is over the cap of " .. cap
+        return nil, "a length of " .. length .. " is over the cap of " .. cap, length
     end
     return receive_exactly(conn, length)
 end

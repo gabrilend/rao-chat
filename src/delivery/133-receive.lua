@@ -31,7 +31,11 @@
 --                            missing and tries again later (question 7);
 --                            the problem goes to seams.on_problem
 --   a frame no key opens     no answer: the connection is closed (203
---                            logs it, through seams.on_unopened)
+--                            logs it, through seams.on_unopened, once,
+--                            after the whole keyring was tried)
+--   a length under the       no answer: the connection is closed having
+--   least or over the cap    read only the 4 length bytes (203 logs it,
+--                            through seams.on_refused_length)
 --
 -- Seams (211 gives the real ones; the tests give stand-ins):
 --   seams.home            the home (002's open_home)
@@ -40,7 +44,8 @@
 --   seams.now()           whole seconds, for `arrived`
 --   seams.workers         how many slices the trial is split into (127)
 --   seams.on_problem(tag, words)       optional
---   seams.on_unopened(peer)            optional
+--   seams.on_unopened(peer, length)    optional (139 gives it: 203)
+--   seams.on_refused_length(peer, length)  optional (139 gives it: 203)
 --   seams.on_opened(tag, peer)         optional (134 uses it: question 1)
 -- Receiving never sends anything but these answers, and never waits on
 -- the sender stage (R6): 211 runs this in its own stage.
@@ -106,20 +111,22 @@ end
 -- }}}
 
 -- {{{ function M.serve
--- conn, seams → why it ended ("closed", "timeout", "unopened", ...).
+-- conn, seams → why it ended ("closed", "timeout", "unopened", "length", ...).
 -- Reads frames until the connection ends, answering each.
 function M.serve(conn, seams)
     local home = seams.home
     while true do
-        local after, why = frames.read_frame(conn)
+        local after, why, refused_length = frames.read_frame(conn)
         if not after then
+            if refused_length and seams.on_refused_length then seams.on_refused_length(seams.peer, refused_length) end
             if conn.close then conn:close() end
-            return why
+            return refused_length and "length" or why
         end
         local ring = seams.ring()
         local tag, opened = keyring.open_frame(ring, after, seams.workers or 1)
         if not tag then
-            if seams.on_unopened then seams.on_unopened(seams.peer) end
+            -- the length it announced: what was read after those 4 bytes
+            if seams.on_unopened then seams.on_unopened(seams.peer, #after) end
             if conn.close then conn:close() end
             return "unopened"
         end

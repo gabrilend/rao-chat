@@ -106,6 +106,55 @@ in the test.  The size rule is shared with 215a, not re-invented.
    proposed: never committed or pushed, since a shared upstream (215b)
    would publish it.
 
+## Decisions (2026-11-05)
+
+Made by the builder.  The owner's standing instruction is to answer open
+questions rather than wait, choosing the option that is easiest to undo.
+The owner can overturn each one; what overturning costs is said with it.
+Built in `src/delivery/` (138–140), `docs/failed-decryption-log.md` and
+`docs/fail2ban/`.  211's opener stage and RAM folder are seams: 133's
+`serve` calls `on_unopened(peer, length)` and `on_refused_length(peer,
+length)`, and 139's `seams` builds both from a log opened on a folder.
+
+1. **Frames that open but are refused** (question 1): not written here,
+   and not in a separate log.  A frame that opens was sealed by someone
+   holding the room's key, so it is not an attempt by an outsider, and an
+   ignored member's flood is that room's business (its `hide`).  Undo: one
+   call in 133's `file_record` where it drops a hidden record.
+2. **RAM** (question 2): yes.  fail2ban needs only recent lines, and a
+   reboot changes nothing about who is banned (fail2ban keeps its own
+   record).
+3. **Never committed or pushed** (question 3).  The file lives in the
+   mailbox's RAM folder, outside every repository.  215a's sync copies only
+   the running log.
+4. **The newest file keeps one name; older ones are renamed `.1`, `.2`,
+   ...** rather than numbered `0001`, `0002`, ... as 215a's are.  fail2ban
+   expands a jail's path pattern when the jail starts (as remembered, not
+   checked against fail2ban's documentation), so a new numbered file would
+   go unread until a reload.  The split rule is the same and the code is
+   shared: `138-size-split.lua` does both namings, and its "numbered"
+   naming is what 215a will use.
+5. **The line grammar** is `<seconds> <stamp> rao-chat failed-decryption v1
+   from= port= to-port= length= reason=`, with the reasons `no-key` and
+   `length`.  The seconds come first because they give fail2ban a time it
+   reads without guessing (`datepattern = {^LN-BEG}EPOCH`).  The version is
+   in every line.  Nothing in a line is taken from the frame's contents
+   except its announced length.
+6. **A length under 28 is refused and written with reason `length`**, the
+   same as one over the cap.  Both are "refused for its length alone".
+7. **The least file size is 1024 bytes**, so a file always holds several
+   lines (a line is about 125 bytes).  A single line longer than the file
+   size is refused rather than cut in two.
+8. **The fail2ban-regex check counts as failed where fail2ban is not
+   installed**, as the issue asks ("says so and stops, rather than
+   skipping"), and the same filter is also checked by a stand-in: Python's
+   regular expressions with `<HOST>` expanded the way fail2ban documents
+   it (as remembered).  Where this was built, fail2ban is not installed,
+   so the filter has **not** yet been run through fail2ban itself.
+9. **Referee 3 drives the flood through `serve`**: a million frames of 28
+   bytes, each on its own connection, because a frame no key opens closes
+   its connection.  It takes about 13 s.
+
 ## Related documents
 
 - `notes/vision-planning.md` section 14 ("The threat model, answered")

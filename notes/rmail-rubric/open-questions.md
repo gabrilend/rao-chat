@@ -152,6 +152,8 @@ writing those issues are listed at the end.
 23. **Refused-but-opened frames**: logged there, separately, or not at all;
     and RAM or disk.  (rmail's own line has no sender address, so fail2ban
     has nothing to match.)  **Held by** 203 (questions 1 and 2).
+    *Answered 2026-11-05 by the builder: not at all (a frame that opens
+    came from a key holder); RAM (203 decisions 1 and 2).*
 
 ## Running the server (phases 3 and 6)
 

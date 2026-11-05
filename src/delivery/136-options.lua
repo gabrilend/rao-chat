@@ -48,4 +48,41 @@ return {
         },
         leaning = "7200: rmail's value; one attempt per pair every two hours costs nothing.",
     },
+    {
+        id = "failed-decryption-file-size",
+        question = "How large may one failed-decryption file grow, in bytes, before a new one starts?",
+        waits_on = "owner",
+        detail = "issue 203 (Intended Behavior, 'Split by size')",
+        config_key = "failed-decryption.file-size",
+        variants = {
+            {
+                name = "1000000",
+                summary = "About 1 MB: some 8,000 lines of about 125 bytes each.",
+                built_in = "src/delivery/139-failed-decryption.lua (settings, open), src/delivery/138-size-split.lua",
+                tests = "src/delivery/tests/140-test-failed-decryption.lua (referee 3)",
+                findings = "A line is about 125 bytes for an IPv4 source. fail2ban reads only new lines, "
+                    .. "and a jail's findtime is minutes, so a file holding thousands of lines is plenty; "
+                    .. "with 3 files a flood costs at most about 3 MB of RAM.",
+            },
+        },
+        leaning = "1000000: thousands of lines per file, a few MB of RAM at worst.",
+    },
+    {
+        id = "failed-decryption-files-kept",
+        question = "How many failed-decryption files are kept in RAM, the newest included?",
+        waits_on = "owner",
+        detail = "issue 203 (Intended Behavior, 'Split by size')",
+        config_key = "failed-decryption.files-kept",
+        variants = {
+            {
+                name = "3",
+                summary = "The current file and two older ones.",
+                built_in = "src/delivery/138-size-split.lua (rotate)",
+                tests = "src/delivery/tests/140-test-failed-decryption.lua (referee 3)",
+                findings = "fail2ban needs only the newest file; the older ones are for a person "
+                    .. "looking at what happened shortly before.",
+            },
+        },
+        leaning = "3: enough to look back over a flood, bounded at three files.",
+    },
 }
