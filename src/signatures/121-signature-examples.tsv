@@ -1,0 +1,24 @@
+# 121-signature-examples.tsv: the table every reader of a message's signature is graded by (issue 214).
+# One example a line: text, body, signature, how (line, last-word or none), a note; separated by tabs.
+# In the first three fields \\ \t \n \r are a backslash, tab, line feed and carriage return (the log's
+# escapes), and \xHH is the byte with that hex value.  Lines starting with # are comments.
+hi\n\nsorelu	hi	sorelu	line	1: the plain case
+hi\n\nsorelu\nand more	hi\n\nsorelu\nand more	more	last-word	2: two lines after the blank line: the last word
+hi\n\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa	hi\n\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa	aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa	last-word	3: 81 characters is body
+hi\n\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa	hi	aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa	line	4: exactly 80 characters signs
+no blank line here	no blank line here	here	last-word	5: no blank line
+hi\r\n\r\nsorelu	hi	sorelu	line	6: a browser's line breaks read as case 1
+hi\n\n日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日	hi	日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日	line	7: 80 characters of 3 bytes each sign (broken: counting bytes)
+hi\n\n日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日	hi\n\n日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日	日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日日	last-word	7b: 81 of them do not
+hi\n\n\nsorelu	hi	sorelu	line	8: the split is at the last blank line (broken: the first)
+hi\n\nsorelu\n	hi	sorelu	line	9: a final line break is not a second line
+one\n\ntwo\n\nsorelu	one\n\ntwo	sorelu	line	10: two blank lines: the last one splits
+			none	11: empty: no signature
+  \n\t 	  \n\t 		none	12: only spaces and line breaks: no signature
+see you, sorelu.	see you, sorelu.	sorelu.	last-word	13: the last word keeps its full stop
+hi\n\n   	hi\n\n   	hi	last-word	14: a last line of spaces is empty: the last word
+hi\n\nso\tlu	hi	so\tlu	line	15: a tab inside the signature line is kept
+hi\n\nx\ry	hi	x\ry	line	16: a lone carriage return is an ordinary character
+hi\n\n\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80	hi\n\n\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80	\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80\x80	last-word	17: 81 stray bytes count 81 characters (broken: skipping continuation bytes)
+hi\n\n\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff	hi	\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff	line	18: 80 bad bytes are 80 characters
+closing words of a long paragraph\nthat ends here	closing words of a long paragraph\nthat ends here	here	last-word	19: an ordinary closing paragraph is signed by its last word

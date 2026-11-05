@@ -6,9 +6,17 @@
 
 ## Current Behavior
 
-Nothing exists beyond storage: 105 keeps a message's text exactly as
-written, signature included ("the signature, if any, is the last line of
-`text`, stored as written"), and nothing reads a signature out of it.
+**Steps 1 and 2 are built (2026-11-05, branch `claude/214-signature`).**
+`src/signatures/120-signature.lua` reads a text's body and signature by
+the rule below; `121-signature-examples.tsv` is the table of examples
+every reader is graded by (20 examples: the eight referees and the
+decisions below); `tests/122-test-signature.lua` runs the reader against
+it and shows that eight broken readers each fail it.  Step 3 (the
+viewer's signature field, and appending it on sending) waits for 301.
+
+Before that: nothing beyond storage.  105 keeps a message's text exactly
+as written, signature included ("the signature, if any, is the last line
+of `text`, stored as written").
 
 ## Intended Behavior
 
@@ -92,22 +100,60 @@ implementation's test reads:
 2. The Lua reader and its test against the table.
 3. The viewer's signature field and the append on sending (with 301).
 
+## Decisions (2026-11-05, while building steps 1 and 2)
+
+Each is the builder's where the rule left a choice; the owner may change
+any of them, and the examples table changes with it.
+
+1. **Characters are code points read from UTF-8** (open question 1's
+   proposal).  A byte that is not part of a well-formed character
+   (stray, cut short, overlong, a surrogate, past U+10FFFF) counts as one
+   character, so a run of bad bytes cannot pass for a short line.
+2. **A text with no word has no signature** (open question 2): `read`
+   gives `""` and says `"none"`.  Whether such a message may be sent is
+   the viewer's choice (301).
+3. **The last word keeps its punctuation** (open question 3's proposal):
+   `"see you, sorelu."` is signed `"sorelu."`.
+4. **A closing paragraph is signed by its last word** (open question 4):
+   built as the rule says, with an example in the table, still for the
+   owner to confirm.
+5. **Line breaks at the very end of a text are set aside first**, so
+   `"hi\n\nsorelu\n"` (an editor's last newline) signs `"sorelu"` like
+   `"hi\n\nsorelu"`, rather than reading as two lines.
+6. **The body never ends with the blank line's breaks**:
+   `"hi\n\n\nsorelu"` is body `"hi"` (referee 8's proposal).
+7. **A last line of only spaces and tabs is empty**, not a signature.
+8. **Only `\r\n` is a line break besides `\n`**; a lone `\r` is an
+   ordinary character.
+9. **The examples are a tab-separated file** in the log's escapes
+   (`\\` `\t` `\n` `\r`), plus `\xHH` for a single byte, so a reader
+   in any language parses it with a few lines.
+10. **Its own module folder**, `src/signatures/`, found by
+    `001-load-path.lua` like the others.
+
 ## Blockers that are not the owner's
 
 - Needs 105 (texts as written).
 
 ## Open questions
 
-1. **80 characters**: Unicode code points (proposed) or bytes?
+1. **80 characters**: Unicode code points (proposed) or bytes?  Built as
+   code points (decision 1).
 2. **An empty message, or one of only spaces**: no last word — show no
-   signature, or refuse to send it?
+   signature, or refuse to send it?  Built as no signature (decision 2);
+   refusing to send is left to 301.
 3. **Trailing punctuation in the last word** (`"see you, sorelu."`): keep
-   the full stop (proposed, the rule says "last word") or strip it?
+   the full stop (proposed, the rule says "last word") or strip it?  Built
+   as kept (decision 3).
 4. **An ordinary closing paragraph is "signed" by its last word** — the
    rule's consequence, noted by the planning document as "to confirm".
    The owner's second answer settles last-line length; confirm this too.
+   Built as the rule says (decision 4).
 5. *(answered 2026-09-27)* **The signature is at most one line of 80
    characters, after a blank line; otherwise the last word of the body.**
+6. **A final line break, and a last line of spaces** (found while
+   building): set aside, and not a signature (decisions 5 and 7); to
+   confirm.
 
 ## Related documents
 
