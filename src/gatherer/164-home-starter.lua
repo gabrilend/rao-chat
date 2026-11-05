@@ -176,6 +176,8 @@ local function check_address(first)
         return
     end
     if result then
+        -- 215b: each gatherer pulls and pushes its shared upstream now
+        for tag in pairs(gatherers) do os.execute("touch " .. q(HOME_RAM .. "/" .. tag .. "/recheck")) end
         log(string.format("public-address check: %s%s; next in %d s", result.outcome,
             result.address and (" " .. result.address) or "", math.floor(result.due - now())))
         state["public-address.outcome"] = result.outcome

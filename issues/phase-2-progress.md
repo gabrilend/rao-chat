@@ -166,8 +166,9 @@ owner, most blocking first: `notes/rmail-rubric/open-questions.md`.
   starter per home, a member down and its `due/` pile, the
   acknowledge-after switch both ways): 13 of 16 scenes run in full.
   With 214's reader and 215 (2026-11-05), the signatures and git scenes
-  run too, the git scene with 215a's running log.  Left: 214's viewer
-  field (301), 215b, and
+  run too, the git scene with 215a's running log and 215b's sharing
+  through a bare upstream: 14 of 16 run in full.  Left: 214's viewer
+  field (301), and
   `fail2ban-regex` itself where it is installed.
 - **214** — steps 1 and 2 built 2026-11-05 with 215, in `src/signature/`
   (169–171): the one reader of a message's signature and the table of
@@ -194,6 +195,18 @@ owner, most blocking first: `notes/rmail-rubric/open-questions.md`.
   version, and a real gatherer commits its own lines.  Open questions
   1–3 answered as dated decisions the owner may overturn.  Left: the
   starter's own running log, a stage field in each line.
+- **215b** — built 2026-11-05 in `src/git-copies/` (179–180).  A
+  mailbox repository with an `upstream` or `room-<fingerprint>` remote
+  pulls then pushes at start-up, after each public-address recheck and at
+  the stop (SIGTERM included), each fetch and push in the background with
+  a deadline.  Members' identical copies merge clean; a conflict is
+  reported and retried, never resolved; pulled code is never checked out
+  or run.  `git.upstream-rooms` is built both ways.  Referees 1–6 and a
+  SIGTERM check run against real gatherers whose upstreams are bare
+  repositories in the test folder, each against its broken version.
+  Open questions 1–5 answered as dated decisions the owner may overturn
+  (1 stays the owner's: both built; 2 is flagged).  Left: the viewer's
+  warning about a hosted upstream (301).
 - **211** — built 2026-11-05 in `src/gatherer/` (161–168).  One gatherer
   process per mailbox: it claims its port first, loads the mailbox's
   rooms into a RAM home, and runs listener, filer, typed, sender and sync

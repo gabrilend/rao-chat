@@ -32,6 +32,15 @@ commits once; then its running log's new lines go to the branch
 `running-log/<git.home-name>` (215a, 177) and leave RAM only once
 committed.  It reads `git.home-name` and `git.log-file-size`.
 
+Sharing (215b, 179): when the mailbox's repository has an `upstream` or
+`room-<fingerprint>` remote, a `share` thread pulls then pushes at
+start-up, whenever the starter leaves a `recheck` file in the gatherer's
+RAM folder, and at the stop, after the last sync.  SIGTERM is blocked and
+polled by the state thread, so it stops the same way as the `stop` file
+(state `stopped = sigterm`).  The fetch and push run in the background
+with a deadline; delivery goes on meanwhile.  Pulls, pushes, the last
+moment and any standing conflict are in state under `share`.
+
 `RAO_COPIES_BROKEN` and `RAO_COPIES_FAIL` are 175's.
 `RAO_GATHERER_BROKEN` and `RAO_GATHERER_CRASH` select the broken
 versions and crash points that 167's referees must catch; nothing else

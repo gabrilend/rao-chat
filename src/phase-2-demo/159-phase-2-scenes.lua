@@ -1150,7 +1150,8 @@ end
 -- 215 between two real gatherers: each mailbox's repository, the text
 -- copies (byte-identical on both homes), a commit per sync cycle, a hand
 -- edit committed and never sent, labels, and the code branch; 215a's
--- running log on its own branch.
+-- running log on its own branch; 215b's shared upstream (a bare
+-- repository in the scene's folder) after each home's moments.
 function M.git(c)
     local r, why = real_world(c, "git")
     if not r then error(why, 0) end
@@ -1160,6 +1161,17 @@ function M.git(c)
         local a = r.home("A", "127.0.0.2", 7602)
         local b = r.home("B", "127.0.0.3", 7603)
         r.link({ a, b })
+        -- 215b: a shared upstream, a bare repository in this scene's own
+        -- folder (never a real remote), that A and B both list
+        local upstream = r.root .. "/upstream.git"
+        m.git.must(nil, { "init", "-q", "--bare", "-b", "rooms", upstream })
+        for _, pair in ipairs({ { a, b }, { b, a } }) do
+            local repo = m.copies.repository(pair[1].dir, pair[1].mailbox)
+            os.execute("mkdir -p " .. quote(pair[1].dir .. "/git"))
+            m.git.ensure(repo)
+            m.git.must(repo, { "remote", "add", "upstream", upstream })
+            m.git.must(repo, { "config", "--add", "rao.upstream-pair", pair[2].pair.address .. " " .. pair[2].port })
+        end
         if r.no_lookups then
             for _, h in ipairs({ a, b }) do r.starter(h) end
         else
@@ -1262,10 +1274,34 @@ function M.git(c)
             select(2, m.git.must(repo_a, { "ls-tree", "-r", "--name-only", branch }):gsub("rooms/", "")))
         out[#out + 1] = string.format("  A's RAM running log now: %d bytes (emptied as each cycle is committed)",
             #(read_all(a.folder .. "/running-log") or ""))
+        -- 215b: what the shared upstream holds after the homes' moments
+        out[#out + 1] = string.format("  the shared upstream (a bare repository here, %s, git.upstream-rooms = %s):",
+            upstream:sub(#r.root + 2), m.rooms.config_value(a.disk, "git.upstream-rooms"))
+        for _, h in ipairs({ a, b }) do
+            local st = r.state(h)
+            out[#out + 1] = string.format("      %s: %s pull(s), %s push(es), last moment %s; conflicts %s", h.name,
+                tostring(st["share.pulls"]), tostring(st["share.pushes"]), tostring(st["share.last"]):match("^%a+") or "?",
+                tostring(st["share.conflicts"]))
+        end
+        out[#out + 1] = "  its branches:"
+        for line in m.git.must(upstream, { "for-each-ref", "--format=%(refname:short)" }):gmatch("[^\n]+") do
+            out[#out + 1] = "      " .. line
+        end
+        local shared = m.git.must(upstream, { "ls-tree", "-r", "--name-only", "rooms" })
+        local files, edited = 0, false
+        for path in shared:gmatch("[^\n]+") do
+            files = files + 1
+            if m.git.must(upstream, { "show", "rooms:" .. path }):find("added by hand on B", 1, true) then edited = true end
+        end
+        out[#out + 1] = string.format("  its rooms branch: %d copies (the same message from two homes is one file); "
+            .. "B's hand edit %s", files, edited and "is there" or "is NOT there")
+        out[#out + 1] = string.format("  A holds B's program as %s, readable and never checked out (A's checked-out "
+            .. "branch: %s)", m.git.ref(repo_a, "refs/remotes/upstream/code/B-" .. b.dir:match("B%-(%d+)$"))
+            and ("upstream/code/B-" .. b.dir:match("B%-(%d+)$")) or "NOTHING",
+            m.git.must(repo_a, { "symbolic-ref", "--short", "HEAD" }))
     end)
     r.stop_all()
     if not ok then error(failed, 0) end
-    gaps[#gaps + 1] = "215b (sharing through a shared upstream) is not built"
     return { lines = out, gaps = gaps }
 end
 -- }}}

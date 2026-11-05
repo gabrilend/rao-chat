@@ -45,4 +45,63 @@ return {
         },
         leaning = "100000000, as the owner asked (\"as large as is possible to upload to github\").",
     },
+    {
+        id = "git-upstream-rooms",
+        question = "Which rooms' copies does a shared upstream get?",
+        waits_on = "owner",
+        detail = "issue 215b (Intended Behavior, 'Which rooms are shared'; open question 1)",
+        config_key = "git.upstream-rooms",
+        variants = {
+            {
+                name = "only-fully-shared",
+                summary = "One upstream per mailbox (the remote `upstream`); a room's folder goes to it only when "
+                    .. "everyone listed as sharing it (rao.upstream-pair) is on the room's member list.",
+                built_in = "src/git-copies/179-sharing.lua (plan, shared_commit)",
+                tests = "src/git-copies/tests/180-test-sharing.lua (referee 5)",
+                findings = "Referee 5 (2026-11-05): a top-room member fetching the upstream finds no child-room "
+                    .. "folder in any ref. The issue's wording (every member listed as sharing) pushed the child room.",
+            },
+            {
+                name = "repository-per-room",
+                summary = "Each room's folder goes only to its own remote, room-<fingerprint>, so what a member can "
+                    .. "fetch follows the rooms whose upstreams they can read.",
+                built_in = "src/git-copies/179-sharing.lua (plan, shared_commit)",
+                tests = "src/git-copies/tests/180-test-sharing.lua (referee 5)",
+                findings = "Referee 5 (2026-11-05): fetching the top room's upstream finds no child-room folder. "
+                    .. "One branch per room on one upstream gave it away.",
+            },
+        },
+        leaning = "only-fully-shared: one remote to set up, and a room is shared only with people already in it.",
+    },
+    {
+        id = "git-push-running-log",
+        question = "Is the running log's branch pushed to the shared upstream?",
+        waits_on = "owner",
+        detail = "issue 215a open question 1; issue 215b open question 3",
+        config_key = "git.push-running-log",
+        variants = {
+            { name = "no", summary = "Never pushed: it names every address the home talked to, and when.",
+              built_in = "src/git-copies/179-sharing.lua (plan)", tests = "src/git-copies/tests/180-test-sharing.lua",
+              findings = "Referee 1 (2026-11-05): with no, the upstream has no running-log branch." },
+            { name = "yes", summary = "Pushed to `upstream` with the rooms and the code.",
+              built_in = "src/git-copies/179-sharing.lua (plan)", tests = "src/git-copies/tests/180-test-sharing.lua",
+              findings = "Referee 1 (2026-11-05): with yes, the upstream has the branch." },
+        },
+        leaning = "no, as 215a proposed.",
+    },
+    {
+        id = "git-share-deadline",
+        question = "How long may one fetch or push to a shared upstream take?",
+        waits_on = "owner",
+        detail = "issue 215b (rubric: one failing destination must not delay anything else)",
+        config_key = "git.share-deadline",
+        variants = {
+            { name = "60", summary = "A minute, then the fetch or push is killed and reported failed.",
+              built_in = "src/git-copies/179-sharing.lua (background)",
+              tests = "src/git-copies/tests/180-test-sharing.lua (referee 6)",
+              findings = "Referee 6 (2026-11-05): with a black-holed remote and a 3 s deadline, delivery went on "
+                  .. "and the failure was reported within the deadline." },
+        },
+        leaning = "60.",
+    },
 }

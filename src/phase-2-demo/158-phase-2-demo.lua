@@ -74,6 +74,7 @@ local MODULES = {
     { short = "git",         file = "172-git",             issue = "215" },
     { short = "copies",      file = "173-text-copies",     issue = "215" },
     { short = "runlog",      file = "177-running-log",     issue = "215a" },
+    { short = "sharing",     file = "179-sharing",         issue = "215b" },
 }
 
 local RULE = string.rep("-", 78)
