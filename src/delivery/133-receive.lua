@@ -19,12 +19,18 @@
 --                                        add the source port as a member.
 --                                        205's hello says where to call
 --                                        back.
+--   no member, and exactly one pair      `from` is that pair; a message
+--   in the room's `left` file (208)      written after the leave re-adds
+--                                        it (heard_from) and clears its
+--                                        line: speaking again is
+--                                        rejoining.  An older one is filed
+--                                        and re-adds nobody.
 --
 -- What is answered for each frame (decisions of 2026-11-05):
 --   a did-you (204)          a did-you-answer, from this room's claims
 --                            (141): yes or no; nothing is filed
---   a hello (205)            handed to seams.on_claim (145's receive, in
---                            the sender stage: the call-backs), and
+--   a hello (205) or a       handed to seams.on_claim (147's on_claim,
+--   leave (208)              in the sender stage: the call-backs), and
 --                            answered with an ack naming its claim id,
 --                            `filed` or `duplicate`; nothing is filed in
 --                            the log, and no hello is ever sent back.
@@ -70,15 +76,17 @@ local ignore = require("042-ignore-list")
 local message_log = require("081-message-log")
 local send = require("132-send")
 local call_back = require("142-call-back")
+local leaving = require("147-leaving")
 
 local M = {}
 
 -- The records that carry a claim to call back (205's hello; 208's leave
 -- joins it), handed to seams.on_claim.
-M.CLAIMS = { hello = true }
+M.CLAIMS = { hello = true, leave = true }
 
 -- {{{ function M.sender_of
--- home, tag, host, source_port → from_address, from_port, is_member.
+-- home, tag, host, source_port → from_address, from_port, is_member, and
+-- the `left` line when the pair is one that left (208).
 function M.sender_of(home, tag, host, source_port)
     local found = nil
     for _, member in ipairs(recipients.members(home, tag)) do
@@ -88,6 +96,8 @@ function M.sender_of(home, tag, host, source_port)
         end
     end
     if found then return found.address, found.port, true end
+    local gone = leaving.at_address(home, tag, host)
+    if gone then return gone.address, gone.port, false, gone end
     return host, source_port, false
 end
 -- }}}
@@ -106,7 +116,7 @@ function M.file_record(home, tag, opened, peer, now)
     if not ok then return nil, nil, "does not decode: " .. tostring(record) end
     local filer = FILERS[record.kind]
     if not filer then return nil, nil, "a " .. record.kind .. " is not filed in a log" end
-    local address, port, is_member = M.sender_of(home, tag, peer.host, peer.port)
+    local address, port, is_member, gone = M.sender_of(home, tag, peer.host, peer.port)
     if not ignore.files_message(home, tag, address, port) then return "filed", record.id end
     local filed, word = pcall(filer, home, tag, {
         id = record.id, from = address .. " " .. port, written = record.written, arrived = now,
@@ -114,6 +124,11 @@ function M.file_record(home, tag, opened, peer, now)
     })
     if not filed then return nil, record.id, tostring(word) end
     if is_member then recipients.heard_from(home, tag, address, port, record.written) end
+    if gone and record.written > gone.written then
+        -- 208: the leaver speaks again, after its leave: back in
+        recipients.heard_from(home, tag, address, port, record.written)
+        if recipients.is_member(home, tag, address, port) then leaving.clear(home, tag, gone) end
+    end
     return word, record.id
 end
 -- }}}

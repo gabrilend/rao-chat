@@ -29,7 +29,7 @@ local message_log = require("081-message-log")
 local delivered = require("130-delivered")
 local receive = require("133-receive")
 local delivery = require("134-delivery")
-local hello = require("145-hello")
+local leaving = require("147-leaving")
 
 local T = { passed = 0, failed = 0 }
 -- {{{ local function check
@@ -297,7 +297,7 @@ local START_CONFIG = first_variants()
 -- where it can be reached (212's own_pairs: a `public` pair for each
 -- host on the port), so it sends hellos (205).  options.no_room: the home
 -- starts with no room (a joiner; node.tag is nil until it joins).
--- Hellos heard are always handed to 145's receive.
+-- Hellos and leaves heard are handed to 147's on_claim (205, 208).
 local function new_node(name, hosts, port, options)
     options = options or {}
     local home, tag
@@ -342,7 +342,7 @@ local function new_node(name, hosts, port, options)
             on_problem = function(_, words) node.problems[#node.problems + 1] = words end,
             on_opened = function(room_tag, peer) node.stage:heard_at(room_tag, peer.host, sim.now) end,
             on_claim = function(room_tag, record, peer)
-                return hello.receive(node.stage, room_tag, record, peer, math.floor(sim.now))
+                return leaving.on_claim(node.stage, room_tag, record, peer, math.floor(sim.now))
             end,
         }
     end

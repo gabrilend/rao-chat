@@ -13,5 +13,9 @@ keeps one job and one retry timer per (room, pair):
   deliveries until an ack names its claim.  Made by `write` before the
   first message to a pair never heard from, by `start` for every pair, and
   afresh by `moved`; only when the stage's seams give `own_pairs` (212).
+- `leave` (208): a leave job to every send-list pair, sent like a hello.
+  The room's pending hellos are dropped, and it gets no start-up hello
+  until this home writes in it again.  A pair whose leave is being
+  checked gets no delivery attempt until the check settles.
 
 211 runs the stage.  Issue 202, steps 2 and 4.

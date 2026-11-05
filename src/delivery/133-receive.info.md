@@ -5,8 +5,10 @@ keyring, files the record (unless the sending address is ignored at
 hide), records the member as heard when exactly one member is at that
 address, and answers with one sealed `ack`.  A `did-you` (204) is answered from
 the room's claims (141) instead, and nothing is filed.  A `hello` (205)
-goes to the `on_claim` seam (145's `receive`, which starts the
-call-backs) and is answered with an `ack` naming its claim id.  A frame that no key opens
+or `leave` (208) goes to the `on_claim` seam (147's `on_claim`, which
+starts the call-backs) and is answered with an `ack` naming its claim id.
+A message from the address of a pair that left, written after its leave,
+re-adds the pair and clears its `left` line (208).  A frame that no key opens
 closes the connection, and so does a frame refused for its length; each
 is reported through a seam, which 139 turns into a failed-decryption
 line (203).  The stage it runs in comes from 211's seams.  Issue 202,

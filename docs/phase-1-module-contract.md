@@ -80,6 +80,10 @@ change bell per running program.
                               format); made by 202 at the first own write; absent = no lines
           claims              the hellos and leaves this home has claimed, one line each (phase 2,
                               204's format); appended by the claim's sender; absent = none
+          left                pairs whose leave this home confirmed, one line each (phase 2,
+                              208's format); absent = none
+          left-by-me          the written time of this home's own leave (phase 2, 208); removed
+                              when this home writes in the room again; absent = not left
       people/                 links (104's)
         <direct-message label>/<link name> -> ../../rooms/<local tag>
 

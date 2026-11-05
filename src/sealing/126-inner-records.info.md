@@ -9,11 +9,12 @@ The table holds `message`, `correction` and `deletion` (fields `id`,
 `written`, `target`, `text`: the log's record without `from` and
 `arrived`), 202's `ack` (`answers`), and 204's `did-you` (`claim`,
 `address`, `port`) and `did-you-answer` (`claim`, `answer`), and 205's
-`hello` (`claim`, `pairs`).  A `pairs` field holds one "kind address
+`hello` (`claim`, `pairs`), and 208's `leave` (`claim`, `written`,
+`pairs`).  A `pairs` field holds one "kind address
 port" per line (kinds `public`, `hostname`, `ipv6`, `home-network`; port
 1 to 65535); a pair without its port, an unknown kind, or no pairs is an
 error.  The other kinds get their rows from the issues that define their
-fields (207, 208, 209, 213); until then they are unknown, and an unknown
+fields (207, 209, 213); until then they are unknown, and an unknown
 kind is an error.
 
 | function / value | takes | gives | what it does |

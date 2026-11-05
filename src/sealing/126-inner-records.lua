@@ -15,9 +15,9 @@
 --
 -- The table holds the kinds whose fields are settled: the log's three
 -- (message, correction, deletion), 202's `ack`, 204's `did-you` and
--- `did-you-answer`, and 205's `hello`.  Every other kind 201 names
--- (members, members-ask, leave, summary, discover, here) gets its row from
--- the issue that defines its fields (207, 208, 209, 213), when that issue
+-- `did-you-answer`, 205's `hello` and 208's `leave`.  Every other kind
+-- 201 names (members, members-ask, summary, discover, here) gets its row
+-- from the issue that defines its fields (207, 209, 213), when that issue
 -- is built.  Until then it is an unknown kind, and an unknown kind is an
 -- error.  205's hello and 208's leave each carry a `claim` field: the
 -- claim id 204's `claims` file keeps (141).
@@ -30,6 +30,11 @@
 -- escaping writes as \n, so the record stays one line.  A pair without
 -- its port, an unknown kind, or no pairs at all fails to decode: "no
 -- default port numbers" (the owner), so nothing is guessed.
+--
+-- `leave` (issue 208, decision of 2026-11-05; the owner may overturn it):
+-- `claim`, `written` (the leaver's own clock, whole seconds: what "newer
+-- than the leave" is measured against) and `pairs`, the pairs leaving, in
+-- the hello's form.
 --
 -- `did-you` and `did-you-answer` (issue 204, decision of 2026-11-05; the
 -- owner may overturn it): a `did-you` names the claim id (32 hex) and the
@@ -67,6 +72,8 @@ KINDS["did-you"] = { { name = "claim", type = "text" }, { name = "address", type
                      { name = "port", type = "whole" } }
 KINDS["did-you-answer"] = { { name = "claim", type = "text" }, { name = "answer", type = "text" } }
 KINDS.hello = { { name = "claim", type = "text" }, { name = "pairs", type = "pairs" } }
+KINDS.leave = { { name = "claim", type = "text" }, { name = "written", type = "whole" },
+                { name = "pairs", type = "pairs" } }
 
 -- The kinds of pair a `pairs` field may name (212).
 local PAIR_KINDS = { public = true, hostname = true, ipv6 = true, ["home-network"] = true }

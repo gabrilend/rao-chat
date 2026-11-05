@@ -146,6 +146,20 @@ function M.join(home, tag, send_list)
 end
 -- }}}
 
+-- {{{ function M.drop
+-- home, tag, pair → true when the pair had a line and it was removed (208:
+-- a confirmed leave drops what was not yet delivered).  Other lines are
+-- written back as they were.
+function M.drop(home, tag, pair)
+    local lines, order = M.read(home, tag)
+    local k = key(pair.address, pair.port)
+    if not lines[k] then return false end
+    lines[k] = nil
+    M.write(home, tag, lines, order)
+    return true
+end
+-- }}}
+
 -- {{{ function M.missing_for
 -- home, tag, pair → the own records this pair has not acknowledged, in
 -- file order (a message before its edits).  A pair with no line is
