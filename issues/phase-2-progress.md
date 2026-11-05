@@ -56,3 +56,10 @@ owner, most blocking first: `notes/rmail-rubric/open-questions.md`.
   (`src/sealing/tests/129-test-key-tying.lua`, including a frame built to
   pass GCM under two keys) and the bound beside the check.  Question 2
   answered as a dated decision the owner may overturn.
+- **202** — built 2026-11-05 in `src/delivery/` (130–137) with the `ack`
+  row in 126: the `delivered` file and what each pair is missing, retry
+  timers (doubling, a dealt deck), one attempt per pair with answers
+  bound to the room and the connection, and the receiving side.  Referees
+  1–9 run in a simulation (fake clock, in-memory relay).  Open questions
+  1–7 and 10 answered as dated decisions the owner may overturn.  Left:
+  the stages, sockets and workers (211).

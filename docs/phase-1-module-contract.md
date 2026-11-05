@@ -76,6 +76,8 @@ change bell per running program.
           flagged             members awaiting review, private, never sent (103's format); made EMPTY by make_room
           where               this folder's path and the path of labels (102's)
           log                 the messages (105's format); made EMPTY by make_room
+          delivered           what each pair on the send list has acknowledged (phase 2, 202's
+                              format); made by 202 at the first own write; absent = no lines
       people/                 links (104's)
         <direct-message label>/<link name> -> ../../rooms/<local tag>
 
