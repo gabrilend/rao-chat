@@ -17,5 +17,11 @@ keeps one job and one retry timer per (room, pair):
   The room's pending hellos are dropped, and it gets no start-up hello
   until this home writes in it again.  A pair whose leave is being
   checked gets no delivery attempt until the check settles.
+- `notice_members` (207): when a check confirms a hello that adds the
+  pair, and the claim did not come from a received list, the room's
+  digest goes to every send-list pair as a members job, run like a
+  hello. `ask_members` asks one pair for its list.
+- `check` also says whether it made the check, so a list marks only the
+  checks it made.
 
 211 runs the stage.  Issue 202, steps 2 and 4.

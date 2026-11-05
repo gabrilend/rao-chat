@@ -186,7 +186,9 @@ built; what stands in for them is said below.
     at once (with 103's refusals and flag), because the person typed it.
     Every field of `join`'s spec is required, like `make_room`'s.
 14. **Referee 1's second half** ("A receives B's members") is 207's.
-    The referee checks the join, the call-back and the add.
+    The referee checks the join, the call-back and the add.  (Built with
+    207, 2026-11-05: 153's referee 1 checks that the joiner receives the
+    list and holds every member.)
 15. **Referee 7 is built in part.**  A move announces the new pair, which
     is called back and added beside the old one.  Keeping the old port
     served until every member has called back on the new one belongs to

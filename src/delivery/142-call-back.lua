@@ -132,11 +132,18 @@ end
 -- `delivered` line dropped), and a confirmed hello also clears the pair's
 -- `left` line: the leaver's own hello undoes its leave.  147 is required
 -- when the action runs, because 147 requires this file.
+--
+-- Since 207 (decision of 2026-11-05; the owner may overturn it): a
+-- confirmed hello that leaves the pair a member also keeps the claim it
+-- answered yes to in the room's `vouched` file (152's `vouch`), so this
+-- home's members list can carry it and a receiver can call the pair back
+-- about it.  152 is required when the action runs, for the same reason.
 M.ACTIONS = {
-    hello = function(home, tag, pair, now)
+    hello = function(home, tag, pair, now, check)
         local word = recipients.heard_from(home, tag, pair.address, pair.port, now)
         if recipients.is_member(home, tag, pair.address, pair.port) then
             require("147-leaving").clear(home, tag, pair)
+            if check and check.claim then require("152-members").vouch(home, tag, pair, check.claim, now) end
         end
         return word
     end,
