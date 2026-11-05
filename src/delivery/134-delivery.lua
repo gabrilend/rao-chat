@@ -16,6 +16,11 @@
 -- held, not a failure; anything else, an error in the attempt included —
 -- one failure (R8, R9).  The timer never stops (R11).
 --
+-- Checks (204).  The stage also runs the call-back checks 142 asks it to
+-- (`check`, through 142's `heard`): one timer each, tried in `pass` after
+-- the deliveries, ended by a `yes` or a `no`, and tried again on no
+-- answer.
+--
 -- What runs where is 211's: it calls `write` from the viewer's stage,
 -- `pass` from a sender stage that never blocks the receiving stage (R6),
 -- and may run the jobs of one pass in parallel workers, as long as one
@@ -39,6 +44,7 @@ local message_log = require("081-message-log")
 local delivered = require("130-delivered")
 local timer = require("131-retry-timer")
 local send = require("132-send")
+local call_back = require("142-call-back")
 
 local M = {}
 
@@ -82,11 +88,50 @@ Stage.__index = Stage
 
 -- {{{ function M.new_stage
 -- home, seams ({connect}), floor, ceiling (omitted: read from the home's
--- config by 131) → a stage.
-function M.new_stage(home, seams, floor, ceiling)
+-- config by 131), answer_time (204's; omitted: read from the home's
+-- config by 142 when the first check is made) → a stage.
+function M.new_stage(home, seams, floor, ceiling, answer_time)
     if not floor then floor, ceiling = timer.settings(home) end
     return setmetatable({ home = home, seams = seams, floor = floor, ceiling = ceiling,
-        jobs = {}, order = {} }, Stage)
+        answer_time = answer_time, jobs = {}, order = {}, checks = {}, check_order = {} }, Stage)
+end
+-- }}}
+
+-- {{{ function Stage:check
+-- 204: tag, kind (hello | leave), claim id, the stated pair, now → the
+-- check, due now; one per claim and pair (a claim heard twice is one
+-- check).  Its state: "unconfirmed" until a try gets "confirmed" or
+-- "refused", which end it.
+function Stage:check(tag, kind, claim_id, pair, now)
+    if not self.answer_time then self.answer_time = call_back.settings(self.home) end
+    local k = tag .. " " .. claim_id .. " " .. pair.address .. " " .. tostring(pair.port)
+    local check = self.checks[k]
+    if not check then
+        check = { tag = tag, kind = kind, claim = claim_id, pair = { address = pair.address, port = pair.port },
+                  timer = timer.new(self.floor, self.ceiling), tries = 0, state = "unconfirmed" }
+        check.timer:due_now(now)
+        self.checks[k] = check
+        self.check_order[#self.check_order + 1] = k
+    end
+    return check
+end
+-- }}}
+
+-- {{{ function Stage:run_check
+-- One try at one check: a confirmation or refusal ends it; no answer is
+-- one failure of its timer, and it is tried again (204, R6).
+function Stage:run_check(check, now)
+    local ok, state, why = pcall(call_back.run, self.home, check, self.answer_time, self.seams)
+    if not ok then state, why = "unconfirmed", tostring(state) end
+    check.tries = check.tries + 1
+    check.state, check.why = state, why
+    if state == "unconfirmed" then
+        check.timer:failed(self.seams.now and self.seams.now() or now)
+    else
+        check.timer:held()
+        check.done = true
+    end
+    return state
 end
 -- }}}
 
@@ -187,6 +232,15 @@ function Stage:pass(now)
             ran[#ran + 1] = job
         end
     end
+    -- 204's checks, after the deliveries
+    for _, k in ipairs(self.check_order) do
+        local check = self.checks[k]
+        local at = self.seams.now and self.seams.now() or now
+        if not check.done and check.timer:is_due(at) then
+            self:run_check(check, at)
+            ran[#ran + 1] = check
+        end
+    end
     return ran
 end
 -- }}}
@@ -197,6 +251,10 @@ function Stage:next_due()
     local earliest = nil
     for _, job in pairs(self.jobs) do
         local due = job.timer.due
+        if due and (not earliest or due < earliest) then earliest = due end
+    end
+    for _, check in pairs(self.checks) do
+        local due = not check.done and check.timer.due
         if due and (not earliest or due < earliest) then earliest = due end
     end
     return earliest

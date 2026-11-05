@@ -11,10 +11,14 @@
 --   No default; at least 1024.
 -- failed-decryption.files-kept — how many failed-decryption files are kept
 --   in all, the newest included (139, 203).  No default; at least 1.
+-- callback.answer-time — whole seconds: how long a call-back check waits
+--   for the stated pair's answer before the claim stays unconfirmed for
+--   now (142, 204).  No default; at least 1.
 
 return {
     "delivery.retry-floor",
     "delivery.retry-ceiling",
     "failed-decryption.file-size",
     "failed-decryption.files-kept",
+    "callback.answer-time",
 }

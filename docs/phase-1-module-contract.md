@@ -78,6 +78,8 @@ change bell per running program.
           log                 the messages (105's format); made EMPTY by make_room
           delivered           what each pair on the send list has acknowledged (phase 2, 202's
                               format); made by 202 at the first own write; absent = no lines
+          claims              the hellos and leaves this home has claimed, one line each (phase 2,
+                              204's format); appended by the claim's sender; absent = none
       people/                 links (104's)
         <direct-message label>/<link name> -> ../../rooms/<local tag>
 

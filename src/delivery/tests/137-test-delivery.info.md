@@ -7,7 +7,8 @@ checks of the `delivered` file, the answer format, the decisions on open
 questions 1, 2 and 7, and a measurement over 10,000 messages.
 
 The homes are real rao-homes under `tmp/shared-memory/delivery/`, which
-are removed afterwards. Between them runs a simulation: a fake clock,
+are removed afterwards. Between them runs a simulation (143's, shared
+with 204's tests since 2026-11-05): a fake clock,
 coroutines for each home's accepting, serving and sending stages, and an
 in-memory relay that can delay, refuse, drop or replace frames. No socket
 is opened. A broken version is made by swapping one module function for

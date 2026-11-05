@@ -21,6 +21,8 @@
 --                                        back.
 --
 -- What is answered for each frame (decisions of 2026-11-05):
+--   a did-you (204)          a did-you-answer, from this room's claims
+--                            (141): yes or no; nothing is filed
 --   filed / duplicate        the log's own word
 --   hidden (ignored, hide)   `filed`: the record is dropped, and the sender
 --                            is not told it is ignored, so it stops
@@ -58,6 +60,7 @@ local recipients = require("041-recipients")
 local ignore = require("042-ignore-list")
 local message_log = require("081-message-log")
 local send = require("132-send")
+local call_back = require("142-call-back")
 
 local M = {}
 
@@ -131,14 +134,21 @@ function M.serve(conn, seams)
             return "unopened"
         end
         if seams.on_opened then seams.on_opened(tag, seams.peer) end
-        local word, id, problem = M.file_record(home, tag, opened, seams.peer, seams.now())
-        local answers = {}
-        if word then
-            answers[1] = { id = id, word = word }
-        elseif seams.on_problem then
-            seams.on_problem(tag, (id and ("record " .. id .. ": ") or "") .. tostring(problem))
+        local answer
+        local asked_ok, asked = pcall(records.decode, opened)
+        if asked_ok and asked.kind == "did-you" then
+            -- 204: answered from this room's claims (141); changes nothing
+            answer = call_back.answer_frame(home, tag, asked)
+        else
+            local word, id, problem = M.file_record(home, tag, opened, seams.peer, seams.now())
+            local answers = {}
+            if word then
+                answers[1] = { id = id, word = word }
+            elseif seams.on_problem then
+                seams.on_problem(tag, (id and ("record " .. id .. ": ") or "") .. tostring(problem))
+            end
+            answer = records.encode({ kind = "ack", answers = send.write_answers(answers) })
         end
-        local answer = records.encode({ kind = "ack", answers = send.write_answers(answers) })
         local ok, failed = frames.write_frame(conn, seal.seal(keys_for(ring, tag), answer))
         if not ok then
             if conn.close then conn:close() end

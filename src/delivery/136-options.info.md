@@ -6,3 +6,4 @@ phase 1 demo:
   values (202);
 - the failed-decryption file size (1000000 bytes) and files kept (3)
   (203).
+- the call-back answer time (8 s, rmail's connect timeout) (204).
