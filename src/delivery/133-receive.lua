@@ -43,6 +43,8 @@
 --                            the next frame of the exchange.  Without
 --                            on_members, or when it fails, an empty ack
 --                            (the problem goes to seams.on_problem)
+--   a summary or versions    handed to seams.on_summary (156's answer,
+--   (209)                    209) and answered the same way
 --   filed / duplicate        the log's own word
 --   hidden (ignored, hide)   `filed`: the record is dropped, and the sender
 --                            is not told it is ignored, so it stops
@@ -73,6 +75,8 @@
 --                                      the ack's word
 --   seams.on_members(tag, record, peer) optional (152's answer, 207) →
 --                                      the record to answer with
+--   seams.on_summary(tag, record, peer) optional (156's answer, 209) →
+--                                      the record to answer with
 -- Receiving never sends anything but these answers, and never waits on
 -- the sender stage (R6): 211 runs this in its own stage.
 
@@ -95,6 +99,9 @@ M.CLAIMS = { hello = true, leave = true }
 
 -- The records of 207's members exchange, handed to seams.on_members.
 M.MEMBERS = { ["members-digest"] = true, ["members-ask"] = true, members = true }
+
+-- 209's cross-check records, handed to seams.on_summary.
+M.SUMMARY = { summary = true, versions = true }
 
 -- {{{ function M.sender_of
 -- home, tag, host, source_port → from_address, from_port, is_member, and
@@ -190,10 +197,11 @@ function M.serve(conn, seams)
                 seams.on_problem(tag, "a " .. asked.kind .. ": " .. tostring(word))
             end
             answer = records.encode({ kind = "ack", answers = send.write_answers(answers) })
-        elseif asked_ok and M.MEMBERS[asked.kind] then
-            -- 207: the stage's (152), never the log's
-            local ok, reply = false, "nothing here hears members lists"
-            if seams.on_members then ok, reply = pcall(seams.on_members, tag, asked, seams.peer) end
+        elseif asked_ok and (M.MEMBERS[asked.kind] or M.SUMMARY[asked.kind]) then
+            -- 207 and 209: the stage's (152, 156), never the log's
+            local seam = M.MEMBERS[asked.kind] and seams.on_members or seams.on_summary
+            local ok, reply = false, "nothing here hears " .. asked.kind .. " records"
+            if seam then ok, reply = pcall(seam, tag, asked, seams.peer) end
             if ok and type(reply) == "table" then
                 answer = records.encode(reply)
             else

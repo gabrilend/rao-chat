@@ -42,6 +42,7 @@ local leaving = require("147-leaving")
 local members = require("152-members")
 local reach = require("149-reach")
 local housemates = require("154-housemates")
+local crosscheck = require("156-cross-check")
 
 local T = { passed = 0, failed = 0 }
 -- {{{ local function check
@@ -433,6 +434,9 @@ local function new_node(name, hosts, port, options)
             end,
             on_members = function(room_tag, record, peer)
                 return members.answer(node.stage, room_tag, record, peer, math.floor(sim.now))
+            end,
+            on_summary = function(room_tag, record, peer)
+                return crosscheck.answer(node.stage, room_tag, record, peer, math.floor(sim.now))
             end,
         }
     end

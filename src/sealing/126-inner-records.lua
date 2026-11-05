@@ -15,11 +15,10 @@
 --
 -- The table holds the kinds whose fields are settled: the log's three
 -- (message, correction, deletion), 202's `ack`, 204's `did-you` and
--- `did-you-answer`, 205's `hello`, 208's `leave`, and 207's
--- `members-digest`, `members-ask` and `members`.  Every other kind 201
--- names (summary, discover, here) gets its row from the issue that
--- defines its fields (209), when that issue is built.  Until then it is an unknown kind, and an unknown kind is an
--- error.  205's hello and 208's leave each carry a `claim` field: the
+-- `did-you-answer`, 205's `hello`, 208's `leave`, 207's
+-- `members-digest`, `members-ask` and `members`, 213's `discover` and
+-- `here`, and 209's `summary` and `versions`.  Any other kind is unknown,
+-- and an unknown kind is an error.  205's hello and 208's leave each carry a `claim` field: the
 -- claim id 204's `claims` file keeps (141).
 --
 -- `hello` (issue 205, decision of 2026-11-05; the owner may overturn it):
@@ -54,6 +53,18 @@
 -- machine's home address and the mailbox's listening port) among them:
 -- the address to answer and call back is read from inside the seal, never
 -- from the packet's source.  A `here` answers a `discover`.
+--
+-- `summary` and `versions` (issue 209, decision of 2026-11-05; the owner
+-- may overturn it).  A summary: an `id`, `since` (whole seconds: the
+-- window's start on the summariser's clock), `pairs` (the summariser's own
+-- pairs, the hello's form: where a gap it shows is filled) and `entries`,
+-- "<message id>:<fingerprint>" for every record it holds written since
+-- then, separated by single spaces (the fingerprint: 32 hex, the first 16
+-- bytes of SHA-256 over the record's agreed part).  `versions` answers a
+-- summary (or a versions) whose fingerprints differ: an `id`, `answers`
+-- (the id it answers) and `records`, the sender's own versions of those
+-- ids, each the record's agreed part as one encoded line (this table's
+-- message, correction or deletion row), joined by "\n".
 --
 -- `did-you` and `did-you-answer` (issue 204, decision of 2026-11-05; the
 -- owner may overturn it): a `did-you` names the claim id (32 hex) and the
@@ -101,6 +112,11 @@ KINDS.leave = { { name = "claim", type = "text" }, { name = "written", type = "w
 -- 213's datagrams: the hello's form (see the header).
 KINDS.discover = KINDS.hello
 KINDS.here = KINDS.hello
+-- 209's cross-check (see the header).
+KINDS.summary = { { name = "id", type = "text" }, { name = "since", type = "whole" },
+                  { name = "pairs", type = "pairs" }, { name = "entries", type = "text" } }
+KINDS.versions = { { name = "id", type = "text" }, { name = "answers", type = "text" },
+                   { name = "records", type = "text" } }
 
 -- The kinds of pair a `pairs` field may name (212).
 local PAIR_KINDS = { public = true, hostname = true, ipv6 = true, ["home-network"] = true }

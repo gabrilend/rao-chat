@@ -23,6 +23,11 @@
 -- address.hostname — a hostname the person has for the home, stated in
 --   hellos with each mailbox's outside port, or `none` (149, 212).
 --   No default.
+-- crosscheck.interval — whole seconds between one cross-check of every
+--   room and the next: a summary, after 207's members digest, to every
+--   pair on each send list (156, 209).  No default; at least 1.
+-- crosscheck.window — whole seconds: how far back, by written time, a
+--   summary lists the messages held (156, 209).  No default; at least 1.
 
 return {
     "delivery.retry-floor",
@@ -33,4 +38,6 @@ return {
     "address.recheck-earliest",
     "address.recheck-latest",
     "address.hostname",
+    "crosscheck.interval",
+    "crosscheck.window",
 }

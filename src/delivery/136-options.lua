@@ -158,4 +158,38 @@ return {
         },
         leaning = "none, until the person has one.",
     },
+    {
+        id = "crosscheck-interval",
+        question = "How often does each home cross-check every room with its members, in seconds?",
+        waits_on = "owner",
+        detail = "issue 209 (open question 1)",
+        config_key = "crosscheck.interval",
+        variants = {
+            {
+                name = "3600",
+                summary = "Hourly: each room's digest and summary to every pair on its send list.",
+                built_in = "src/delivery/156-cross-check.lua (settings), 134 (Stage:pass)",
+                tests = "src/delivery/tests/157-test-cross-check.lua (referee 5)",
+                findings = "A room of n homes makes n(n-1) summary connections an hour; at 20 homes, 380.",
+            },
+        },
+        leaning = "3600: long enough to be quiet, short enough that a gap is filled the same hour.",
+    },
+    {
+        id = "crosscheck-window",
+        question = "How far back, by written time, does a summary list the messages held, in seconds?",
+        waits_on = "owner",
+        detail = "issue 209 (open question 1)",
+        config_key = "crosscheck.window",
+        variants = {
+            {
+                name = "604800",
+                summary = "A week: a member away for up to a week has its gaps filled when it is back.",
+                built_in = "src/delivery/156-cross-check.lua (settings, summary_record)",
+                tests = "src/delivery/tests/157-test-cross-check.lua",
+                findings = "A two-faced message older than the window is never compared.",
+            },
+        },
+        leaning = "604800: covers a usual absence; a summary of a quiet room stays small.",
+    },
 }

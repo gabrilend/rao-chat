@@ -106,6 +106,63 @@ written time**, so its size follows recent traffic, not the room's age.
 3. **The nonce budget** in large rooms (201's question 4) applies mostly
    here.
 
+## Decisions (2026-11-05)
+
+Made by the builder.  The owner's standing instruction is to answer open
+questions rather than wait, choosing the option that is easiest to undo.
+The owner can overturn each one; what overturning costs is said with it.
+Built in `src/delivery/` (156 cross-check, 157's referees), with the
+`summary` and `versions` rows in 126, two settings in 135 and 136, a
+join point and `forget` in 130, the round in 134's stage, and a seam in
+133.  Every referee runs in the simulated world, each against a broken
+version where the issue names one.
+
+1. **How often, and how far back** (open question 1): `crosscheck.interval`
+   3600 seconds and `crosscheck.window` 604800 (a week), declared as
+   options with no built-in default.  Hourly is quiet and fills a gap the
+   same hour; a week covers a usual absence.  Undo: change the settings.
+2. **Where the error is raised** (open question 2): in the room's
+   `conflicts` file (the id, both fingerprints, the time, and both
+   versions in words; once per id and pair of versions), in the stage's
+   `conflicts` list, and through the stage seam `on_conflict(tag, id,
+   mine, theirs)`.  The notice in the room and the viewer's error strip
+   are phase 3's, built on that seam.  Nothing is corrected silently.
+3. **The nonce budget** (open question 3): one connection per pair per
+   round, carrying at most four frames (digest, its answer, summary,
+   versions) plus their answers.  At an hour and 20 homes, 380
+   connections an hour per room; 201's random 96-bit nonces stay far from
+   their limit at that rate.  Revisit for rooms of hundreds.
+4. **207's digest rides on the round** (207's decision 1): each job
+   first runs 207's members exchange (`members-digest`) on the same
+   connection, then the summary.  That is 207's automatic asking.
+5. **Where a gap is filled:** the summary carries the summariser's own
+   stated pairs (not its connection's source, which a router may
+   rewrite).  The receiver makes its own records missing again only for
+   those of the pairs that are on its send list and not ignored.  Naming
+   a pair can only make this home send its own message to its own
+   chosen recipient again, which the receiver files as a duplicate.
+6. **Only messages meant for that pair:** `delivered` keeps, per line,
+   the newest own record when the line was made (`after`).  A gap is
+   filled only for own records after it, so a pair that joined later is
+   not sent what was written before it (202's decision for open question
+   3).  Lines made before this keep no `after` and count everything.
+7. **One sending path:** the cross-check never sends a message.  It
+   makes records missing again (130's `forget`) and wakes the stage, and
+   202's sender sends them with their original ids.  Only an
+   acknowledgement marks them delivered again (R4).
+8. **Both versions on both sides:** a receiver whose fingerprint differs
+   answers with its versions; the summariser raises the difference and
+   sends its own versions back; the receiver raises it too.
+9. **The fingerprint** is the first 16 bytes of SHA-256 over the
+   record's agreed part, encoded by 126's own row for its kind: kind, id,
+   written time, target and text, never `from` or `arrived`.  215's
+   shared text copies may use the same encoding.
+10. **A summary lists at most 10,000 records**, the newest, so a frame
+    stays far under the 1 MiB cap.
+11. **The round is on the stage's clock** (134's `pass` and `next_due`),
+    armed by `start` when the stage can state its pairs, so a quiet home
+    still summarises within the interval.
+
 ## Related documents
 
 - `notes/vision-planning.md` section 3 ("Checking each other"); section 14

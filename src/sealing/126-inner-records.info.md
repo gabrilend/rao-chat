@@ -13,12 +13,12 @@ The table holds `message`, `correction` and `deletion` (fields `id`,
 `pairs`), and 207's `members-digest` and `members-ask` (`id`, `digest`,
 `count`) and `members` (`id`, `digest`, `pairs`, `claims`), and 213's
 `discover` and `here` (the hello's `claim` and `pairs`, sent as UDP
-datagrams: a frame without its length).  A `pairs` field holds one "kind address
+datagrams: a frame without its length), and 209's `summary` (`id`,
+`since`, `pairs`, `entries`) and `versions` (`id`, `answers`,
+`records`).  A `pairs` field holds one "kind address
 port" per line (kinds `public`, `hostname`, `ipv6`, `home-network`; port
 1 to 65535); a pair without its port, an unknown kind, or no pairs is an
-error.  The other kinds get their rows from the issues that define their
-fields (209); until then they are unknown, and an unknown
-kind is an error.
+error.  Any other kind is unknown, and an unknown kind is an error.
 
 | function / value | takes | gives | what it does |
 |---|---|---|---|

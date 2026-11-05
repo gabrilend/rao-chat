@@ -23,5 +23,10 @@ keeps one job and one retry timer per (room, pair):
   hello. `ask_members` asks one pair for its list.
 - `check` also says whether it made the check, so a list marks only the
   checks it made.
+- Cross-checks (209): `start` arms a round every `crosscheck.interval`
+  seconds, run from `pass` and counted in `next_due`, so a quiet home
+  still sends. `crosscheck_round` makes one summary job per send-list
+  pair that is not ignored (156's `attempt`). `M.Stage` is the method
+  table, for tests.
 
 211 runs the stage.  Issue 202, steps 2 and 4.

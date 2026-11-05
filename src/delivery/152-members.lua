@@ -33,7 +33,8 @@
 -- nothing (the issue's "caused by an arrival, not by a received list"),
 -- and nothing listens to the change bell, so rewriting or reordering the
 -- room's entry on disk sends nothing.  Automatic asking (open question 1)
--- is not built: asking is `Stage:ask_members`, called by the viewer.
+-- rides on 209's periodic round, which sends this digest first (156);
+-- asking at once is `Stage:ask_members`, called by the viewer.
 --
 -- A list is a claim by one member about others (addresses R8), so a pair
 -- in it is only called back, never added (142's `heard`).  To make that
@@ -302,34 +303,44 @@ local function acked(reply, id)
 end
 -- }}}
 
+-- {{{ function M.exchange_on
+-- One members exchange on an open connection (the connection stays open):
+-- conn, the room's keys, stage, tag, kind ("members-digest" or
+-- "members-ask"), the pair it goes to, now → true when it finished; or
+-- false and why.  209's cross-check opens with it.
+function M.exchange_on(conn, keys, stage, tag, kind, pair, now)
+    local digest, count = M.digest(M.held(stage, tag))
+    local first = { kind = kind, id = message_log.new_message_id(), digest = digest, count = count }
+    local reply, why = exchange(conn, keys, first)
+    if not reply then return false, why end
+    if acked(reply, first.id) then return true end
+    local ok = pcall(check_digest, reply)
+    if kind == "members-digest" and reply.kind == "members-ask" and ok then
+        local list = M.list_record(stage, tag, now)
+        if not list then return true end
+        local last, failed = exchange(conn, keys, list)
+        if not last then return false, failed end
+        if acked(last, list.id) then return true end
+        return false, "the list was not acknowledged"
+    elseif kind == "members-ask" and reply.kind == "members" and ok then
+        M.receive_list(stage, tag, reply, { host = pair.address, port = pair.port }, now)
+        return true
+    end
+    return false, "an answer that counts for nothing: " .. tostring(reply.kind)
+end
+-- }}}
+
 -- {{{ function M.attempt
 -- One try at a members job (134's stage runs it like a hello): job {kind
 -- = "members-digest" | "members-ask", tag, pair, stage}, seams, now →
 -- true when the exchange finished; or false and why.
 function M.attempt(home, job, seams, now)
-    local stage = job.stage
     local keys = room_key.key_pair(rooms.read_entry(home, job.tag).token)
-    local digest, count = M.digest(M.held(stage, job.tag))
-    local first = { kind = job.kind, id = message_log.new_message_id(), digest = digest, count = count }
     local conn, problem = seams.connect(job.pair)
     if not conn then return false, "no connection: " .. tostring(problem) end
-    local function done(ok, why) if conn.close then conn:close() end; return ok, why end
-    local reply, why = exchange(conn, keys, first)
-    if not reply then return done(false, why) end
-    if acked(reply, first.id) then return done(true) end
-    local ok = pcall(check_digest, reply)
-    if job.kind == "members-digest" and reply.kind == "members-ask" and ok then
-        local list = M.list_record(stage, job.tag, now)
-        if not list then return done(true) end
-        local last, failed = exchange(conn, keys, list)
-        if not last then return done(false, failed) end
-        if acked(last, list.id) then return done(true) end
-        return done(false, "the list was not acknowledged")
-    elseif job.kind == "members-ask" and reply.kind == "members" and ok then
-        M.receive_list(stage, job.tag, reply, { host = job.pair.address, port = job.pair.port }, now)
-        return done(true)
-    end
-    return done(false, "an answer that counts for nothing: " .. tostring(reply.kind))
+    local ok, why = M.exchange_on(conn, keys, job.stage, job.tag, job.kind, job.pair, now)
+    if conn.close then conn:close() end
+    return ok, why
 end
 -- }}}
 
