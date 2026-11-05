@@ -225,6 +225,25 @@ local function open(pair, after_length)
     local body = gcm_decrypt(pair.key, iv, ciphertext, tag)
     -- Path: the check value failed — nothing.  Passed — go on.
     if body == nil then return nil, "the check value does not match" end
+    -- The tying value (201a).  Why 32 bytes are enough: GCM's tag is linear
+    -- in the sealed blocks, so anyone holding two keys can solve for a body
+    -- that passes GCM under both (129-test-key-tying builds one); what they
+    -- cannot choose is the keystream, which fixes what the first blocks
+    -- open to under each key.  To make one frame open here under two
+    -- rooms' keys K1 and K2, the first 32 opened bytes must be K1's tying
+    -- value under K1 and K2's under K2: E_K1(ctr) xor E_K2(ctr) =
+    -- tie(K1) xor tie(K2) over two 128-bit blocks, for one nonce.  Written
+    -- as f(K) = E_K(ctr 1..2) xor tie(K), that is a collision of a 256-bit
+    -- function of the key, which takes about 2^128 key choices by the
+    -- birthday bound, even for someone who picks both keys (here: both
+    -- rooms' tokens) and the nonce.  Source: Albertini, Duong, Gueron,
+    -- Kölbl, Luykx and Schmieg, "How to Abuse and Fix Authenticated
+    -- Encryption Without Key Commitment", USENIX Security 2022 (ePrint
+    -- 2020/1456), whose "padding fix" prepends a fixed string of l bits and
+    -- checks it, giving about 2^(l/2) against such an attacker; the
+    -- per-key value here is that fix with l = 256.  Written from the
+    -- paper as remembered, not re-read when this was built (2026-11-05,
+    -- no network for the build); the arithmetic above stands on its own.
     if body:sub(1, room_key.TIE_BYTES) ~= pair.tie then
         return nil, "the tying value is another room's"
     end
