@@ -152,3 +152,16 @@ owner, most blocking first: `notes/rmail-rubric/open-questions.md`.
   decisions the owner may overturn.  Automatic asking rides on 209's
   periodic cross-check.  Pairs confirmed only from inside the house are 213's
   housemates, kept apart from the members, so no list carries them.
+- **210** — built 2026-11-05 in `src/phase-2-demo/` (158–160), with the
+  wrapper `issues/completed/demos/phase-2-demo` (`run-phase-demo 2`).
+  Three homes at 127.0.0.2, .3 and .4, each with its own RAM folder and
+  stated ports, run phase 2's stages in the delivery tests' simulated
+  world, and the demo prints what is on disk and on the wire: delivery
+  to every pair with acknowledgement times, a member down and its pile,
+  joining and a direct message, keys tried per frame, a child room's
+  flag, contact syncing, a token changed by hand, leaves, the
+  cross-check, housemates, failed decryption, and phase 1's tools.  10
+  of 15 scenes run in full.  Open questions 1–3 answered as dated
+  decisions the owner may overturn.  Left: real gatherer processes and
+  the acknowledge-after switch (211), signatures (214), git (215, 215a,
+  215b), and `fail2ban-regex` itself where it is installed.

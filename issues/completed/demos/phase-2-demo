@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+#
+# phase-2-demo - shows phase 2 of rao-chat working: rooms delivering between
+# homes.
+#
+# Three homes at 127.0.0.2, .3 and .4, each a real rao-home with its own RAM
+# folder and its own ports, run phase 2's stages between them: a message to
+# every pair with its acknowledgement times, a member down and its pile,
+# joining and direct messages, the keys tried per frame, a child room
+# flagging an outsider, contact syncing, a token changed by hand, a genuine
+# and a forged leave, a two-faced sender caught, housemates, and failed
+# decryption with fail2ban's matcher.  It prints what is really on disk and
+# on the wire.  Scenes whose issues are not built yet (214, 215, 211) say
+# what they wait on.  It reads input/ first and writes a goodbye into
+# output/ last.
+#
+# The stages run in the delivery tests' simulated world (a clock of its own
+# and an in-memory relay), so nothing reaches a network; the demo runs in a
+# network namespace of its own (unshare -rn) as well, when the system
+# allows one.
+#
+# Exit status: 0 every scene ran in full, 1 a scene could not run, 2 none
+# failed but some wait on an issue or ran with a part missing.
+#
+# Usage (from any folder):
+#   phase-2-demo                 the project named below
+#   phase-2-demo <project dir>   another copy of the project
+
+DIR="/home/ritz/programs/rao-chat"
+if [ -n "${1:-}" ]; then
+    DIR="$1"
+fi
+
+if [ ! -d "${DIR}/src/phase-2-demo" ]; then
+    echo "phase-2-demo: ${DIR} does not look like the rao-chat project (no src/phase-2-demo)" >&2
+    exit 1
+fi
+
+# The scratch homes live in RAM: tmp/ points at /tmp/<project>, and inside it
+# shared-memory/ points at /dev/shm/<project>.  Make whichever piece is missing.
+PROJECT="$(basename "${DIR}")"
+mkdir -p "/dev/shm/${PROJECT}" "/tmp/${PROJECT}/tmp"
+if [ ! -e "/tmp/${PROJECT}/shared-memory" ]; then
+    ln -s "/dev/shm/${PROJECT}" "/tmp/${PROJECT}/shared-memory"
+fi
+if [ ! -e "${DIR}/tmp" ]; then
+    ln -s "/tmp/${PROJECT}" "${DIR}/tmp"
+fi
+
+if unshare -rn true 2>/dev/null; then
+    # a network namespace with nothing in it: no packet can leave
+    exec unshare -rn luajit "${DIR}/src/phase-2-demo/158-phase-2-demo.lua" "${DIR}"
+fi
+echo "phase-2-demo: unshare -rn is not allowed here, so running without a network namespace" \
+     "(the demo opens no sockets either way)" >&2
+exec luajit "${DIR}/src/phase-2-demo/158-phase-2-demo.lua" "${DIR}"
