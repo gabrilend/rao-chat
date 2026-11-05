@@ -361,6 +361,21 @@ function M.path_of_labels(home, tag)
 end
 -- }}}
 
+-- {{{ function M.placements
+-- Every room at once, from one snapshot: { [tag] = { parent = the tree
+-- parent's tag or "", path = the path of labels } }.  For a caller that
+-- needs every room's place (301's inbox facts) without reading the home
+-- once per room.
+function M.placements(home)
+    local snap = M.snapshot(home)
+    local list = {}
+    for _, tag in ipairs(snap.tags) do
+        list[tag] = { parent = snap.parent[tag], path = labels_in(snap, tag) }
+    end
+    return list
+end
+-- }}}
+
 -- {{{ local function node_for
 local function node_for(snap, tag)
     local entry = snap.entries[tag]

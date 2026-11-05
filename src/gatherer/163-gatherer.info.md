@@ -14,18 +14,25 @@ these threads under 162's loop:
 - filer: takes from `arrived/`, runs 133's `answer_frame`, and with
   `gatherer.acknowledge-after = disk` forces the room's log to disk before
   the answer exists.  An error ends that frame only.
-- typed: `typed/` files (`room = <tag>`, a blank line, the text) become
-  messages through 134's `write`.
+- typed: `typed/` files become messages through 134's `write`: 301's
+  shape (`room:` and `written:` lines, a blank line, the text with its
+  signature) or 211's (`room = <tag>`, a blank line, the text).  Each is
+  filed under its own id (161's `typed_id`) at its own written time
+  (never later than this clock), and removed only once filed; a file put
+  back after a crash between the two is found in the log and filed once.
 - sender: 134's passes, each due item in its own thread; `due/` is
   rewritten after each attempt, one file per (pair, room) still owed.
 - sync: every `gatherer.sync-interval` seconds, and once more at `stop`.
 - state: written every second; a repeated problem is logged at most once
   per sync interval, with a count.
 
-The viewer's inbox (301, 181): `inbox/<room tag>/<written>-<id>` in the
-gatherer's RAM folder, written for every room at start-up and every sync
-cycle, and for the room just filed by the filing hook; a failure is an
-`inbox` or `hook-inbox-file` problem line and ends nothing.
+The viewer's inbox (301, 181): `inbox/<room tag>/<written>-<id>`, each
+room's `.room` and the mailbox's `.tree` in the gatherer's RAM folder,
+written for every room at start-up and every sync cycle, for the room
+just filed by the filing hook, and (`.room` alone) after each sender pass
+and attempt; a failure is an `inbox` or `hook-inbox-file` problem line
+and ends nothing.  `RAO_GATHERER_BROKEN=typed-fresh-id` and
+`typed-remove-first`, with the crash point `typed:<n>`, are 182's.
 
 Text copies (215): git is required (without it the problem names the
 program and it exits, status 1); the mailbox's repository is made at

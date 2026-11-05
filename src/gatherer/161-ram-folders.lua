@@ -13,7 +13,9 @@
 --   arrived/         one file per frame read off the port (listener → filer)
 --   answers/         one file per answer ready, named after its arrived/
 --                    file (filer → listener)
---   typed/           one file per message the person typed (viewer → filer)
+--   typed/           one file per message the person typed (viewer → filer):
+--                    `room:` and `written:` lines, a blank line, the text
+--                    (301; 211's `room = <tag>` shape is still read)
 --   due/             one file per (address, port) pair with something to
 --                    send, rewritten after every sender pass (sender → viewer)
 --   running-log      the gatherer's own lines
@@ -219,10 +221,70 @@ end
 ------------------------------------------------------------------------------
 
 -- {{{ function M.decode_typed
+-- A typed/ file's bytes → { room, text, written (or nil) }, or nil and
+-- why.  Two shapes are read:
+--
+--   room: <local tag>          301's, what a viewer writes: header lines,
+--   written: <whole seconds>   a blank line, then the text with the
+--   (blank line)               person's signature as its last line (214)
+--   <text>
+--
+--   room = <local tag>         211's first shape, still read: no written
+--   (blank line)               time, so the filer's clock gives it
+--   <text>
+--
+-- One trailing newline is taken off the text.  Unknown header lines in
+-- 301's shape are refused, so a misspelt `written:` is not silently the
+-- filer's clock.
 function M.decode_typed(bytes)
-    local tag, text = bytes:match("^room = (%x+)\n\n(.*)$")
-    if not tag or #tag ~= 32 then return nil, "a typed file starts with \"room = <local tag>\" and a blank line" end
-    return { room = tag, text = text:gsub("\n$", "") }
+    local old_tag, old_text = bytes:match("^room = (%x+)\n\n(.*)$")
+    if old_tag then
+        if #old_tag ~= 32 then return nil, "the room tag is not 32 hex" end
+        return { room = old_tag, text = (old_text:gsub("\n$", "")) }
+    end
+    local head, text = bytes:match("^(.-)\n\n(.*)$")
+    if not head then return nil, "a typed file is header lines (room:, written:), a blank line, then the text" end
+    local fields = {}
+    for line in (head .. "\n"):gmatch("([^\n]*)\n") do
+        local key, value = line:match("^(%a+): (.*)$")
+        if not key or (key ~= "room" and key ~= "written") then
+            return nil, "a typed file's header holds only room: and written: lines, not '" .. line:sub(1, 40) .. "'"
+        end
+        if fields[key] then return nil, "a typed file names " .. key .. ": twice" end
+        fields[key] = value
+    end
+    if not fields.room or not fields.room:match("^%x+$") or #fields.room ~= 32 then
+        return nil, "a typed file's room: is a 32-hex local tag"
+    end
+    local written
+    if fields.written then
+        if not fields.written:match("^%d+$") or #fields.written > 12 then
+            return nil, "a typed file's written: is whole seconds since 1970"
+        end
+        written = tonumber(fields.written)
+    end
+    return { room = fields.room, written = written, text = (text:gsub("\n$", "")) }
+end
+-- }}}
+
+-- {{{ function M.typed_written
+-- A decoded typed file and the filer's clock (whole seconds) → the time
+-- to file it at: its own written time, never later than the clock (a
+-- viewer whose clock runs ahead cannot date a message in the future);
+-- the clock when it gives none.
+function M.typed_written(typed, now)
+    if typed.written and typed.written < now then return typed.written end
+    return now
+end
+-- }}}
+
+-- {{{ function M.typed_id
+-- A typed/ file's name and bytes → the message id it is filed under: 32
+-- hex of SHA-256 of both.  The same file taken again after a crash
+-- (put back from working/ at start-up) is the same message, which the
+-- filer finds in the log and does not file twice (301, referee 4).
+function M.typed_id(name, bytes)
+    return hex(tokens.sha256("rao-chat typed\0" .. name .. "\0" .. bytes)):sub(1, 32)
 end
 -- }}}
 

@@ -1,10 +1,11 @@
--- 182-test-inbox-files.lua — the referees of issue 301's first step (the
--- viewer's inbox files), against the inbox module on a home on disk and
--- against one real gatherer on loopback, each referee also against the
--- broken version it must catch.
+-- 182-test-inbox-files.lua — the referees of issue 301's first two steps
+-- (the viewer's inbox files, `.room`, `.tree`, and the `typed/` reader),
+-- against the inbox module on a home on disk and against real gatherers
+-- on loopback, each referee also against the broken version it must
+-- catch.
 --
 -- Run it under the loopback-only wrapper (a network namespace with only
--- `lo`): the gatherer listens on 127.0.0.2.  Its homes and RAM folders are
+-- `lo`): the gatherers listen on 127.0.0.2 and 127.0.0.3.  Its homes and RAM folders are
 -- in a folder of its own under /dev/shm (or /tmp), removed at the end.
 --
 -- Run: luajit src/gatherer/tests/182-test-inbox-files.lua [PROJECT_DIR]
@@ -25,6 +26,9 @@ local message_log = require("081-message-log")
 local ignore = require("042-ignore-list")
 local ram = require("161-ram-folders")
 local inbox = require("181-inbox-files")
+local recipients = require("041-recipients")
+local delivered = require("130-delivered")
+local delivery = require("134-delivery")
 
 ffi.cdef [[ int getpid(void); ]]
 
@@ -255,7 +259,7 @@ check("a file is written only when it changes, and a removed file is written aga
     local h = make_home("again")
     message_log.append(h.disk, h.tag, { id = "one", from = "me", written = 1000000100, arrived = 1000000100,
         text = "hi" })
-    must(inbox.write_room(h.folder, h.disk, h.tag) == 1, "the first pass did not write one file")
+    must(inbox.write_room(h.folder, h.disk, h.tag) == 2, "the first pass did not write the file and .room")
     must(inbox.write_room(h.folder, h.disk, h.tag) == 0, "an unchanged room was written again")
     local log_before = read_file(rooms.log_path(h.disk, h.tag))
     os.execute("rm -f " .. q(inbox.folder(h.folder) .. "/" .. h.tag) .. "/*")
@@ -267,6 +271,101 @@ check("a room tag or id that cannot name a file is refused before a path is buil
     local h = make_home("names")
     must(not pcall(inbox.write_room, h.folder, h.disk, "../" .. h.tag:sub(4)), "a tag with a slash was taken")
     must(not pcall(inbox.file_name, { id = "../x", written = 1 }), "an id with a slash was taken")
+end)
+
+check("typed/: 301's shape and 211's are read, anything else refused; the written time and the id", function()
+    local tag = string.rep("ab", 16)
+    local t = ram.decode_typed("room: " .. tag .. "\nwritten: 1000000100\n\nhello\n\nMe\n")
+    must(t and t.room == tag and t.written == 1000000100 and t.text == "hello\n\nMe", "301's shape misread")
+    t = ram.decode_typed("room = " .. tag .. "\n\nhello\n")
+    must(t and t.room == tag and t.written == nil and t.text == "hello", "211's shape misread")
+    must(not ram.decode_typed("room: " .. tag .. "\nwriten: 5\n\nhi"), "a misspelt header was taken")
+    must(not ram.decode_typed("room: " .. tag .. "\nwritten: soon\n\nhi"), "written: soon was taken")
+    must(not ram.decode_typed("room: " .. tag .. "\nroom: " .. tag .. "\n\nhi"), "room: twice was taken")
+    must(not ram.decode_typed("room: abc\n\nhi"), "a short tag was taken")
+    must(not ram.decode_typed("hello"), "a file with no header was taken")
+    must(ram.typed_written({ written = 100 }, 200) == 100, "an earlier written time was not kept")
+    must(ram.typed_written({ written = 300 }, 200) == 200, "a written time in the future was kept")
+    must(ram.typed_written({}, 200) == 200, "no written time did not take the clock")
+    local bytes = "room: " .. tag .. "\nwritten: 1\n\nsame text"
+    local id = ram.typed_id("0000000001-000001-aaaaaaaa", bytes)
+    must(id:match("^%x+$") and #id == 32, "the id is not 32 hex: " .. id)
+    must(ram.typed_id("0000000001-000001-aaaaaaaa", bytes) == id, "the same file gave another id")
+    must(ram.typed_id("0000000001-000002-bbbbbbbb", bytes) ~= id, "two files with the same text gave one id")
+end)
+
+-- ---------------------------------------------------------------------
+-- a room's facts (.room) and the tree (.tree)
+-- ---------------------------------------------------------------------
+
+-- {{{ local function room_facts
+-- the text of .room → { key = value } (pile: a list of lines)
+local function room_facts(text)
+    local facts = { pile = {} }
+    for line in (text or ""):gmatch("[^\n]+") do
+        local key, value = line:match("^(%a+): (.*)$")
+        if key == "pile" then facts.pile[#facts.pile + 1] = value elseif key then facts[key] = value end
+    end
+    return facts
+end
+-- }}}
+
+-- {{{ local function parent_and_child
+-- A disk home with "home" and its declared child "ritz" (one mailbox),
+-- and a RAM home loaded with the child alone, as a gatherer whose
+-- mailbox held only the child would have.
+local function parent_and_child()
+    local h = make_home("tree")
+    rooms.write_label(h.disk, h.tag, "home")
+    local child = rooms.make_room(h.disk, { label = "ritz", token = "inbox files child " .. count, kind = "group",
+        parent = rooms.token_fingerprint("inbox files test room " .. count), members = {}, filed_under = "",
+        mailbox_port = "" })
+    recipients.add_member(h.disk, h.tag, "10.0.0.1", 5000)
+    recipients.add_member(h.disk, h.tag, "10.0.0.2", 5000)
+    recipients.add_member(h.disk, child, "10.0.0.1", 5000)
+    -- not in the parent: added, and flagged (103)
+    recipients.add_member(h.disk, child, "10.0.0.3", 5000)
+    local ram_home_dir = h.folder .. "/home"
+    ram.load(h.dir, ram_home_dir, { child })
+    h.child, h.ram = child, rooms.open_home(ram_home_dir)
+    return h
+end
+-- }}}
+
+check(".room: label, kind, the parent and path from the whole home, members, flagged and the pile", function()
+    local function referee()
+        local h = parent_and_child()
+        local word, id = delivery.write(h.ram, h.child, { kind = "message", text = "for the pile" }, 1000000500)
+        inbox.write_facts(h.folder, h.ram, h.disk, { h.child })
+        local facts = room_facts(read_file(inbox.folder(h.folder) .. "/" .. h.child .. "/.room"))
+        must(facts.label == "ritz" and facts.kind == "group", "label/kind: " .. tostring(facts.label) .. "/" .. tostring(facts.kind))
+        must(facts.parent == h.tag, "parent: " .. tostring(facts.parent) .. ", want the parent room " .. h.tag)
+        must(facts.path == "home/ritz", "path: " .. tostring(facts.path))
+        must(facts.members == "2" and facts.flagged == "1", "members/flagged: " .. tostring(facts.members) .. "/"
+            .. tostring(facts.flagged))
+        must(#facts.pile == 1 and facts.pile[1] == "10.0.0.1 5000 1 1000000500",
+            "pile: " .. table.concat(facts.pile, " | ") .. " (the flagged member is sent nothing)")
+        delivered.acknowledge(h.ram, h.child, { address = "10.0.0.1", port = 5000 }, { id })
+        must(inbox.write_facts(h.folder, h.ram, h.disk, { h.child }) == 1, ".room was not rewritten after the ack")
+        must(inbox.write_facts(h.folder, h.ram, h.disk, { h.child }) == 0, "an unchanged .room was written again")
+        facts = room_facts(read_file(inbox.folder(h.folder) .. "/" .. h.child .. "/.room"))
+        must(#facts.pile == 1 and facts.pile[1] == "none", "after the ack, pile: " .. table.concat(facts.pile, " | "))
+    end
+    referee()
+    must_fail(referee, "ram-tree")
+end)
+
+check(".tree: one line per room of the mailbox, its parent from the whole home", function()
+    local function referee()
+        local h = parent_and_child()
+        inbox.write_all(h.folder, h.ram, { h.child }, h.disk)
+        local text = read_file(inbox.folder(h.folder) .. "/.tree")
+        local want = h.child .. " " .. h.tag .. " group ritz\n"
+        must(text == want, ".tree is '" .. tostring(text) .. "', want '" .. want .. "'")
+        must(read_file(inbox.folder(h.folder) .. "/" .. h.child .. "/.room"), "write_all wrote no .room")
+    end
+    referee()
+    must_fail(referee, "ram-tree")
 end)
 
 -- ---------------------------------------------------------------------
@@ -308,6 +407,171 @@ check("a gatherer writes the inbox at start-up and after a typed message, from: 
     if not ok then error(problem, 0) end
 end)
 
+
+-- ---------------------------------------------------------------------
+-- referee 4: typed becomes sent (two real gatherers)
+-- ---------------------------------------------------------------------
+
+local LIVE_TOKEN = "inbox files live room"
+local live_pids = {}
+
+-- {{{ local function make_live
+-- A home on its own loopback address, one room shared with the others by
+-- token, a minute's sync (what appears within seconds was not a sync).
+local function make_live(name, address, port)
+    count = count + 1
+    local dir = ROOT .. "/homes/" .. name .. "-" .. count
+    local h = rooms.open_home(dir)
+    for key, value in pairs(START) do rooms.set_config(h, key, value) end
+    local config = {
+        ["gatherer.ram-root"] = ROOT .. "/ram", ["gatherer.address"] = address,
+        ["gatherer.sync-interval"] = "60", ["delivery.retry-floor"] = "1", ["delivery.retry-ceiling"] = "2",
+        ["callback.answer-time"] = "2", ["git.home-name"] = name .. "-" .. count,
+    }
+    for key, value in pairs(config) do rooms.set_config(h, key, value) end
+    local tag = rooms.make_room(h, { label = "the room", token = LIVE_TOKEN, kind = "group", parent = "",
+        members = {}, filed_under = "", mailbox_port = port })
+    local mailbox = rooms.read_entry(h, tag).mailbox
+    return { dir = dir, disk = h, tag = tag, mailbox = mailbox, pair = { address = address, port = port },
+             folder = ram.home_ram(ROOT .. "/ram", dir) .. "/" .. mailbox }
+end
+-- }}}
+
+-- {{{ local function alive / start_live / kill_live / stop_live
+local function alive(pid)
+    local f = pid and io.open("/proc/" .. pid .. "/stat", "rb")
+    if not f then return false end
+    local stat = f:read("*a")
+    f:close()
+    return stat:match("%) (%a)") ~= "Z"
+end
+local function start_live(home, env)
+    os.execute("mkdir -p " .. q(home.folder))
+    local pipe = io.popen((env or "") .. " luajit " .. q(DIR .. "/src/gatherer/163-gatherer.lua") .. " " .. q(DIR)
+        .. " " .. q(home.dir) .. " " .. q(home.mailbox) .. " </dev/null >>" .. q(home.folder .. "/stderr")
+        .. " 2>&1 & echo $!")
+    home.pid = tonumber(pipe:read("*l"))
+    pipe:close()
+    live_pids[#live_pids + 1] = home.pid
+    wait_until(function() return (ram.read_state(home.folder).pid or "") == tostring(home.pid) end, 5)
+end
+local function stop_live()
+    for _, pid in ipairs(live_pids) do if alive(pid) then os.execute("kill -9 " .. pid .. " 2>/dev/null") end end
+    live_pids = {}
+    os.execute("pkill -9 -f " .. q(ROOT .. "/homes") .. " 2>/dev/null")
+    socket.sleep(0.2)
+end
+-- }}}
+
+-- {{{ local function texts_in
+-- how many messages of a home's RAM copy of its room carry this text
+local function texts_in(home, text)
+    local ok, list = pcall(message_log.read_ordered, rooms.open_home(home.folder .. "/home"), home.tag)
+    if not ok then return 0 end
+    local n = 0
+    for _, view in ipairs(list) do if view.text == text then n = n + 1 end end
+    return n
+end
+-- }}}
+
+-- {{{ local function mine_in_inbox
+-- the inbox files of a home's room that say from: me, as texts
+local function mine_in_inbox(home)
+    local room = inbox.folder(home.folder) .. "/" .. home.tag
+    local list = {}
+    for _, name in ipairs(names(room)) do
+        local text = read_file(room .. "/" .. name)
+        if field(text, "from") == "me" then list[#list + 1] = text end
+    end
+    return list
+end
+-- }}}
+
+-- {{{ local function owed
+local function owed(home, pair)
+    local ok, list = pcall(function()
+        return delivered.missing_for(rooms.open_home(home.folder .. "/home"), home.tag, pair)
+    end)
+    return ok and #list or math.huge
+end
+-- }}}
+
+-- {{{ local function referee_typed
+-- A typed file in 301's shape: filed with its own written time, sent to
+-- B and acknowledged, in A's inbox once as from: me, the typed file gone,
+-- and A's .room pile empty again.  With `crash`, A dies between filing
+-- and removing the typed file, and is started again.
+local function referee_typed(crash, broken)
+    stop_live()
+    local a = make_live("A", "127.0.0.2", 7612)
+    local b = make_live("B", "127.0.0.3", 7613)
+    recipients.add_member(a.disk, a.tag, b.pair.address, b.pair.port)
+    recipients.add_member(b.disk, b.tag, a.pair.address, a.pair.port)
+    local env = (crash and "RAO_GATHERER_CRASH=typed:1 " or "") .. (broken and ((broken == "stale-pile"
+        and "RAO_INBOX_BROKEN=" or "RAO_GATHERER_BROKEN=") .. broken) or "")
+    start_live(a, env)
+    local text = "typed in a viewer " .. count .. "\n\nMe"
+    local written = math.floor(now()) - 100
+    ram.put(a.folder .. "/typed", ram.new_name(now()), "room: " .. a.tag .. "\nwritten: " .. written .. "\n\n"
+        .. text .. "\n")
+    if crash then
+        must(wait_until(function() return not alive(a.pid) end, 10), "A never reached its crash point")
+        start_live(a)
+    end
+    -- B is down: the message waits for it, and A's .room says so
+    must(wait_until(function() return texts_in(a, text) >= 1 end, 10),
+        "A never filed the typed message: " .. tostring(read_file(a.folder .. "/stderr")))
+    must(wait_until(function()
+        local pile = room_facts(read_file(inbox.folder(a.folder) .. "/" .. a.tag .. "/.room")).pile
+        return pile[1] and pile[1]:match("^127%.0%.0%.3 7613 1 ") ~= nil
+    end, 10), "A's .room does not show the message waiting for B: "
+        .. tostring(read_file(inbox.folder(a.folder) .. "/" .. a.tag .. "/.room")))
+    start_live(b)
+    must(wait_until(function() return owed(a, b.pair) == 0 and texts_in(b, text) >= 1 end, 20),
+        "B never acknowledged the typed message")
+    socket.sleep(1)
+    must(texts_in(a, text) == 1, "the typed message is in A's log " .. texts_in(a, text) .. " times")
+    must(texts_in(b, text) == 1, "the typed message is in B's log " .. texts_in(b, text) .. " times")
+    local mine = mine_in_inbox(a)
+    must(#mine == 1, #mine .. " from: me file(s) in A's inbox")
+    must(body(mine[1]) == "typed in a viewer " .. count and field(mine[1], "signature") == "Me",
+        "the inbox file's body or signature is wrong: " .. tostring(mine[1]))
+    must(field(mine[1], "written") == tostring(written), "written: is " .. tostring(field(mine[1], "written"))
+        .. ", the typed file said " .. written)
+    must(#ram.waiting(a.folder .. "/typed") == 0 and #names(a.folder .. "/typed/working") == 0,
+        "the typed file is still there")
+    must(wait_until(function()
+        local pile = room_facts(read_file(inbox.folder(a.folder) .. "/" .. a.tag .. "/.room")).pile
+        return pile[1] == "none"
+    end, 5), "A's .room still shows a pile after B acknowledged")
+    stop_live()
+end
+-- }}}
+
+-- {{{ local function must_fail_live
+local function must_fail_live(referee, broken)
+    local ok, caught = pcall(referee, broken)
+    stop_live()
+    if ok then error("the referee passed a broken version: " .. broken, 2) end
+    print("     caught (" .. broken .. "): " .. tostring(caught):gsub("^[^:]*:%d+: ", ""))
+end
+-- }}}
+
+check("referee 4: a typed file is filed with its written time, sent, acknowledged, in the inbox as from: me, and gone", function()
+    referee_typed(false)
+end)
+
+check("referee 4: a crash between filing a typed file and removing it files and sends it once", function()
+    referee_typed(true)
+    must_fail_live(function(broken) referee_typed(true, broken) end, "typed-fresh-id")
+    must_fail_live(function(broken) referee_typed(true, broken) end, "typed-remove-first")
+end)
+
+check("A's .room pile empties when the sender is acknowledged, not only at the next sync", function()
+    must_fail_live(function(broken) referee_typed(false, broken) end, "stale-pile")
+end)
+
+stop_live()
 if not os.getenv("KEEP") then os.execute("rm -rf " .. q(ROOT)) else print("kept " .. ROOT) end
 print("counts " .. passed .. " " .. failed)
 os.exit(failed == 0 and 0 or 1)

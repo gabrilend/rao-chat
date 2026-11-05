@@ -56,17 +56,18 @@ for pointing out where to store the mailboxes."
 
 ## Status
 
-Step 1's message files built 2026-11-05 (`src/gatherer/181-inbox-files.lua`,
-referees in `182-test-inbox-files.lua`): every gatherer keeps
-`inbox/<room local tag>/<written>-<id>` in its RAM folder, in the shape
-above, written at start-up, by the filing hook after each record filed
-or typed, and at every sync.  Referees 1, 2, 3 and 5 pass and catch their
-broken versions.
+Steps 1 and 2 built 2026-11-05.
 
-Left: the rest of step 1 (`.room` and `.tree`), step 2 (the `typed/`
-reader taking the `room:` / `written:` header and the signature; today's
-`typed/` file is 211's `room = <tag>` shape), step 3 (the reference
-viewer), and referee 4, which needs step 2.
+- Step 1: every gatherer keeps `inbox/<room local tag>/<written>-<id>` in
+  its RAM folder, in the shape above (`src/gatherer/181-inbox-files.lua`),
+  each room's `.room` beside its messages, and the mailbox's `inbox/.tree`.
+- Step 2: the filer reads `typed/` files in the shape above (`room:`,
+  `written:`, a blank line, the text with its signature); 211's first
+  shape is still read.
+- Referees 1 to 5 pass and catch their broken versions
+  (`src/gatherer/tests/182-test-inbox-files.lua`).
+
+Left: step 3, the reference viewer (the next pull request).
 
 ## Decisions (2026-11-05)
 
@@ -99,6 +100,52 @@ Made by the builder; the owner can overturn each.
 8. **Open questions 1 and 2 (the device port, mirroring the folder)
    belong to the issues that build the remote viewers** and change
    nothing in this folder's layout, so they are left for those issues.
+
+### Steps 1 (`.room`, `.tree`) and 2 (`typed/`), 2026-11-05
+
+9. **`.room` is `key: value` lines** like the message files: `label:`,
+   `kind:`, `parent:` (a tag, or `none`), `path:`, `members:`,
+   `flagged:`, and one `pile: <address> <port> <missing> <oldest
+   written>` line per pair still owed something, or `pile: none`.  Pairs
+   owed nothing are left out: the pile is what waits.
+10. **The parent and the path come from 102 on the disk home**, which
+    holds every room of the home.  A gatherer's RAM home holds only its
+    own mailbox's rooms, and a room filed under one in another mailbox
+    would show there as a top room.  So each `.tree` line already names
+    the room's real parent, and a viewer joining gatherers' trees joins
+    by tag and places nothing itself.  The rule stays in one place (102),
+    as the rubric asks for edits and signatures.
+11. **`.tree` is one line per room: `<tag> <parent or none> <kind>
+    <label>`**, in 102's order (top first, children by label then tag),
+    and the label last because it may hold spaces.
+12. **`.room` is rewritten after each sender pass and attempt**, as well
+    as when a record is filed and every sync.  The pile moves when a
+    member acknowledges, and a viewer should not wait a sync interval to
+    see it empty.
+13. **A typed file is filed under an id made from its own name and
+    bytes** (32 hex of SHA-256).  The filer takes a file into `working/`,
+    files it, then removes it; a crash between the last two puts it back
+    at start-up (211's rule), and without a stable id it would be filed
+    and sent twice.  With one, the filer finds it in the log and only
+    removes it.  The id is a hash of the text, but it travels only inside
+    sealed frames, beside that same text.
+14. **`written:` is the time the person wrote it, but never later than
+    the filer's clock**, so a viewer whose clock runs ahead cannot date a
+    message in the future.  202's write still keeps it no earlier than
+    this home's last own message, so own messages stay in order.
+15. **211's `room = <tag>` shape is still read**, so the demo and 211's
+    tests keep working; any other header line, or a header named twice,
+    is refused with a problem line, so a misspelt `written:` is not
+    silently replaced by the filer's clock.
+16. **Referee 4's broken version.**  The issue names "a filer that sends
+    before filing".  Here nothing can be sent before it is filed: 202's
+    sender sends only what the log holds.  So the referee is run with a
+    crash between filing and removing the typed file, against the two
+    ways this filer can go wrong at that point: a new id each time the
+    file is taken (sent twice), and removing the file before filing it
+    (lost).  Referee 5 for `typed/` (a slow writer is never read before
+    its rename) is 211's referee 6, which already covers every queue.
+
 
 ## Rubric
 

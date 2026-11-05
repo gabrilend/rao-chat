@@ -90,8 +90,10 @@ end
 
 -- {{{ function M.write
 -- home, tag, record ({kind = "message" | "correction" | "deletion",
--- text, target (edits)}), now (whole seconds) → the log's word, the new
--- id, and the send list (the pairs to wake).
+-- text, target (edits), id (optional: the id to file under, for a caller
+-- whose id must not change when it writes again -- 301's typed files)}),
+-- now (whole seconds) → the log's word, the new id, and the send list
+-- (the pairs to wake).
 function M.write(home, tag, record, now)
     local send_list = recipients.send_list(home, tag)
     delivered.join(home, tag, send_list)
@@ -100,7 +102,7 @@ function M.write(home, tag, record, now)
         if own.written > latest then latest = own.written end
     end
     local written = math.max(now, latest)
-    local id = message_log.new_message_id()
+    local id = record.id or message_log.new_message_id()
     local filed = { id = id, from = "me", written = written, arrived = written,
                     target = record.target, text = record.text or "" }
     local word

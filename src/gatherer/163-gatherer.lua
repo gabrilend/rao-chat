@@ -25,8 +25,9 @@
 --                   room's log is forced to disk before the answer is
 --                   written; with ram it is not.  A frame whose filing
 --                   throws ends that frame only (R5);
---        typed      takes typed/ files (the viewer's) and writes them with
---                   202's stage;
+--        typed      takes typed/ files (the viewer's, 301's shape or
+--                   211's) and writes them with 202's stage, each under
+--                   its own id and removed only once filed;
 --        sender     202's stage `pass`, never inside the listener (R4),
 --                   each due item in a thread of its own; after each pass
 --                   and each attempt due/ holds one file per (pair, room)
@@ -71,7 +72,11 @@
 -- once), other-port (another port when the mailbox's is held),
 -- fixed-folder (one RAM folder for every home, in 161) and skip-entry (a
 -- sync that misses `entry`, in 161) are the broken versions the referees
--- must catch.  For 215's referees (175): RAO_COPIES_FAIL=hook:<n> makes
+-- must catch.  For 301's (182): RAO_GATHERER_CRASH=typed:<n> ends the
+-- process after the n-th typed file is filed and before it is removed;
+-- RAO_GATHERER_BROKEN=typed-fresh-id (a new id each time a typed file is
+-- taken) and typed-remove-first (removed before it is filed) are the
+-- broken versions.  For 215's referees (175): RAO_COPIES_FAIL=hook:<n> makes
 -- the n-th run of the filing hook throw (hook:all, every run); RAO_COPIES_BROKEN=receive-only
 -- (no hook for own messages), hook-unguarded (the hook inside filing,
 -- unguarded), edits-to-corrections (hand edits of copies sent as
@@ -109,6 +114,7 @@ local copies_m = require("173-text-copies")
 local runlog = require("177-running-log")
 local sharing_m = require("179-sharing")
 local inbox = require("181-inbox-files")
+local message_log = require("081-message-log")
 
 ffi.cdef [[
 int getpid(void);
@@ -253,7 +259,7 @@ state["last-sync"] = STARTED
 
 -- the viewer's inbox (301), from the RAM home just loaded
 do
-    local wrote, failed = pcall(inbox.write_all, FOLDER, home, rooms.list_rooms_by_mailbox(home, MAILBOX))
+    local wrote, failed = pcall(inbox.write_all, FOLDER, home, rooms.list_rooms_by_mailbox(home, MAILBOX), disk_home)
     if not wrote then problem("inbox", tostring(failed), SYNC_EVERY)
     elseif failed > 0 then ram.log(FOLDER, now(), string.format("inbox: %d message file(s) written", failed)) end
 end
@@ -292,7 +298,7 @@ local function run_hooks(tag)
     local ok, why = pcall(copy_hook, tag)
     if not ok then problem("hook-text-copy", "room " .. tostring(tag):sub(1, 8) .. ": " .. tostring(why), SYNC_EVERY) end
     -- the viewer's inbox file (301); the next sync makes it if this fails
-    local wrote, failed = pcall(inbox.write_room, FOLDER, home, tag)
+    local wrote, failed = pcall(inbox.write_room, FOLDER, home, tag, disk_home)
     if not wrote then problem("hook-inbox-file", "room " .. tostring(tag):sub(1, 8) .. ": " .. tostring(failed), SYNC_EVERY) end
 end
 -- }}}
@@ -472,22 +478,47 @@ loop:spawn("filer", function()
     end
 end)
 
+-- {{{ local function file_typed
+-- One typed/ file, taken (its bytes, its path under working/): filed
+-- under its own id (161's typed_id), so a file put back after a crash
+-- between filing and removing is found in the log and not filed again;
+-- then removed.  The written time is 161's typed_written (the file's
+-- own, never later than this clock), and 134 keeps it no earlier than
+-- this home's last own message.  Broken versions for 182's referee 4: typed-fresh-id (a new
+-- id each time the file is taken) and typed-remove-first (the file
+-- removed before the message is filed).
+local typed_taken = 0
+local function file_typed(name, bytes, taken)
+    typed_taken = typed_taken + 1
+    local typed, why = ram.decode_typed(bytes)
+    if not typed then
+        problem("typed", name .. ": " .. why, SYNC_EVERY)
+        os.remove(taken)
+        return
+    end
+    local id = BROKEN ~= "typed-fresh-id" and ram.typed_id(name, bytes) or nil
+    local at = ram.typed_written(typed, math.floor(now()))
+    if BROKEN == "typed-remove-first" then
+        os.remove(taken)
+        crash_if("typed", typed_taken)
+    end
+    local ok, failed = pcall(function()
+        if id and message_log.has_message(home, typed.room, id) then return "duplicate" end
+        return stage:write(typed.room, { kind = "message", text = typed.text, id = id }, at)
+    end)
+    if not ok then problem("typed", name .. ": " .. tostring(failed), SYNC_EVERY)
+    elseif COPIES_BROKEN ~= "receive-only" then run_hooks(typed.room) end
+    -- filed, and the typed file not yet removed: where a crash puts it back
+    crash_if("typed", typed_taken)
+    os.remove(taken)
+end
+-- }}}
+
 loop:spawn("typed", function()
     while true do
         for _, name in ipairs(ram.waiting(FOLDER .. "/typed")) do
             local bytes, taken = ram.take(FOLDER .. "/typed", name)
-            if bytes then
-                local typed, why = ram.decode_typed(bytes)
-                if typed then
-                    local ok, failed = pcall(stage.write, stage, typed.room, { kind = "message", text = typed.text },
-                        math.floor(now()))
-                    if not ok then problem("typed", name .. ": " .. tostring(failed), SYNC_EVERY)
-                    elseif COPIES_BROKEN ~= "receive-only" then run_hooks(typed.room) end
-                else
-                    problem("typed", name .. ": " .. why, SYNC_EVERY)
-                end
-                os.remove(taken)
-            end
+            if bytes then file_typed(name, bytes, taken) end
         end
         wait.sleep(0.2)
     end
@@ -517,6 +548,11 @@ local function write_due()
         if not wanted[name] then os.remove(FOLDER .. "/due/" .. name) end
     end
     due_written = wanted
+    -- the rooms' .room files (301): the pile may have moved
+    if inbox.broken ~= "stale-pile" then
+        local wrote, failed = pcall(inbox.write_facts, FOLDER, home, disk_home, rooms.list_rooms_by_mailbox(home, MAILBOX))
+        if not wrote then problem("inbox", tostring(failed), SYNC_EVERY) end
+    end
 end
 -- }}}
 
@@ -628,7 +664,7 @@ end
 local function sync_now()
     -- the viewer's inbox (301): every room, so an ignore-list change or a
     -- removed file is made good once a cycle
-    local wrote, failed = pcall(inbox.write_all, FOLDER, home, rooms.list_rooms_by_mailbox(home, MAILBOX))
+    local wrote, failed = pcall(inbox.write_all, FOLDER, home, rooms.list_rooms_by_mailbox(home, MAILBOX), disk_home)
     if not wrote then problem("inbox", tostring(failed), SYNC_EVERY) end
     local result = ram.sync(sync_record)
     state["last-sync"] = math.floor(now())

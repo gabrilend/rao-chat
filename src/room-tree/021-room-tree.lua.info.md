@@ -42,6 +42,7 @@ every room's `where` file (022) true.
 | `tops(home)` | home | list of tags | top rooms, by label then tag |
 | `ancestors(home, tag)` | home, tag | list of tags | top first, ending with `tag` |
 | `path_of_labels(home, tag)` | home, tag | string | your labels from the top joined with `/`; a `/` inside a label is written `\/` and `\` as `\\` (022's `split_path` reverses it) |
+| `placements(home)` | home | table | every room from one snapshot: `{ [tag] = { parent = tree parent's tag or "", path = path of labels } }`; for 301's `.room` and `.tree`, which need every room's place at once |
 | `forest(home)` | home | list of nodes | every room as trees; node = `{ tag, label, kind ("group"/"direct"), placed ("declared"/"filed"/"top"), parent_unheld (bool), children (list of nodes) }`, sorted by label then tag.  Drawn by 024. |
 | `file_under(home, tag, under)` | home, tag, tag or `""` | — | files a room under another on your screen, or unfiles it (`""`).  Refuses a room not held here, itself, or a room already inside it (a ring).  Writes through 101 (`write_filed_under`, rings `filed`). |
 | `snapshot(home)` | home | table | the whole tree from one read of every entry, for callers asking many questions: `tags` (list), `entries` (tag → entry), `by_print` (fingerprint → tag), `declared`, `parent` (tag → tag or `""`), `unheld` (tag → bool), `placed` (tag → string), `children` (tag → list), `tops` (list).  Every function above builds one per call, so a caller looping over rooms should take one snapshot instead. |
