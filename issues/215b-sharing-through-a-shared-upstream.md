@@ -142,6 +142,83 @@ edit channel (git) and the delivery channel (sealed frames) never mix.
    and downloadable by anyone sharing the upstream; pulled code never runs
    automatically.**
 
+## Decisions (2026-11-05)
+
+Made by the builder; the owner can overturn each.  Built in
+`src/git-copies/` (179 the sharing module, 180 the referees), with the
+three settings declared in 174 and their options entries in 176, the
+moments called from 211's gatherer (163) and the recheck notice from its
+starter (164).  180 passes 7 of 7 checks (referees 1–6 and a SIGTERM
+check), with real gatherers on loopback whose only upstreams are bare
+repositories in the test folder, each referee catching its broken
+version.
+
+1. **Where the upstream is named.**  The issue says "config names a
+   remote for a mailbox".  Built instead as the mailbox repository's own
+   git remotes, which the person adds with `git remote add`: `upstream`
+   for the mailbox, `room-<token fingerprint>` for one room's own
+   upstream.  So the address and its credentials stay in git's (and
+   ssh's) own place, a person can use every git tool on them, and
+   rao-chat's config holds no secret.  A repository with no such remote
+   shares nothing and says nothing (as the issue asks).
+2. **Child rooms** (open question 1, the owner's): both built, as asked.
+   `only-fully-shared` is built the other way round from the issue's
+   wording.  The issue says a room is pushed "when every pair on its
+   member list is listed as sharing"; that pushes a child room whose
+   members all share, while a top-room member outside the child who also
+   fetches the upstream reads it (referee 5's broken version
+   `members-listed`).  Built: a room is pushed when every pair listed as
+   sharing the upstream is on the room's member list, so nobody who can
+   fetch is outside the room.  The pairs are listed in the repository's
+   git config, `rao.upstream-pair = <address> <port>`, one line each;
+   with none listed, only the person reads the upstream and every room
+   goes there (each room's member list holds the person's own pair).
+3. **The read boundary is the remote.**  `repository-per-room` sends each
+   room's folder only to its own remote; `upstream`, if there is one,
+   still gets the code and (when asked) the running log.  What is pushed
+   is a commit on the remote's own tip whose tree is the remote's with
+   only the shared folders replaced, so no commit of a room left out is
+   reachable from it.  Once pushed, it is merged here with `-s ours`, so
+   the next pull starts from it rather than meeting the home's own copies
+   as a conflict.
+4. **The running log** (open question 3): pushed only when
+   `git.push-running-log = yes`, and only to `upstream`, never to a
+   room's own remote (the log is the mailbox's, not one room's).
+5. **A hosted upstream** (open question 2): any git address is allowed;
+   the plain-text copies are noted here and in 174's comment.  Sealing the
+   copies with the room key would make them unreadable to git's merge,
+   which is the point of 215b; requiring a member-run host is not
+   something the program can check.  The warning in the viewer is 301's.
+   This stays an owner's question: planning section 1 ("not a hosted
+   service") argues for a member-run upstream.
+6. **Credentials** (open question 4): the person's own, wherever git or
+   ssh finds them for that remote.  rao-chat neither makes nor stores a
+   key; the tests' upstreams need none.
+7. **Pulled edits** (open question 5): the working tree shows the merged
+   version; the log stays as it was (215's rule that hand edits are never
+   sent), so the logged version is always one `git log` away.
+8. **A conflict blocks only that remote's rooms push**: the merge is
+   aborted, the paths go to `state.share.conflicts` and the running log as
+   a `share-conflict-…` problem, the code and log are still pushed, and
+   the next moment tries again.  It is never resolved by picking a side.
+9. **The three moments**: start-up (the share thread's first run),
+   each `recheck` file the starter leaves in every gatherer's RAM folder
+   after a public-address check (a file, as with `stop`: 211's
+   gatherers and starter talk only through folders), and the stop, after
+   the last sync.  SIGTERM is blocked at start and polled each second by
+   the state thread, so a service manager's stop runs the same last sync
+   and shut-down moment; a crash still skips it, and the start-up moment
+   catches up.  A mailbox with no upstream does nothing at these moments
+   (no extra sync at start-up: 211's referee 3, 500 connections arriving
+   at once, timed out when one ran).
+10. **The deadline**: `git.share-deadline` (seconds, options value 60).
+    Fetch and push run as background processes killed when it passes,
+    while the gatherer's other threads go on (structure R4); a moment
+    already running makes a new request wait for the next.
+11. **Pulled code**: fetched as remote-tracking refs
+    (`refs/remotes/<remote>/code/<name>`); only `rooms` is ever merged,
+    nothing is checked out or run (open question 7, the owner's).
+
 ## Related documents
 
 - `notes/vision-planning.md` section 15 ("Git per mailbox, signatures

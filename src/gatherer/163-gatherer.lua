@@ -38,6 +38,14 @@
 --                   sync, piles, connections, problems); a `stop` file in
 --                   the folder makes the gatherer sync once more and exit.
 --
+-- Sharing (issue 215b, 179): when the mailbox's repository has a remote
+-- named `upstream` or `room-<fingerprint>`, the share thread pulls and
+-- pushes at start-up, at each `recheck` file the starter leaves after its
+-- public-address check, and at shut-down (the `stop` file, or SIGTERM:
+-- blocked at start and polled each second, so the last sync and the
+-- shut-down push happen); fetch and push run in the background with
+-- git.share-deadline, so delivery never waits on them.
+--
 -- Text copies (issue 215, 173).  git is required: without it the
 -- gatherer writes the problem to `state` and stderr, naming the program,
 -- and exits with status 1.  The mailbox's repository is made at start-up
@@ -99,8 +107,17 @@ local wait = require("162-wait-loop")
 local git = require("172-git")
 local copies_m = require("173-text-copies")
 local runlog = require("177-running-log")
+local sharing_m = require("179-sharing")
 
-ffi.cdef [[ int getpid(void); ]]
+ffi.cdef [[
+int getpid(void);
+typedef struct { unsigned long bits[16]; } rao_sigset_t;
+struct rao_timespec { long tv_sec; long tv_nsec; };
+int sigemptyset(rao_sigset_t *set);
+int sigaddset(rao_sigset_t *set, int signum);
+int sigprocmask(int how, const rao_sigset_t *set, rao_sigset_t *old);
+int sigtimedwait(const rao_sigset_t *set, void *info, const struct rao_timespec *timeout);
+]]
 
 local BROKEN = os.getenv("RAO_GATHERER_BROKEN") or ""
 local COPIES_BROKEN = os.getenv("RAO_COPIES_BROKEN") or ""
@@ -566,6 +583,36 @@ local function sync_copies()
 end
 -- }}}
 
+-- {{{ sharing (215b)
+local share_wanted = "start"
+local sharing_busy = false
+local function share_now(why)
+    if not copies or #sharing_m.remotes(copies.repo) == 0 then return end
+    if why ~= "start" and sharing_m.broken == "start-only" then return end
+    sharing_busy = true
+    local ok, failed = pcall(function()
+        local settings = sharing_m.settings(disk_home)
+        local s = sharing_m.new({
+            home = home, repo = copies.repo, tags = rooms.list_rooms_by_mailbox(home, MAILBOX), name = HOME_NAME,
+            settings = settings, wait = wait.block, now = now,
+            commit = function() copies:sync(rooms.list_rooms_by_mailbox(home, MAILBOX)) end,
+            log = function(words) ram.log(FOLDER, now(), words) end,
+            problem = function(name, words) problem(name, words, SYNC_EVERY) end,
+            clear = function(name) problems[name] = nil end,
+        })
+        sharing_m.moment(s, why)
+        state["share.pulls"] = (tonumber(state["share.pulls"]) or 0) + s.pulls
+        state["share.pushes"] = (tonumber(state["share.pushes"]) or 0) + s.pushes
+        state["share.last"] = why .. " " .. math.floor(now())
+        local conflicts = 0
+        for _ in pairs(s.conflicts) do conflicts = conflicts + 1 end
+        state["share.conflicts"] = conflicts
+    end)
+    sharing_busy = false
+    if not ok then problem("share", tostring(failed), SYNC_EVERY) end
+end
+-- }}}
+
 -- {{{ local function sync_now
 local function sync_now()
     local result = ram.sync(sync_record)
@@ -593,10 +640,39 @@ end
 loop:spawn("sync", function()
     while true do
         wait.sleep(SYNC_EVERY)
-        local ok, failed = pcall(sync_now)
-        if not ok then problem("sync", tostring(failed), SYNC_EVERY) end
+        if not sharing_busy then
+            local ok, failed = pcall(sync_now)
+            if not ok then problem("sync", tostring(failed), SYNC_EVERY) end
+        end
     end
 end)
+
+loop:spawn("share", function()
+    while true do
+        wait.block(function() return share_wanted ~= nil end, now() + 1)
+        if share_wanted then
+            local why = share_wanted
+            share_wanted = nil
+            -- a mailbox with no upstream does nothing here (no extra sync
+            -- at start-up, while connections may be arriving)
+            if copies and #sharing_m.remotes(copies.repo) > 0 then
+                -- what this moment shares is committed first
+                local ok, failed = pcall(sync_now)
+                if not ok then problem("sync", tostring(failed), SYNC_EVERY) end
+                share_now(why)
+            end
+        end
+    end
+end)
+
+-- SIGTERM: blocked here, read by the state thread (the stop it asks for
+-- runs the last sync and the shut-down moment)
+local term_set = ffi.new("rao_sigset_t")
+ffi.C.sigemptyset(term_set)
+ffi.C.sigaddset(term_set, 15)
+ffi.C.sigprocmask(0, term_set, nil)          -- SIG_BLOCK
+local no_wait = ffi.new("struct rao_timespec", { 0, 0 })
+local function terminated() return ffi.C.sigtimedwait(term_set, nil, no_wait) == 15 end
 
 local stopping = false
 loop:spawn("state", function()
@@ -604,11 +680,20 @@ loop:spawn("state", function()
         state.connections = #held
         state.answered = answered_frames
         write_state()
-        if disk.is_file(FOLDER .. "/stop") then
+        if disk.is_file(FOLDER .. "/recheck") then
+            os.remove(FOLDER .. "/recheck")
+            share_wanted = share_wanted or "recheck"
+        end
+        local asked = disk.is_file(FOLDER .. "/stop")
+        local sigterm = not asked and terminated()
+        if asked or sigterm then
             os.remove(FOLDER .. "/stop")
+            wait.block(function() return not sharing_busy end, now() + 120)
+            share_wanted = nil
             sync_now()
-            ram.log(FOLDER, now(), "stopped: asked to; synced once more")
-            state.stopped = "asked"
+            share_now("stop")
+            ram.log(FOLDER, now(), "stopped: " .. (sigterm and "SIGTERM" or "asked to") .. "; synced once more")
+            state.stopped = sigterm and "sigterm" or "asked"
             write_state()
             stopping = true
             return

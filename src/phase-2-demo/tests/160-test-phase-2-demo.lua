@@ -207,6 +207,12 @@ check("git: one commit per sync cycle, by the home's name", gitscene:match("\n%s
 check("git: the running log on its own branch, apart from the rooms' (215a)",
       gitscene:match("running%-log/A%-%d+/0001%.log  %d+ bytes")
       and gitscene:find("the rooms' branch holds 0 log file(s); the log branch 0 room copies", 1, true), gitscene)
+check("git: both homes pulled and pushed a shared upstream; one file per message; the hand edit shared (215b)",
+      gitscene:find("its rooms branch: 2 copies", 1, true) and gitscene:find("B's hand edit is there", 1, true)
+      and gitscene:match("A: %d+ pull%(s%), [1-9]%d* push%(es%), last moment stop; conflicts 0"), gitscene)
+check("git: another home's program is readable and never checked out (215b)",
+      gitscene:match("A holds B's program as upstream/code/B%-%d+, readable and never checked out %(A's checked%-out branch: rooms%)")
+      ~= nil, gitscene)
 
 -- broken version 1: one scene made to fail
 local broken, broken_status = run("RAO_PHASE2_DEMO_BREAK=keys " .. quote(DIR .. "/issues/completed/demos/phase-2-demo")

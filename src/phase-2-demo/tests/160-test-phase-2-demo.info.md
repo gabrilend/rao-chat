@@ -17,7 +17,9 @@ back, and 0 of 10 lost under `acknowledge-after = disk`, 10 of 10 under
 `ram`.  From the signatures scene, every row of 214's table as it says;
 from the git scene (215), both homes' copies byte-identical under the
 token's fingerprint, a hand edit committed with both logs unchanged, and
-commits by the home's name, and the running log on its own branch (215a).
+commits by the home's name, the running log on its own branch (215a), and a shared upstream with one
+file per message, the hand edit shared and the other home's program
+never checked out (215b).
 
 Broken versions it must catch:
 1. A scene made to fail (`RAO_PHASE2_DEMO_BREAK=keys`): reported as

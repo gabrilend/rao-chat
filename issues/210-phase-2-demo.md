@@ -189,9 +189,11 @@ status 2).  160 passes 47 of 47 checks, including two broken versions.
     namespace) and shows the copies byte-identical on both homes, a
     commit per sync cycle by the home's name, a hand edit committed and
     both logs unchanged, `labels`, the code branch, and (with 215a) the
-    running log on a branch of its own.  215b's part is named as not
-    built, and 214's viewer field as waiting on
-    301, so 13 of 16 scenes run in full and 3 with a part missing.
+    running log on a branch of its own, and (with 215b) both homes
+    pulling and pushing through a bare upstream in the demo's folder,
+    with the other home's code branch held and never checked out.
+    214's viewer field is named as waiting on 301, so 14 of 16 scenes run
+    in full and 2 with a part missing.
 
 ## Related documents
 
