@@ -28,6 +28,12 @@
 -- on a genuine claim id with another pair gets `no` from the claimant at
 -- that other pair, if it listens there at all.
 --
+-- Decision of 2026-11-05 (issue 205; the owner may overturn it): a hello
+-- states every pair of its mailbox under one claim id, so `make_for` writes
+-- one line per stated pair, all with the same id, and the answer is `yes`
+-- when any line with that id states the pair asked about.  A did-you still
+-- confirms one pair only.
+--
 -- The file lives in the room's folder (in 211's RAM copy, synced to disk
 -- with the rest of the room).  It is appended to, a line per claim, by the
 -- stage that makes claims (205's and 208's senders); answering only reads.
@@ -94,6 +100,28 @@ function M.make(home, tag, kind, pair, now)
 end
 -- }}}
 
+-- {{{ function M.make_for
+-- home, tag, kind, pairs (a list of {address, port}; more fields are
+-- ignored), now → one new claim id, written once per pair before it is
+-- given back.
+function M.make_for(home, tag, kind, pairs, now)
+    if not M.KINDS[kind] then error("claims: a claim is a hello or a leave, not " .. tostring(kind), 2) end
+    if type(pairs) ~= "table" or #pairs == 0 then error("claims: a claim states at least one pair", 2) end
+    local lines = {}
+    local id = message_log.new_message_id()
+    for _, pair in ipairs(pairs) do
+        if type(pair.address) ~= "string" or not pair.address:match("^%S+$") or type(pair.port) ~= "number" then
+            error("claims: a claim states an address and a port", 2)
+        end
+        lines[#lines + 1] = string.format("%s\t%s\t%s\t%s\t%d\t%d\n", kind, tag, id, pair.address, pair.port, now)
+    end
+    local file = assert(io.open(M.path(home, tag), "ab"))
+    assert(file:write(table.concat(lines)))
+    assert(file:close())
+    return id
+end
+-- }}}
+
 -- {{{ function M.find
 -- home, tag, claim id → the claim, or nil.
 function M.find(home, tag, id)
@@ -108,8 +136,9 @@ end
 -- home, tag, claim id, pair asked at ({address, port}) → "yes" or "no".
 function M.answer(home, tag, id, pair)
     if not M.is_claim_id(id) then return "no" end
-    local claim = M.find(home, tag, id)
-    if claim and claim.address == pair.address and claim.port == pair.port then return "yes" end
+    for _, claim in ipairs(M.read(home, tag)) do
+        if claim.id == id and claim.address == pair.address and claim.port == pair.port then return "yes" end
+    end
     return "no"
 end
 -- }}}

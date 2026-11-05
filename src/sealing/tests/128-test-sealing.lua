@@ -529,6 +529,12 @@ local function referee_records(impl)
         local record = { kind = kind }
         for _, field in ipairs(records.KINDS[kind]) do
             if field.type == "whole" then record[field.name] = 1700000000
+            elseif field.type == "pairs" then
+                -- 205: a list of pairs, with an IPv6 address and every kind
+                record[field.name] = { { kind = "public", address = "203.0.113.5", port = 7501 },
+                    { kind = "hostname", address = "home.example", port = 7501 },
+                    { kind = "ipv6", address = "2001:db8::1", port = 65535 },
+                    { kind = "home-network", address = "192.168.1.4", port = 1 } }
             elseif field.name == "id" then record[field.name] = "abc123"
             elseif field.name == "target" then record[field.name] = kind == "message" and "" or "xyz"
             else record[field.name] = AWKWARD end
@@ -537,7 +543,16 @@ local function referee_records(impl)
         must(not line:find("\n", 1, true), "an encoded record holds a raw line break")
         local back = impl.decode(line)
         for name, value in pairs(record) do
-            must(back[name] == value, kind .. "." .. name .. " did not come back")
+            if type(value) == "table" then
+                must(type(back[name]) == "table" and #back[name] == #value, kind .. "." .. name .. " did not come back")
+                for i, pair in ipairs(value) do
+                    for key, v in pairs(pair) do
+                        must(back[name][i][key] == v, kind .. "." .. name .. " pair " .. i .. " " .. key .. " did not come back")
+                    end
+                end
+            else
+                must(back[name] == value, kind .. "." .. name .. " did not come back")
+            end
         end
         for name in pairs(back) do must(record[name] ~= nil, kind .. " came back with an extra " .. name) end
     end

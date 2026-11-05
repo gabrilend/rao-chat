@@ -80,3 +80,15 @@ owner, most blocking first: `notes/rmail-rubric/open-questions.md`.
   simulated world, now shared with 202's tests (143).  Open questions
   1–5 answered as dated decisions the owner may overturn.  Left: 205's
   hello and 208's leave, which carry the claims.
+- **205** — built 2026-11-05 in `src/delivery/` (145–146), with the
+  `hello` row and a `pairs` field type in 126.  A hello states every pair
+  of the mailbox under one claim id; the sender stage sends it before the
+  first message to a pair never heard from, at start-up, and after a
+  move, and resends it until an ack names the claim.  The receiver calls
+  back each stated pair it has not heard from within the retry ceiling
+  and adds it beside the pairs held; its own hello sent back adds
+  nothing.  Referees 1–6 and part of 7 run in the simulated world.  Open
+  questions 1–2 answered as dated decisions the owner may overturn.
+  Left: the mailbox's pairs (212, a seam until then), the members a
+  joiner receives (207), and the old port kept served after a merge
+  (211).

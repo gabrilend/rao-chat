@@ -9,5 +9,9 @@ keeps one job and one retry timer per (room, pair):
 - `pass`: runs each due job once and moves its timer.
 - `check` (204): a call-back check with its own timer, run in `pass`
   after the deliveries; a `yes` or `no` ends it, and no answer retries it.
+- `hello` (205): a hello job with its own timer, run in `pass` before the
+  deliveries until an ack names its claim.  Made by `write` before the
+  first message to a pair never heard from, by `start` for every pair, and
+  afresh by `moved`; only when the stage's seams give `own_pairs` (212).
 
 211 runs the stage.  Issue 202, steps 2 and 4.

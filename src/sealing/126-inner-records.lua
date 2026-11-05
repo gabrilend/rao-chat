@@ -14,13 +14,22 @@
 -- else.
 --
 -- The table holds the kinds whose fields are settled: the log's three
--- (message, correction, deletion), 202's `ack`, and 204's `did-you` and
--- `did-you-answer`.  Every other kind 201 names (hello, members,
--- members-ask, leave, summary, discover, here) gets its row from the issue
--- that defines its fields (205, 207, 208, 209, 213), when that issue is
--- built.  Until then it is an unknown kind, and an unknown kind is an
+-- (message, correction, deletion), 202's `ack`, 204's `did-you` and
+-- `did-you-answer`, and 205's `hello`.  Every other kind 201 names
+-- (members, members-ask, leave, summary, discover, here) gets its row from
+-- the issue that defines its fields (207, 208, 209, 213), when that issue
+-- is built.  Until then it is an unknown kind, and an unknown kind is an
 -- error.  205's hello and 208's leave each carry a `claim` field: the
 -- claim id 204's `claims` file keeps (141).
+--
+-- `hello` (issue 205, decision of 2026-11-05; the owner may overturn it):
+-- `claim`, the claim id (32 hex), and `pairs`, every pair the mailbox
+-- states, one per line, each "<kind> <address> <port>": kind is one of
+-- PAIR_KINDS (212's: public, hostname, ipv6, home-network), the port a
+-- whole number 1 to 65535.  The lines are joined with "\n", which the
+-- escaping writes as \n, so the record stays one line.  A pair without
+-- its port, an unknown kind, or no pairs at all fails to decode: "no
+-- default port numbers" (the owner), so nothing is guessed.
 --
 -- `did-you` and `did-you-answer` (issue 204, decision of 2026-11-05; the
 -- owner may overturn it): a `did-you` names the claim id (32 hex) and the
@@ -57,6 +66,10 @@ KINDS.ack = { { name = "answers", type = "text" } }
 KINDS["did-you"] = { { name = "claim", type = "text" }, { name = "address", type = "text" },
                      { name = "port", type = "whole" } }
 KINDS["did-you-answer"] = { { name = "claim", type = "text" }, { name = "answer", type = "text" } }
+KINDS.hello = { { name = "claim", type = "text" }, { name = "pairs", type = "pairs" } }
+
+-- The kinds of pair a `pairs` field may name (212).
+local PAIR_KINDS = { public = true, hostname = true, ipv6 = true, ["home-network"] = true }
 
 local ESCAPE = { ["\\"] = "\\\\", ["\t"] = "\\t", ["\n"] = "\\n", ["\r"] = "\\r" }
 local UNESCAPE = { ["\\"] = "\\", t = "\t", n = "\n", r = "\r" }
@@ -94,6 +107,48 @@ local function split_tabs(line)
 end
 -- }}}
 
+-- {{{ local function pairs_text
+-- A list of {kind, address, port} → the `pairs` field's text (unescaped).
+local function pairs_text(name, list)
+    if type(list) ~= "table" or #list == 0 then
+        error("inner record: '" .. name .. "' must be a list of at least one pair", 0)
+    end
+    local lines = {}
+    for index, pair in ipairs(list) do
+        local where = "inner record: '" .. name .. "' pair " .. index
+        if not PAIR_KINDS[pair.kind] then error(where .. " has no known kind: " .. tostring(pair.kind), 0) end
+        if type(pair.address) ~= "string" or not pair.address:match("^%S+$") then
+            error(where .. " has no address", 0)
+        end
+        if type(pair.port) ~= "number" or pair.port ~= math.floor(pair.port) or pair.port < 1 or pair.port > 65535 then
+            error(where .. " has no port (a port is never guessed): " .. tostring(pair.port), 0)
+        end
+        lines[#lines + 1] = string.format("%s %s %d", pair.kind, pair.address, pair.port)
+    end
+    return table.concat(lines, "\n")
+end
+-- }}}
+
+-- {{{ local function read_pairs
+-- The `pairs` field's text (unescaped) → the list; anything else refused.
+local function read_pairs(name, text)
+    local list = {}
+    for line in (text .. "\n"):gmatch("([^\n]*)\n") do
+        local kind, address, port = line:match("^(%S+) (%S+) (%d+)$")
+        if not kind then
+            error("inner record: '" .. name .. "' line is not 'kind address port': " .. line:sub(1, 60), 0)
+        end
+        if not PAIR_KINDS[kind] then error("inner record: '" .. name .. "' has an unknown kind: " .. kind:sub(1, 20), 0) end
+        port = tonumber(port)
+        if #line > 300 or port < 1 or port > 65535 then
+            error("inner record: '" .. name .. "' port out of range: " .. line:sub(1, 60), 0)
+        end
+        list[#list + 1] = { kind = kind, address = address, port = port }
+    end
+    return list
+end
+-- }}}
+
 -- {{{ local function row_of
 local function row_of(kind)
     local row = KINDS[kind]
@@ -118,6 +173,8 @@ local function encode(record)
                 error("inner record: '" .. field.name .. "' must be a whole number, got " .. tostring(value), 0)
             end
             parts[#parts + 1] = string.format("%d", value)
+        elseif field.type == "pairs" then
+            parts[#parts + 1] = escape(pairs_text(field.name, value))
         else
             if type(value) ~= "string" then
                 error("inner record: '" .. field.name .. "' is missing", 0)
@@ -149,6 +206,8 @@ local function decode(line)
                 error("inner record: '" .. field.name .. "' is not a whole number: " .. raw:sub(1, 20), 0)
             end
             record[field.name] = tonumber(raw)
+        elseif field.type == "pairs" then
+            record[field.name] = read_pairs(field.name, unescape(raw))
         else
             record[field.name] = unescape(raw)
         end
@@ -173,4 +232,5 @@ return {
     kinds = kinds,
     escape = escape,
     KINDS = KINDS,
+    PAIR_KINDS = PAIR_KINDS,
 }

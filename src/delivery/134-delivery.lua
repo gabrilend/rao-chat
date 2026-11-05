@@ -21,6 +21,13 @@
 -- the deliveries, ended by a `yes` or a `no`, and tried again on no
 -- answer.
 --
+-- Hellos (205).  The stage also keeps one hello job per (room, pair)
+-- (145 sends it), tried in `pass` before the deliveries, ended by an ack
+-- naming its claim, tried again otherwise.  Hellos are made only when the
+-- stage's seams give `own_pairs` (212's): before the first message to a
+-- pair never heard from (`write`), at start-up to every send-list pair
+-- (`start`), and afresh after a confirmed move (`moved`).
+--
 -- What runs where is 211's: it calls `write` from the viewer's stage,
 -- `pass` from a sender stage that never blocks the receiving stage (R6),
 -- and may run the jobs of one pass in parallel workers, as long as one
@@ -45,6 +52,7 @@ local delivered = require("130-delivered")
 local timer = require("131-retry-timer")
 local send = require("132-send")
 local call_back = require("142-call-back")
+local hello = require("145-hello")
 
 local M = {}
 
@@ -93,7 +101,8 @@ Stage.__index = Stage
 function M.new_stage(home, seams, floor, ceiling, answer_time)
     if not floor then floor, ceiling = timer.settings(home) end
     return setmetatable({ home = home, seams = seams, floor = floor, ceiling = ceiling,
-        answer_time = answer_time, jobs = {}, order = {}, checks = {}, check_order = {} }, Stage)
+        answer_time = answer_time, jobs = {}, order = {}, checks = {}, check_order = {},
+        hellos = {}, hello_order = {} }, Stage)
 end
 -- }}}
 
@@ -121,7 +130,7 @@ end
 -- One try at one check: a confirmation or refusal ends it; no answer is
 -- one failure of its timer, and it is tried again (204, R6).
 function Stage:run_check(check, now)
-    local ok, state, why = pcall(call_back.run, self.home, check, self.answer_time, self.seams)
+    local ok, state, why = pcall(call_back.run, self.home, check, self.answer_time, self.seams, now)
     if not ok then state, why = "unconfirmed", tostring(state) end
     check.tries = check.tries + 1
     check.state, check.why = state, why
@@ -132,6 +141,59 @@ function Stage:run_check(check, now)
         check.done = true
     end
     return state
+end
+-- }}}
+
+-- {{{ function Stage:hello
+-- 205: tag, pair, now, fresh (true: a new hello even if one was sent this
+-- run — a move) → the hello job, due now when made.  One per (room, pair)
+-- per run of the stage otherwise.
+function Stage:hello(tag, pair, now, fresh)
+    local k = job_key(tag, pair)
+    local job = self.hellos[k]
+    if job and not fresh then return job end
+    if not job then self.hello_order[#self.hello_order + 1] = k end
+    job = { tag = tag, pair = { address = pair.address, port = pair.port },
+            timer = timer.new(self.floor, self.ceiling), tries = 0 }
+    job.timer:due_now(now)
+    self.hellos[k] = job
+    return job
+end
+-- }}}
+
+-- {{{ function Stage:run_hello
+-- One try at one hello: an ack naming its claim ends it; anything else,
+-- an error included, is one failure of its timer.
+function Stage:run_hello(job, now)
+    local ok, sent, why = pcall(hello.attempt, self.home, job, self.seams, now)
+    job.tries = job.tries + 1
+    if ok and sent then
+        job.timer:held()
+        job.done = true
+    else
+        job.why = ok and why or tostring(sent)
+        job.timer:failed(self.seams.now and self.seams.now() or now)
+    end
+    return job.done == true
+end
+-- }}}
+
+-- {{{ function Stage:announce
+-- A hello to every pair on every send list of this home: start-up, and a
+-- move (fresh).  Nothing without own_pairs (212 not wired).
+function Stage:announce(now, fresh)
+    if not self.seams.own_pairs then return end
+    for _, tag in ipairs(rooms.list_rooms(self.home)) do
+        for _, pair in ipairs(recipients.send_list(self.home, tag)) do self:hello(tag, pair, now, fresh) end
+    end
+end
+-- }}}
+
+-- {{{ function Stage:moved
+-- 212 reports a confirmed move: a fresh hello, with the new pairs, to
+-- every pair.
+function Stage:moved(now)
+    self:announce(now, true)
 end
 -- }}}
 
@@ -161,6 +223,18 @@ end
 -- write, then wake the send list: what the viewer's stage calls.
 function Stage:write(tag, record, now)
     local word, id, send_list = M.write(self.home, tag, record, now)
+    if self.seams.own_pairs then
+        -- 205: a hello before the first message to a pair never heard from
+        for _, member in ipairs(recipients.members(self.home, tag)) do
+            if member.heard == 0 then
+                for _, pair in ipairs(send_list) do
+                    if pair.address == member.address and pair.port == member.port then
+                        self:hello(tag, pair, now)
+                    end
+                end
+            end
+        end
+    end
     self:wake(tag, send_list, now)
     return word, id
 end
@@ -168,8 +242,9 @@ end
 
 -- {{{ function Stage:start
 -- At start-up: every pair on every send list that is missing something is
--- due now (open question 2).
+-- due now (open question 2), and gets a hello (205) when own_pairs is given.
 function Stage:start(now)
+    self:announce(now)
     for _, tag in ipairs(rooms.list_rooms(self.home)) do
         for _, pair in ipairs(recipients.send_list(self.home, tag)) do
             if #delivered.missing_for(self.home, tag, pair) > 0 then
@@ -224,6 +299,15 @@ end
 -- given) → the jobs run, in the order they were made.
 function Stage:pass(now)
     local ran = {}
+    -- 205's hellos, before the deliveries
+    for _, k in ipairs(self.hello_order) do
+        local job = self.hellos[k]
+        local at = self.seams.now and self.seams.now() or now
+        if not job.done and job.timer:is_due(at) then
+            self:run_hello(job, at)
+            ran[#ran + 1] = job
+        end
+    end
     for _, k in ipairs(self.order) do
         local job = self.jobs[k]
         local at = self.seams.now and self.seams.now() or now
@@ -255,6 +339,10 @@ function Stage:next_due()
     end
     for _, check in pairs(self.checks) do
         local due = not check.done and check.timer.due
+        if due and (not earliest or due < earliest) then earliest = due end
+    end
+    for _, job in pairs(self.hellos) do
+        local due = not job.done and job.timer.due
         if due and (not earliest or due < earliest) then earliest = due end
     end
     return earliest

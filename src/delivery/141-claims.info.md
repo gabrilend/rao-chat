@@ -6,4 +6,5 @@ left") and its answer when asked about one (issue 204, steps 1 and 2).
 id of 32 hex characters. `answer` says `yes` only if that file holds the
 id stating the pair asked about, and `no` otherwise. Answering only reads
 the file, so a restart forgets nothing and a replayed question gets the
-same answer.
+same answer.  `make_for` (205) writes one line per pair a hello states,
+all with one claim id; each pair is still confirmed on its own.

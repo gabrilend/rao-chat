@@ -120,6 +120,78 @@ the receiving side — call back each pair, add what is new.
 3. *(answered 2026-09-27)* **Learning your own outside port.**  Configured
    by the person per mailbox (212); no sweep.
 
+## Decisions (2026-11-05)
+
+Made by the builder.  The owner's standing instruction is to answer open
+questions rather than wait, choosing the option that is easiest to undo.
+The owner can overturn each one; what overturning costs is said with it.
+Built in `src/delivery/` (145 hello, 146's referees), the `hello` row and
+the `pairs` field type of `src/sealing/126-inner-records.lua`, `make_for`
+in 141, hello jobs in 134's stage, and the hand-over in 133's `serve`.
+212 (where a mailbox can be reached) and 207 (members lists) are not
+built; what stands in for them is said below.
+
+1. **A new member gets no history** (open question 1).  202's decision 3
+   stands: a pair joins the `delivered` file at the next own write, with
+   everything before it counted as delivered.  Undo: 130's
+   `starting_line`, as 202 says.
+2. **Start-up hellos go to every pair on every send list** (open question
+   2), as the issue says.  The cost is bounded on the receiving side: a
+   pair already a member and heard from within the retry ceiling is not
+   called back, so an idle restart is one frame each way (referee 5).
+   Undo: skip pairs heard from recently in `Stage:announce`, behind a new
+   setting.
+3. **The `pairs` field** holds one pair per line, "kind address port",
+   the lines joined with a line break that the log's escaping writes as
+   `\n`.  Kinds are 212's four (`public`, `hostname`, `ipv6`,
+   `home-network`); a port is 1 to 65535 and never guessed.  A pair
+   missing its port, an unknown kind, or an empty list is refused on
+   encoding and decoding.  Undo: the field type is two functions in 126.
+4. **One claim id per hello**, one `claims` line per stated pair, all with
+   that id (141's `make_for`).  The answer is `yes` when any line with
+   that id states the pair asked about, so each pair is still confirmed on
+   its own.  Undo: one id per pair, a list of ids in the record.
+5. **The ack names the claim id**: 133 answers a hello with an `ack`
+   holding the claim id and `filed`, or `duplicate` when this stage has
+   heard that claim before (kept in memory).  An ack naming the claim ends
+   the sender's hello job; anything else is a failure of its timer.
+6. **Where this mailbox can be reached comes from a seam** until 212 is
+   built: `seams.own_pairs(tag)` on the sender stage.  A stage without it
+   sends no hellos and `join` refuses; nothing is guessed.
+   `home-network` pairs are stated only to a housemate,
+   `seams.is_housemate(pair)` (213's); without that seam nobody is one.
+   Undo: 212 and 213 give the seams; nothing here changes.
+7. **A confirmed hello counts as hearing from the pair**: 142's hello
+   action is now 103's `heard_from` at the confirmation time (add, then
+   record the time), not `add_member` alone.  This amends 204's decision
+   8.  It is what lets the receiver skip pairs heard recently.  Undo: one
+   line in 142's `ACTIONS`.
+8. **"Silent past the retry ceiling"** is read as: not a member, or a
+   member never heard from (heard 0), or last heard longer ago than the
+   stage's `delivery.retry-ceiling`.  Only those pairs are called back.
+9. **Ignored pairs are not called back**: 042's `refused_as_member`
+   would refuse them at the add anyway.
+10. **Reflection** (sealing R9): a hello whose claim id is in this room's
+    own `claims` file is this home's own, sent back; nothing is added and
+    nobody is called.
+11. **"Before the first message to a pair not yet confirmed"** is read
+    as: before the first message, in this run of the stage, to a member
+    never heard from.  Hello jobs, like 202's timers, are not kept across
+    a restart; start-up re-announces anyway.
+12. **Hellos run first in a pass**, before deliveries and checks, so a
+    pair hears where to call back before it gets the message.  A hello
+    job keeps one claim and resends the same record on every retry; a
+    move (`Stage:moved`) makes a fresh job with a new claim.
+13. **Joining trusts the pair the person gave**: it is added as a member
+    at once (with 103's refusals and flag), because the person typed it.
+    Every field of `join`'s spec is required, like `make_room`'s.
+14. **Referee 1's second half** ("A receives B's members") is 207's.
+    The referee checks the join, the call-back and the add.
+15. **Referee 7 is built in part.**  A move announces the new pair, which
+    is called back and added beside the old one.  Keeping the old port
+    served until every member has called back on the new one belongs to
+    the gatherer (211), which owns the listeners; it is not built.
+
 ## Related documents
 
 - `notes/vision-planning.md` sections 3 ("Joining"), 15; section 14 (the
