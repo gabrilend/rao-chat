@@ -13,4 +13,6 @@ before a hello or a leave is trusted (issue 204, step 3).
   hello that leaves the pair a member also keeps its claim in the room's
   `vouched` file (152's `vouch`; 207), so a members list can carry it. On `no`, the check ends. With no answer the check stays
   unconfirmed and is tried again on 202's timers.
+  A confirmed `discover` (213) keeps the pair as a housemate (154's
+  `keep`), never as a member.
 - `answer_frame`: what 133 sends back for a `did-you`.

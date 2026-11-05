@@ -18,7 +18,7 @@
 -- `did-you-answer`, 205's `hello`, 208's `leave`, and 207's
 -- `members-digest`, `members-ask` and `members`.  Every other kind 201
 -- names (summary, discover, here) gets its row from the issue that
--- defines its fields (209, 213), when that issue is built.  Until then it is an unknown kind, and an unknown kind is an
+-- defines its fields (209), when that issue is built.  Until then it is an unknown kind, and an unknown kind is an
 -- error.  205's hello and 208's leave each carry a `claim` field: the
 -- claim id 204's `claims` file keeps (141).
 --
@@ -46,6 +46,14 @@
 --                   and `claims`: one claim id per pair, in order,
 --                   separated by single spaces — the claim that pair
 --                   answered yes to, so a receiver can call it back (204)
+--
+-- `discover` and `here` (issue 213, decision of 2026-11-05; the owner may
+-- overturn it): the hello's two fields, `claim` and `pairs`, sent as UDP
+-- datagrams (a sealed frame without its 4 length bytes).  The pairs are
+-- every pair the sending mailbox states, its `home-network` pair (this
+-- machine's home address and the mailbox's listening port) among them:
+-- the address to answer and call back is read from inside the seal, never
+-- from the packet's source.  A `here` answers a `discover`.
 --
 -- `did-you` and `did-you-answer` (issue 204, decision of 2026-11-05; the
 -- owner may overturn it): a `did-you` names the claim id (32 hex) and the
@@ -90,6 +98,9 @@ KINDS.members = { { name = "id", type = "text" }, { name = "digest", type = "tex
                   { name = "pairs", type = "pairs" }, { name = "claims", type = "text" } }
 KINDS.leave = { { name = "claim", type = "text" }, { name = "written", type = "whole" },
                 { name = "pairs", type = "pairs" } }
+-- 213's datagrams: the hello's form (see the header).
+KINDS.discover = KINDS.hello
+KINDS.here = KINDS.hello
 
 -- The kinds of pair a `pairs` field may name (212).
 local PAIR_KINDS = { public = true, hostname = true, ipv6 = true, ["home-network"] = true }

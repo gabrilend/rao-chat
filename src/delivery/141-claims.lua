@@ -44,7 +44,8 @@ local message_log = require("081-message-log")
 
 local M = {}
 
-M.KINDS = { hello = true, leave = true }
+-- 213 adds `discover`: the claim a discover or here datagram carries.
+M.KINDS = { hello = true, leave = true, discover = true }
 
 -- {{{ function M.path
 function M.path(home, tag)

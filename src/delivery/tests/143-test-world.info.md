@@ -9,6 +9,12 @@ that 202's referees (137) and 204's (144) share it. It has:
   stage, that can be restarted on the same home;
 - the check kit.
 
+A home made with `lan` (213) has `housemates` (154): it hears datagrams
+sent on its home network (`world.send_datagram`, the multicast group
+included), routes connections through its kept housemates, and connects
+from its home address; `world.refuse` models a router that cannot loop a
+connection back in.
+
 Each home's serving stage hands hellos and leaves to 147's `on_claim`
 and members frames to 152's `answer` (207).
 

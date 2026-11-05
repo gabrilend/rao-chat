@@ -150,6 +150,13 @@ M.ACTIONS = {
     leave = function(home, tag, pair, now, check)
         return require("147-leaving").confirm(home, tag, pair, now, check)
     end,
+    -- 213 (decision of 2026-11-05; the owner may overturn it): a confirmed
+    -- discovery keeps the pair as a housemate (154's `keep`), never as a
+    -- member.  The check carries the housemates table that made it.
+    discover = function(home, tag, pair, now, check)
+        if not (check and check.housemates) then error("a discover check without its housemates", 0) end
+        return check.housemates:keep(tag, check, now)
+    end,
 }
 -- }}}
 

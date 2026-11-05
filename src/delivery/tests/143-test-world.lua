@@ -16,6 +16,15 @@
 -- The relay records every connection attempt in world.attempts
 -- ({from, address, port}), and its connections have LuaSocket's
 -- settimeout, so a reader can cut its wait (204's answer time).
+-- world.refuse(from_host, pair), when set, refuses a connection (a router
+-- that cannot loop back in through its public address, 213).
+--
+-- Datagrams (213): world.send_datagram delivers a home's UDP datagram to
+-- the home listening at that address and port on the same home network
+-- (`lan`), or, to the multicast group, to every other home on that
+-- network listening on that port.  Every datagram is recorded in
+-- world.datagrams ({from, host, port}); world.rewrite_source(host), when
+-- set, gives the source the receiver sees (a router rewriting it).
 
 return function(DIR, name)
 
@@ -32,6 +41,7 @@ local delivery = require("134-delivery")
 local leaving = require("147-leaving")
 local members = require("152-members")
 local reach = require("149-reach")
+local housemates = require("154-housemates")
 
 local T = { passed = 0, failed = 0 }
 -- {{{ local function check
@@ -241,6 +251,10 @@ function world.reset()
     world.listeners = {}
     world.routes = {}
     world.next_port = 40000
+    world.refuse = nil
+    world.datagrams = {}
+    world.udp = {}
+    world.rewrite_source = nil
 end
 -- }}}
 
@@ -250,6 +264,7 @@ end
 -- handshake whether or not the program is accepting).
 function world.connect(from_host, pair)
     world.attempts[#world.attempts + 1] = { from = from_host, address = pair.address, port = pair.port }
+    if world.refuse and world.refuse(from_host, pair) then return nil, "connection refused (no loop back)" end
     local listener = world.listeners[pair.address .. " " .. pair.port]
     if not listener or not listener.up then return nil, "connection refused" end
     local route = world.routes[pair.address .. " " .. pair.port] or {}
@@ -262,6 +277,32 @@ function world.connect(from_host, pair)
         peer = { host = from_host, port = world.next_port }, listen_port = listener.port }, Conn)
     listener.queue[#listener.queue + 1] = server
     return client
+end
+-- }}}
+
+-- {{{ function world.send_datagram
+-- from (the sending node), host, port, bytes → true.  Delivered a little
+-- later, in its own thread, to each receiving node's housemates.
+function world.send_datagram(from, host, port, bytes)
+    world.datagrams[#world.datagrams + 1] = { from = from.name, host = host, port = port }
+    local source = { host = from.lan_host or from.host, port = 50000 }
+    if world.rewrite_source then source.host = world.rewrite_source(source.host) end
+    local targets = {}
+    for _, entry in pairs(world.udp) do
+        local to = entry.node
+        if to ~= from and not to.retired and to.lan and to.lan == from.lan and entry.port == port
+            and (host == housemates.GROUP or entry.host == host) then
+            targets[to] = true
+        end
+    end
+    for to in pairs(targets) do
+        sim.spawn("datagram to " .. to.name, function()
+            sim.block(function() return false end, sim.now + 0.01)
+            to.datagrams_heard = (to.datagrams_heard or 0) + 1
+            to.housemates:receive(bytes, source, port, math.floor(sim.now))
+        end)
+    end
+    return true
 end
 -- }}}
 
@@ -303,6 +344,11 @@ local START_CONFIG = first_variants()
 -- (205).  options.ports: more listening ports than `port`, each served
 -- with its own keyring.  options.no_room: the home
 -- starts with no room (a joiner; node.tag is nil until it joins).
+-- options.lan (213): the home network's name, with options.private (this
+-- machine's home address, also one of `hosts`) and options.networks
+-- (read_networks's form): the home gets node.housemates (154), routes its
+-- connections through it, hears datagrams, and connects from its home
+-- address.
 -- Hellos and leaves heard are handed to 147's on_claim (205, 208);
 -- members digests, asks and lists to 152's answer (207).
 local function new_node(name, hosts, port, options)
@@ -327,13 +373,16 @@ local function new_node(name, hosts, port, options)
     local node = { name = name, host = hosts[1], port = port, home = home, tag = tag, problems = {},
                    queue = {}, answers = {}, home_path = home_path, ram = home_path .. "/ram" }
     local stage_seams = {
-        connect = function(pair) return world.connect(node.host, pair) end,
+        connect = function(pair)
+            if node.housemates then pair = node.housemates:route(pair) end
+            return world.connect(node.lan_host or node.host, pair)
+        end,
         now = function() return sim.now end,
     }
     if options.announce then
         os.execute("mkdir -p '" .. node.ram .. "'")
         reach.write_fact(node.ram, { address = hosts[1], confirmed = math.floor(sim.now), operators = { "test" } })
-        local real = reach.seam(home, node.ram, function() return { ipv6 = {}, private = {} } end)
+        local real = reach.seam(home, node.ram, function() return { ipv6 = {}, private = { options.private } } end)
         stage_seams.own_pairs = function(room_tag)
             -- the person has written every mailbox's outside port
             local written = reach.read_outside_ports(home)
@@ -346,6 +395,23 @@ local function new_node(name, hosts, port, options)
         end
     end
     node.stage = delivery.new_stage(home, stage_seams)
+    if options.lan then
+        node.lan, node.lan_host = options.lan, options.private
+        stage_seams.is_housemate = function(pair) return node.housemates:is_housemate(pair) end
+        node.logged = {}
+        node.housemates = housemates.new({ home = home, stage = node.stage, ram_root = node.ram,
+            networks = function() return options.networks end,
+            own_pairs = stage_seams.own_pairs,
+            fact = function() return reach.read_fact(node.ram) end,
+            send = function(host, to_port, bytes) return world.send_datagram(node, host, to_port, bytes) end,
+            log = function(words) node.logged[#node.logged + 1] = words end,
+            listening = function(room_tag)
+                return rooms.read_mailbox(home, rooms.read_entry(home, room_tag).mailbox).port
+            end })
+        for _, host in ipairs(hosts) do
+            world.udp[host .. " " .. port] = { node = node, host = host, port = port }
+        end
+    end
     for _, listening in ipairs({ port, unpack(options.ports or {}) }) do
         for _, host in ipairs(hosts) do
             world.listeners[host .. " " .. listening] = { up = true, queue = node.queue, port = listening }
@@ -358,7 +424,10 @@ local function new_node(name, hosts, port, options)
             ring = function() return keyring.for_port(rooms, home, conn.listen_port or port) end,
             now = function() return math.floor(sim.now) end,
             on_problem = function(_, words) node.problems[#node.problems + 1] = words end,
-            on_opened = function(room_tag, peer) node.stage:heard_at(room_tag, peer.host, sim.now) end,
+            on_opened = function(room_tag, peer)
+                node.stage:heard_at(room_tag, peer.host, sim.now)
+                if node.housemates then node.housemates:from_connection(room_tag, peer, math.floor(sim.now)) end
+            end,
             on_claim = function(room_tag, record, peer)
                 return leaving.on_claim(node.stage, room_tag, record, peer, math.floor(sim.now))
             end,
