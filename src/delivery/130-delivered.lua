@@ -5,7 +5,7 @@
 -- and no queue file.  Beside a room's `log`, a file called `delivered`
 -- keeps one line per pair on the send list:
 --
---   <address> TAB <port> TAB <mark> TAB <ids>
+--   <address> TAB <port> TAB <mark> TAB <ids> TAB <after>
 --
 --   mark   whole seconds since 1970: every own record (`from` = "me")
 --          written at or before it has been acknowledged by this pair
@@ -13,6 +13,11 @@
 --          acknowledged, separated by single spaces (ids hold only
 --          letters, digits, "-" and "_"), in the order acknowledged;
 --          empty when none
+--   after  (since 209) the id of the newest own record in the log when
+--          the line was made, or "-" when there was none: the records
+--          after it in file order are the ones meant for this pair, which
+--          209's cross-check may send again.  A line without the field
+--          (made before 209) reads as "-".
 --
 -- "Missing for a pair" is worked out, never stored: the own records in
 -- the log, in file order, written after the pair's mark and not in its
@@ -63,11 +68,15 @@ function M.read(home, tag)
     local number = 0
     for line in disk.read_all(path):gmatch("[^\n]+") do
         number = number + 1
-        local address, port, mark, ids = line:match("^([^\t]+)\t([1-9]%d*)\t(%d+)\t([%w%-_ ]*)$")
+        local address, port, mark, ids, after = line:match("^([^\t]+)\t([1-9]%d*)\t(%d+)\t([%w%-_ ]*)\t([%w%-_]+)$")
         if not address then
-            error("delivered: line " .. number .. " of " .. path .. " is not 'address TAB port TAB mark TAB ids'", 0)
+            address, port, mark, ids = line:match("^([^\t]+)\t([1-9]%d*)\t(%d+)\t([%w%-_ ]*)$")
+            after = "-"
         end
-        local entry = { address = address, port = tonumber(port), mark = tonumber(mark), ids = {} }
+        if not address then
+            error("delivered: line " .. number .. " of " .. path .. " is not 'address TAB port TAB mark TAB ids TAB after'", 0)
+        end
+        local entry = { address = address, port = tonumber(port), mark = tonumber(mark), ids = {}, after = after }
         for id in ids:gmatch("%S+") do entry.ids[#entry.ids + 1] = id end
         local k = key(address, entry.port)
         if lines[k] then error("delivered: " .. k .. " has two lines in " .. path, 0) end
@@ -85,7 +94,7 @@ function M.write(home, tag, lines, order)
         local entry = lines[k]
         if entry then
             out[#out + 1] = table.concat({ entry.address, tostring(entry.port),
-                string.format("%d", entry.mark), table.concat(entry.ids, " ") }, "\t") .. "\n"
+                string.format("%d", entry.mark), table.concat(entry.ids, " "), entry.after or "-" }, "\t") .. "\n"
         end
     end
     disk.write_atomic(M.path(home, tag), table.concat(out))
@@ -113,7 +122,8 @@ local function starting_line(address, port, own)
     for _, record in ipairs(own) do
         if record.written > newest then newest = record.written end
     end
-    local entry = { address = address, port = port, mark = math.max(newest - 1, 0), ids = {} }
+    local entry = { address = address, port = port, mark = math.max(newest - 1, 0), ids = {},
+                    after = #own > 0 and own[#own].id or "-" }
     for _, record in ipairs(own) do
         if record.written > entry.mark then entry.ids[#entry.ids + 1] = record.id end
     end
@@ -216,6 +226,60 @@ function M.acknowledge(home, tag, pair, ids)
         entry.ids = kept
     end
     M.write(home, tag, lines, order)
+end
+-- }}}
+
+-- {{{ function M.meant_for
+-- home, tag, pair → the set of own record ids written for this pair: those
+-- after its line's join point in file order.  None without a line.
+function M.meant_for(home, tag, pair)
+    local entry = (M.read(home, tag))[key(pair.address, pair.port)]
+    local set = {}
+    if not entry then return set end
+    local counting = entry.after == "-"
+    for _, record in ipairs(M.own_records(home, tag)) do
+        if counting then set[record.id] = true end
+        if record.id == entry.after then counting = true end
+    end
+    return set
+end
+-- }}}
+
+-- {{{ function M.forget
+-- 209: home, tag, pair, ids (own records the pair turned out to lack) →
+-- the ids it had counted as acknowledged and now does not.  The mark goes
+-- back to just before the earliest of them, and every other own record
+-- the mark covered stays acknowledged in the ids, so only these are
+-- missing again; only an acknowledgement marks them again (R4).
+function M.forget(home, tag, pair, ids)
+    local lines, order = M.read(home, tag)
+    local entry = lines[key(pair.address, pair.port)]
+    if not entry or #ids == 0 then return {} end
+    local own = M.own_records(home, tag)
+    local drop, acked, forgotten = {}, {}, {}
+    for _, id in ipairs(ids) do drop[id] = true end
+    for _, id in ipairs(entry.ids) do acked[id] = true end
+    local lowest = nil
+    for _, record in ipairs(own) do
+        if drop[record.id] and (record.written <= entry.mark or acked[record.id]) then
+            forgotten[#forgotten + 1] = record.id
+            if record.written <= entry.mark and (not lowest or record.written < lowest) then lowest = record.written end
+        end
+    end
+    if #forgotten == 0 then return forgotten end
+    local old_mark = entry.mark
+    if lowest then entry.mark = lowest - 1 end
+    local kept, seen = {}, {}
+    for _, record in ipairs(own) do
+        local covered_before = record.written <= old_mark or acked[record.id]
+        if record.written > entry.mark and covered_before and not drop[record.id] and not seen[record.id] then
+            seen[record.id] = true
+            kept[#kept + 1] = record.id
+        end
+    end
+    entry.ids = kept
+    M.write(home, tag, lines, order)
+    return forgotten
 end
 -- }}}
 

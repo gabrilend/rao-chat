@@ -79,7 +79,10 @@ change bell per running program.
           where               this folder's path and the path of labels (102's)
           log                 the messages (105's format); made EMPTY by make_room
           delivered           what each pair on the send list has acknowledged (phase 2, 202's
-                              format); made by 202 at the first own write; absent = no lines
+                              format, with 209's `after` field); made by 202 at the first own
+                              write; absent = no lines
+          conflicts           message ids two members hold with different contents, both
+                              versions, one line each (phase 2, 209); absent = none
           claims              the hellos and leaves this home has claimed, one line each (phase 2,
                               204's format); appended by the claim's sender; absent = none
           left                pairs whose leave this home confirmed, one line each (phase 2,

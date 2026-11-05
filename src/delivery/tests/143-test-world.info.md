@@ -16,7 +16,8 @@ from its home address; `world.refuse` models a router that cannot loop a
 connection back in.
 
 Each home's serving stage hands hellos and leaves to 147's `on_claim`
-and members frames to 152's `answer` (207).
+members frames to 152's `answer` (207), and summary frames to 156's
+`answer` (209).
 
 Use it as `dofile(...)(DIR, name)`, which returns a table of these. Its
 `finish()` prints the counts and exits.

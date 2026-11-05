@@ -51,6 +51,13 @@
 -- stage's `wake` calls: 211 decides whether the wake crosses a process
 -- boundary (a file) or stays in memory.
 --
+-- Cross-checks (209).  When own_pairs is given, `start` arms a round
+-- every `crosscheck.interval` seconds (156's settings), run from `pass`
+-- and counted in `next_due`, so a quiet home still sends: each room this
+-- home has not left gets one job per pair on its send list that is not
+-- ignored, run like a hello (156's `attempt`: 207's digest, then the
+-- summary).  `crosscheck_round` runs a round at once.
+--
 -- Decisions of 2026-11-05 (the owner may overturn each):
 --   open question 1  hearing a frame that opens in a room, from an
 --                    address, makes every pair of that room at that
@@ -70,6 +77,8 @@ local call_back = require("142-call-back")
 local hello = require("145-hello")
 local leaving = require("147-leaving")
 local members = require("152-members")
+local crosscheck = require("156-cross-check")
+local ignore = require("042-ignore-list")
 
 local M = {}
 
@@ -260,6 +269,32 @@ function Stage:notice_members(tag, now)
 end
 -- }}}
 
+-- {{{ function Stage:crosscheck_round
+-- 209: now → the summary jobs, one per pair on each send list (rooms this
+-- home left, and ignored pairs, get none), due now.
+function Stage:crosscheck_round(now)
+    local made = {}
+    if self.crosscheck then self.crosscheck.rounds = self.crosscheck.rounds + 1 end
+    for _, tag in ipairs(rooms.list_rooms(self.home)) do
+        if not leaving.own_left(self.home, tag) then
+            for _, pair in ipairs(recipients.send_list(self.home, tag)) do
+                if ignore.how_ignored(self.home, tag, pair.address, pair.port) == "none" then
+                    local k = "summary " .. job_key(tag, pair)
+                    if not self.hellos[k] then self.hello_order[#self.hello_order + 1] = k end
+                    local job = { kind = "summary", tag = tag, pair = { address = pair.address, port = pair.port },
+                                  stage = self, attempt = crosscheck.attempt,
+                                  timer = timer.new(self.floor, self.ceiling), tries = 0 }
+                    job.timer:due_now(now)
+                    self.hellos[k] = job
+                    made[#made + 1] = job
+                end
+            end
+        end
+    end
+    return made
+end
+-- }}}
+
 -- {{{ function Stage:ask_members
 -- 207: tag, pair, now → a job asking that pair for its list (anyone may
 -- ask; what comes back is only called back, never added).
@@ -340,6 +375,10 @@ end
 -- due now (open question 2), and gets a hello (205) when own_pairs is given.
 function Stage:start(now)
     self:announce(now)
+    if self.seams.own_pairs and not self.crosscheck then
+        local interval = crosscheck.settings(self.home)
+        self.crosscheck = { interval = interval, next = now + interval, rounds = 0 }
+    end
     for _, tag in ipairs(rooms.list_rooms(self.home)) do
         for _, pair in ipairs(recipients.send_list(self.home, tag)) do
             if #delivered.missing_for(self.home, tag, pair) > 0 then
@@ -410,6 +449,11 @@ end
 -- given) → the jobs run, in the order they were made.
 function Stage:pass(now)
     local ran = {}
+    -- 209's round, on the stage's own clock
+    if self.crosscheck and now >= self.crosscheck.next then
+        self.crosscheck.next = now + self.crosscheck.interval
+        self:crosscheck_round(now)
+    end
     -- 205's hellos, before the deliveries
     for _, k in ipairs(self.hello_order) do
         local job = self.hellos[k]
@@ -456,6 +500,7 @@ function Stage:next_due()
         local due = not job.done and job.timer.due
         if due and (not earliest or due < earliest) then earliest = due end
     end
+    if self.crosscheck and (not earliest or self.crosscheck.next < earliest) then earliest = self.crosscheck.next end
     return earliest
 end
 -- }}}

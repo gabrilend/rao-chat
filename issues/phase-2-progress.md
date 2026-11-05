@@ -114,6 +114,19 @@ owner, most blocking first: `notes/rmail-rubric/open-questions.md`.
   1–9 answered as dated decisions the owner may overturn.  Left: the
   starter and gatherers that run it (211), and the real operators, which
   were not reachable where this was built.
+- **209** — built 2026-11-05 in `src/delivery/` (156–157), with the
+  `summary` and `versions` rows in 126 and two settings.  Every
+  `crosscheck.interval` seconds each home runs, per pair on each send
+  list that is not ignored, 207's members digest and then a summary:
+  the ids and fingerprints of what it holds from the last
+  `crosscheck.window` seconds, and its own pairs.  A receiver makes its
+  own records the summariser lacks missing again in `delivered`, and
+  202's sender resends them with their ids.  The same id with another
+  fingerprint is raised on both sides with both versions.  Referees 1–5
+  run in the simulated world, against broken versions.  Open questions
+  1–3 answered as dated decisions the owner may overturn.  Left: the
+  viewer's notice for a raised discrepancy (phase 3), and the gatherer
+  that runs the stage (211).
 - **213** — built 2026-11-05 in `src/delivery/` (154–155), with the
   `discover` and `here` rows in 126.  A room is searched only when a
   member is at this home's public address, or a connection in it came
@@ -136,6 +149,6 @@ owner, most blocking first: `notes/rmail-rubric/open-questions.md`.
   and left pairs are skipped.  Anyone may ask with `ask_members`.
   Referees 1–6 run in the simulated world, each against a broken version
   where the issue names one.  Open questions 1–3 answered as dated
-  decisions the owner may overturn.  Left: automatic asking (not built,
-  by decision 1).  Pairs confirmed only from inside the house are 213's
+  decisions the owner may overturn.  Automatic asking rides on 209's
+  periodic cross-check.  Pairs confirmed only from inside the house are 213's
   housemates, kept apart from the members, so no list carries them.
