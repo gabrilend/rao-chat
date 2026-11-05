@@ -90,18 +90,25 @@ writing those issues are listed at the end.
 
 9. **The record inside a frame**: the log's tab-separated record, or
    rmail's HTTP text with JSON?  **Held by** 201 (question 1; proposed:
-   the log's shape).
+   the log's shape).  *Answered 2026-11-05 by the builder: the log's shape
+   (201, decision 1); the owner may overturn.*
 10. **The size limit**, and padding inside the seal to a few fixed sizes
-    (yes/no, which sizes).  **Held by** 201 (question 2).
+    (yes/no, which sizes).  **Held by** 201 (question 2).  *Answered
+    2026-11-05 by the builder: 1 MiB; padded to powers of two from 256
+    bytes (201, decisions 2 and 3); the owner may overturn.*
 11. **How a token becomes bytes**: exactly as typed, or normalised (Unicode
     NFC, ends trimmed)?  Normalising changes the fingerprint of any token it
-    alters.  **Held by** 201 (question 3).
+    alters.  **Held by** 201 (question 3).  *Answered 2026-11-05 by the
+    builder: exactly as stored, a line break an error (201, decision 4);
+    the owner may overturn.*
 12. **Waiting for a frame's pieces**: rmail's 10 seconds per read, or one
     deadline for the whole frame?  **Held by** 211 (question 8; the
     listener stage).
 13. **Counting frames per room key** and suggesting a token change past a
     number (a nonce budget, about 2^32 frames for a whole room).
-    **Held by** 201 (question 4) and 209 (question 3).
+    **Held by** 201 (question 4) and 209 (question 3).  *For 201, answered
+    2026-11-05 by the builder: not counted yet (decision 5); 209's question
+    stands.*
 
 ## Addresses and joining (204, 205, 207, 208)
 
@@ -157,7 +164,9 @@ writing those issues are listed at the end.
     **Held by** 211 (question 7) and 301 (question 4).
 29. **No plain-text health check** on a mailbox port: then how does a person
     test a port forward?  **Held by** 201 (question 5) and 212
-    (question 9).
+    (question 9).  *For 201, answered 2026-11-05 by the builder: nothing
+    in the clear, a health check included; a sealed ping from the person's
+    own viewer, to be built in 212 (decision 6).*
 30. **Growing piles of undelivered messages**: shown to the person?  What
     number "strains the engine"?  **Held by** 202 (question 6).
 31. **Force the log to disk before acknowledging?**  **Still open** (owner,

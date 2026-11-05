@@ -1,0 +1,157 @@
+-- 126-inner-records.lua — the record inside a frame: a kind, then that
+-- kind's fields in a fixed order, on one tab-separated line (issue 201,
+-- step 6).
+--
+-- The shape (decision of 2026-11-05, issue 201 open question 1; the owner
+-- may overturn it): the log's own shape, formation C of the sealing note.
+-- Fields are separated by tabs and escaped by exactly the log's rule
+-- (src/message-log/083-record-codecs.lua): "\\" "\t" "\n" "\r" become
+-- \\ \t \n \r, and nothing else is touched.  A `message` on the wire is
+-- the log's record without the two fields the reader adds on arrival
+-- (`from`, `arrived`), so a received message can be compared with the log
+-- byte for byte.  Choosing it is reversible: every frame goes through this
+-- table, so another shape replaces encode and decode here and nothing
+-- else.
+--
+-- The table holds the kinds whose fields are settled: the log's three
+-- (message, correction, deletion).  Every other kind 201 names (hello,
+-- members, members-ask, leave, did-you, did-you-answer, summary, ack,
+-- discover, here) gets its row from the issue that defines its fields
+-- (202, 204, 205, 207, 208, 209, 213), when that issue is built.  Until
+-- then it is an unknown kind, and an unknown kind is an error.
+--
+-- Errors over fallbacks: an unknown kind, a missing field, an extra field,
+-- an unknown escape, or a `written` that is not a whole number is refused,
+-- never filled in.
+
+local KINDS = {}
+
+-- Each row: the fields after the kind, in wire order, and how each is
+-- checked.  "text" fields hold any bytes; "whole" fields are whole numbers
+-- written in decimal.
+local LOG_FIELDS = {
+    { name = "id", type = "text" },
+    { name = "written", type = "whole" },
+    { name = "target", type = "text" },
+    { name = "text", type = "text" },
+}
+KINDS.message = LOG_FIELDS
+KINDS.correction = LOG_FIELDS
+KINDS.deletion = LOG_FIELDS
+
+local ESCAPE = { ["\\"] = "\\\\", ["\t"] = "\\t", ["\n"] = "\\n", ["\r"] = "\\r" }
+local UNESCAPE = { ["\\"] = "\\", t = "\t", n = "\n", r = "\r" }
+
+-- {{{ local function escape
+local function escape(text)
+    return (text:gsub("[\\\t\n\r]", ESCAPE))
+end
+-- }}}
+
+-- {{{ local function unescape
+local function unescape(text)
+    return (text:gsub("\\(.?)", function(letter)
+        local plain = UNESCAPE[letter]
+        -- Path: a known escape — its character.  Anything else — refused.
+        if not plain then error("inner record: an unknown escape '\\" .. letter .. "'", 0) end
+        return plain
+    end))
+end
+-- }}}
+
+-- {{{ local function split_tabs
+-- Every field, empty ones kept.
+local function split_tabs(line)
+    local fields, start = {}, 1
+    while true do
+        local tab = line:find("\t", start, true)
+        if not tab then
+            fields[#fields + 1] = line:sub(start)
+            return fields
+        end
+        fields[#fields + 1] = line:sub(start, tab - 1)
+        start = tab + 1
+    end
+end
+-- }}}
+
+-- {{{ local function row_of
+local function row_of(kind)
+    local row = KINDS[kind]
+    if not row then error("inner record: unknown kind '" .. tostring(kind) .. "'", 0) end
+    return row
+end
+-- }}}
+
+-- {{{ local function encode
+-- record ({kind = ..., and each of its kind's fields}) → one line, no "\n".
+-- A missing field, or one the kind does not have, is an error.
+local function encode(record)
+    local row = row_of(record.kind)
+    local known = { kind = true }
+    local parts = { record.kind }
+    for _, field in ipairs(row) do
+        known[field.name] = true
+        local value = record[field.name]
+        -- Path: a whole number written in decimal; text escaped.
+        if field.type == "whole" then
+            if type(value) ~= "number" or value ~= math.floor(value) or value < 0 then
+                error("inner record: '" .. field.name .. "' must be a whole number, got " .. tostring(value), 0)
+            end
+            parts[#parts + 1] = string.format("%d", value)
+        else
+            if type(value) ~= "string" then
+                error("inner record: '" .. field.name .. "' is missing", 0)
+            end
+            parts[#parts + 1] = escape(value)
+        end
+    end
+    for name in pairs(record) do
+        if not known[name] then error("inner record: '" .. tostring(name) .. "' is not a field of " .. record.kind, 0) end
+    end
+    return table.concat(parts, "\t")
+end
+-- }}}
+
+-- {{{ local function decode
+-- line (one record, as opened from a frame) → the record table.
+local function decode(line)
+    local parts = split_tabs(line)
+    local row = row_of(parts[1])
+    -- Path: exactly the kind's fields — read them.  More or fewer — refused.
+    if #parts ~= #row + 1 then
+        error("inner record: " .. parts[1] .. " has " .. (#parts - 1) .. " fields, wanted " .. #row, 0)
+    end
+    local record = { kind = parts[1] }
+    for index, field in ipairs(row) do
+        local raw = parts[index + 1]
+        if field.type == "whole" then
+            if not raw:match("^%d+$") or #raw > 15 then
+                error("inner record: '" .. field.name .. "' is not a whole number: " .. raw:sub(1, 20), 0)
+            end
+            record[field.name] = tonumber(raw)
+        else
+            record[field.name] = unescape(raw)
+        end
+    end
+    return record
+end
+-- }}}
+
+-- {{{ local function kinds
+-- The kinds the table knows, sorted.
+local function kinds()
+    local list = {}
+    for kind in pairs(KINDS) do list[#list + 1] = kind end
+    table.sort(list)
+    return list
+end
+-- }}}
+
+return {
+    encode = encode,
+    decode = decode,
+    kinds = kinds,
+    escape = escape,
+    KINDS = KINDS,
+}
