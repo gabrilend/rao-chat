@@ -183,6 +183,14 @@ status 2).  160 passes 47 of 47 checks, including two broken versions.
     counts against the exit status.  It catches a scene made to fail
     (`RAO_PHASE2_DEMO_BREAK`, which only the referee sets) and a project
     copy missing 156.
+11. **The signatures and git scenes run** (with 214's reader and 215,
+    2026-11-05): `signatures` reads 214's table row by row; `git` runs
+    two real gatherers (and their starters inside the loopback-only
+    namespace) and shows the copies byte-identical on both homes, a
+    commit per sync cycle by the home's name, a hand edit committed and
+    both logs unchanged, `labels`, and the code branch.  215a's and 215b's
+    parts are named as not built, and 214's viewer field as waiting on
+    301, so 13 of 16 scenes run in full and 3 with a part missing.
 
 ## Related documents
 

@@ -96,10 +96,12 @@ local RUNNABLE = {
     { key = "crosscheck", title = "A two-faced sender caught" },
     { key = "housemates", title = "Housemates found" },
     { key = "failed",     title = "Failed decryption" },
+    { key = "signatures", title = "A signature table" },
+    { key = "git",        title = "Each mailbox's git repository" },
     { key = "acknowledge", title = "The gatherer.acknowledge-after switch" },
     { key = "phase1",     title = "Phase 1's tools on phase 2's homes" },
 }
-local WAITING = { signatures = "214", git = "215" }
+local WAITING = {}
 
 local goodbye_path = DIR .. "/output/phase-2-demo.goodbye"
 os.remove(goodbye_path)
@@ -190,6 +192,19 @@ local acknowledge = scene_text(output, "The gatherer.acknowledge-after switch") 
 check("acknowledge: at a power cut, disk lost 0 of 10 acknowledged messages and ram lost 10",
       acknowledge:match("\n%s+disk%s+10%s+10%s+0%s") and acknowledge:match("\n%s+ram%s+10%s+0%s+10%s"), acknowledge)
 
+local signatures = scene_text(output, "A signature table") or ""
+local agree, of = signatures:match("(%d+) of (%d+) read as the table says")
+check("signatures: every example of 214's table reads as the table says", agree and agree == of and tonumber(of) >= 15,
+      signatures)
+local gitscene = scene_text(output, "Each mailbox's git repository") or ""
+check("git: the copies are byte-identical on both homes, under the token's fingerprint",
+      gitscene:find("copies byte-identical on A and B: 2 of 2", 1, true)
+      and gitscene:match("rooms/" .. string.rep("%x", 64) .. "/%d+%-%x+%.txt"), gitscene)
+check("git: a hand edit is committed, and changes neither log",
+      gitscene:find("1 file changed", 1, true)
+      and gitscene:find("both logs unchanged by it (nothing sent): A same bytes, B same bytes", 1, true), gitscene)
+check("git: one commit per sync cycle, by the home's name", gitscene:match("\n%s+%x+ A%-%d+: sync: %d+ cop"), gitscene)
+
 -- broken version 1: one scene made to fail
 local broken, broken_status = run("RAO_PHASE2_DEMO_BREAK=keys " .. quote(DIR .. "/issues/completed/demos/phase-2-demo")
                                   .. " " .. quote(DIR))
@@ -211,7 +226,7 @@ local missing, missing_status = run("luajit " .. quote(copy .. "/src/phase-2-dem
 local missing_goodbye = read_all(copy .. "/output/phase-2-demo.goodbye") or ""
 check("broken 2: the missing module is named", missing:find("156%-cross%-check%s+%(issue 209%s*%)%s+NOT LOADED") ~= nil,
       missing:sub(1, 2000))
-local none_ran = missing_goodbye:find("14 could not run", 1, true) ~= nil
+local none_ran = missing_goodbye:find("16 could not run", 1, true) ~= nil
 check("broken 2: every runnable scene could not run, saying which module", none_ran
       and missing_goodbye:match("\n  could not%s+delivery%s+modules did not load: [^\n]*crosscheck"), missing_goodbye)
 check("broken 2: the exit status is 1", missing_status == 1, missing_status)

@@ -11,10 +11,13 @@
 # and a forged leave, a two-faced sender caught, housemates, and failed
 # decryption with fail2ban's matcher, and real gatherer processes (211):
 # a starter per home, a member down and its due/ pile, and the
-# acknowledge-after switch both ways.  It prints what is really on disk and
-# on the wire.  Scenes whose issues are not built yet (214, 215) say what
-# they wait on.  It reads input/ first and writes a goodbye into output/
-# last.
+# acknowledge-after switch both ways; 214's signature table; and each
+# mailbox's git repository (215): text copies byte-identical on two homes,
+# a commit per sync cycle, a hand edit that is committed and never sent,
+# and the code branch.  It prints what is really on disk and on the wire.
+# A part of a scene whose issue is not built yet (214's viewer field, 215a,
+# 215b) is named as missing.  It reads input/ first and writes a goodbye
+# into output/ last.
 #
 # Most scenes run the stages in the delivery tests' simulated world (a
 # clock of its own and an in-memory relay).  The real-process scenes open

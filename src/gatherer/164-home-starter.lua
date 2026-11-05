@@ -21,6 +21,13 @@
 --   - A `stop` file in the home's RAM folder stops it: each gatherer is
 --     asked (its own `stop` file), waited for up to 10 s, and the starter
 --     exits.
+--   - The running source code (issue 215): before a mailbox's gatherer is
+--     first started, the program folder the starter runs from is
+--     committed to the branch `code/<git.home-name>` of that mailbox's
+--     repository, when it changed (172's commit_folder: an index of its
+--     own, nothing checked out, the folder's .gitignore applying).  git
+--     is required: without it the starter says so, naming the program,
+--     and exits with status 1.
 
 local DIR, HOME_DIR = arg[1], arg[2]
 if not (DIR and HOME_DIR) then
@@ -34,6 +41,8 @@ local rooms = require("002-room-folders")
 local disk = require("003-disk")
 local address = require("150-public-address")
 local ram = require("161-ram-folders")
+local git = require("172-git")
+local copies_m = require("173-text-copies")
 
 local function now() return socket.gettime() end
 local q = disk.shell_quote
@@ -45,6 +54,36 @@ os.execute("mkdir -p " .. q(HOME_RAM))
 local state = { started = math.floor(now()) }
 local function log(words) ram.log(HOME_RAM, now(), words) end
 if root_note then log(root_note); state["problem.ram-root"] = root_note end
+
+-- git, required (215)
+local git_path, no_git = git.find()
+if not git_path then
+    log("problem git: " .. no_git)
+    state["problem.git"] = no_git
+    state.stopped = "git"
+    ram.write_state(HOME_RAM, state)
+    io.stderr:write("rao-chat starter: " .. no_git .. "\n")
+    os.exit(1)
+end
+local HOME_NAME = git.check_name(rooms.config_value(home, "git.home-name"))
+
+-- {{{ local function commit_code
+-- The program folder, to code/<home name> of the mailbox's repository.
+local function commit_code(tag)
+    local ok, result = pcall(function()
+        local repo = copies_m.repository(HOME_DIR, tag)
+        os.execute("mkdir -p " .. q(HOME_DIR .. "/git"))
+        git.ensure(repo)
+        return git.commit_folder(repo, "code/" .. HOME_NAME, DIR, "the program this home runs, at start-up", HOME_NAME)
+    end)
+    if not ok then
+        log("problem code-branch: mailbox " .. tag .. ": " .. tostring(result))
+        state["problem.code-branch"] = tostring(result)
+    elseif result then
+        log("code/" .. HOME_NAME .. " of mailbox " .. tag .. ": the program committed (" .. result:sub(1, 12) .. ")")
+    end
+end
+-- }}}
 
 -- {{{ local function alive
 -- running: there, and not a zombie waiting to be reaped
@@ -82,6 +121,7 @@ local function look_after()
         if not g then
             g = { port = mailbox.port, wait = 1 }
             gatherers[mailbox.tag] = g
+            commit_code(mailbox.tag)
             start(mailbox.tag, g)
         elseif not alive(g.pid) then
             if not g.next_start then

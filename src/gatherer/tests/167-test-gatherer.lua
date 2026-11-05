@@ -113,7 +113,7 @@ local function make_home(name, address, port, overrides)
     local config = {
         ["gatherer.ram-root"] = ROOT .. "/ram", ["gatherer.address"] = address,
         ["gatherer.sync-interval"] = "2", ["delivery.retry-floor"] = "1", ["delivery.retry-ceiling"] = "4",
-        ["callback.answer-time"] = "2",
+        ["callback.answer-time"] = "2", ["git.home-name"] = name .. "-" .. count,
     }
     for key, value in pairs(overrides or {}) do config[key] = value end
     for key, value in pairs(config) do rooms.set_config(h, key, value) end

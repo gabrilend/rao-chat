@@ -165,8 +165,25 @@ owner, most blocking first: `notes/rmail-rubric/open-questions.md`.
   With 211, two scenes run real gatherer processes on loopback (a
   starter per home, a member down and its `due/` pile, the
   acknowledge-after switch both ways): 13 of 16 scenes run in full.
-  Left: signatures (214), git (215, 215a, 215b), and `fail2ban-regex`
-  itself where it is installed.
+  With 214's reader and 215 (2026-11-05), the signatures and git scenes
+  run too.  Left: 214's viewer field (301), 215a and 215b, and
+  `fail2ban-regex` itself where it is installed.
+- **214** — steps 1 and 2 built 2026-11-05 with 215, in `src/signature/`
+  (169–171): the one reader of a message's signature and the table of
+  examples every implementation is graded by.  Open questions 1–4
+  answered as dated decisions the owner may overturn.  Left: the
+  viewer's signature field (301).
+- **215** — built 2026-11-05 in `src/git-copies/` (172–175).  Each
+  mailbox has a git repository at `rao-home/git/<mailbox tag>/`; a filing
+  hook in the gatherer writes every filed or written record's text copy
+  (the agreed part only, so members' copies are the same bytes, under
+  the token's fingerprint); each sync cycle brings the copies up to date
+  from the log and commits once; hand edits are committed and never
+  sent; the starter commits the program to `code/<home name>`.  git is
+  required.  Referees 1–7 run against real gatherers on loopback and the
+  module on disk, each against its broken version.  Open questions 1–5
+  answered as dated decisions the owner may overturn.  Left: custom hook
+  programs (open question 2), moving copies when a token changes.
 - **211** — built 2026-11-05 in `src/gatherer/` (161–168).  One gatherer
   process per mailbox: it claims its port first, loads the mailbox's
   rooms into a RAM home, and runs listener, filer, typed, sender and sync

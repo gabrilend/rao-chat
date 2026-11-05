@@ -18,8 +18,8 @@ What it does, in order:
    the stages run together, so a world missing one is not the design.
 3. Sets up 143's test world (the delivery tests' simulated clock and
    in-memory relay) with its scratch folder
-   `tmp/shared-memory/phase-2-demo/`.  The `gatherers` and `acknowledge`
-   scenes run real gatherer processes (211) under that folder instead, on
+   `tmp/shared-memory/phase-2-demo/`.  The `gatherers`, `acknowledge` and
+   `git` scenes run real gatherer processes (211) under that folder instead, on
    loopback addresses, and stop every one they start.
 4. Runs each scene in `159-phase-2-scenes.ORDER`.  A scene that is a
    `{waits = ...}` table prints "WAITS" and the issue it waits on; a scene

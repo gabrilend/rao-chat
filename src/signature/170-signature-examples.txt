@@ -1,0 +1,30 @@
+# 170-signature-examples.txt — the table every reader of a message's
+# signature is graded by (issue 214's referees).  One example per line:
+# the text, its body and its signature, separated by tabs; \n, \r, \t
+# and \\ are written escaped.  Lines starting with # are notes.
+#
+# 1. a signature after a blank line
+hi\n\nsorelu	hi	sorelu
+# 2. two lines after the blank line: the whole text is the body
+hi\n\nsorelu\nand more	hi\n\nsorelu\nand more	more
+# 3. a last line of 81 characters is body
+hi\n\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb	hi\n\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb	bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+# 4. exactly 80 characters is a signature
+hi\n\nccccccccccccccccccccccccccccccccccccccc dddddddddddddddddddddddddddddddddddddddd	hi	ccccccccccccccccccccccccccccccccccccccc dddddddddddddddddddddddddddddddddddddddd
+# 5. no blank line: the last word
+no blank line here	no blank line here	here
+# 6. \r\n reads as \n
+hi\r\n\r\nsorelu	hi	sorelu
+# 7. 80 characters of three bytes each is a signature (characters, not bytes)
+hi\n\n€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€	hi	€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€€
+# 8. the split is at the last blank line
+hi\n\n\nsorelu	hi	sorelu
+hi\n\nmiddle\n\nsorelu	hi\n\nmiddle	sorelu
+# decisions of 2026-11-05 (214's open questions 2 and 3, and the final line break)
+		
+   	   	
+see you, sorelu.	see you, sorelu.	sorelu.
+hi\n\nsorelu\n	hi	sorelu
+hi\n\n	hi\n\n	hi
+# a short closing line after a blank line is read as the signature (214's open question 4)
+see you soon\n\nthanks for everything.	see you soon	thanks for everything.
