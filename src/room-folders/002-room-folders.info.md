@@ -26,7 +26,7 @@ Load with `require("002-room-folders")` after `001-load-path.lua` has run.
 
 | function | takes | gives | what it does |
 |---|---|---|---|
-| `open_home(dir)` | string, absolute | home | Makes `dir`, `config`, an empty `mailboxes`, an empty `ignore`, `rooms/`, `people/` if missing; leaves existing ones alone; then reads `config` as `read_config` does.  Errors on a relative path, a missing folder above, `dir` being a file, or a config line no module declares. |
+| `open_home(dir)` | string, absolute | home | Makes `dir`, `config` (a new one holds `git.log-file-size = 100000000`, 215a), an empty `mailboxes`, an empty `ignore`, `rooms/`, `people/` if missing; leaves existing ones alone; then reads `config` as `read_config` does.  Errors on a relative path, a missing folder above, `dir` being a file, or a config line no module declares. |
 | `read_config(home)` | home | table string→string | Every setting in `config`; values stay strings.  Errors on a malformed line, a key set twice, or a name no module declares (naming the file, line number and line). |
 | `set_config(home, key, value)` | home, string (`[A-Za-z0-9_.-]+`), string (one line, no edge spaces) | nothing | Rewrites the key's line in place or appends it.  Refuses a key no module declares (nothing written). |
 | `config_value(home, key)` | home, string | string | The value; **errors** when the key is not declared by any module, or absent (naming the line to add). |

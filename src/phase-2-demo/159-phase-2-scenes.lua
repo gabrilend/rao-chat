@@ -846,6 +846,7 @@ local function real_world(c, name)
         local mailbox = m.rooms.read_entry(h, tag).mailbox
         local home_ram = m.ram.home_ram(r.ram_root, dir)
         return { name = home_name, dir = dir, disk = h, tag = tag, mailbox = mailbox, port = port,
+                 git_name = config["git.home-name"],
                  pair = pair(address, port), home_ram = home_ram, folder = home_ram .. "/" .. mailbox }
     end
     function r.link(list)
@@ -927,6 +928,20 @@ local function real_world(c, name)
             if line:sub(-#text - 1) == "\t" .. text then n = n + 1 end
         end
         return n
+    end
+    -- a gatherer's whole running log: the lines committed to its branch
+    -- (215a: each sync cycle takes them out of RAM), then what RAM holds
+    function r.running_log(h)
+        local repo = m.copies.repository(h.dir, h.mailbox)
+        local branch = m.runlog.branch(h.git_name)
+        local text = {}
+        local ok, files = m.git.run(repo, { "ls-tree", "-r", "--name-only", branch })
+        for path in (ok and files or ""):gmatch("[^\n]+") do
+            local p = io.popen(m.git.command(repo, { "cat-file", "blob", branch .. ":" .. path }))
+            text[#text + 1] = p:read("*a")
+            p:close()
+        end
+        return table.concat(text) .. (read_all(h.folder .. "/running-log") or "")
     end
     -- what a home's RAM copy still owes a pair
     function r.missing(h, p)
@@ -1040,9 +1055,9 @@ function M.gatherers(c)
         for i = 1, 3 do on_disk = on_disk + r.copies(b, "while B is down, " .. i, true) end
         out[#out + 1] = string.format("  every home stopped; B's log on disk holds %d of the 4 messages "
             .. "(each gatherer syncs once more at its stop)", on_disk)
-        out[#out + 1] = "  A's gatherer's running log, its last lines:"
+        out[#out + 1] = "  A's gatherer's running log (committed each sync cycle, 215a, and what RAM holds), its last lines:"
         local lines = {}
-        file_lines(lines, a.folder .. "/running-log", nil, "      ")
+        for line in r.running_log(a):gmatch("[^\n]+") do lines[#lines + 1] = "      " .. line end
         for i = math.max(1, #lines - 5), #lines do
             out[#out + 1] = (lines[i]:gsub(a.mailbox, a.mailbox:sub(1, 8) .. "..."))
         end
@@ -1134,7 +1149,8 @@ end
 -- {{{ scene git
 -- 215 between two real gatherers: each mailbox's repository, the text
 -- copies (byte-identical on both homes), a commit per sync cycle, a hand
--- edit committed and never sent, labels, and the code branch.
+-- edit committed and never sent, labels, and the code branch; 215a's
+-- running log on its own branch.
 function M.git(c)
     local r, why = real_world(c, "git")
     if not r then error(why, 0) end
@@ -1222,10 +1238,33 @@ function M.git(c)
                 m.git.must(repo_a, { "symbolic-ref", "--short", "HEAD" }))
         end
         for _, h in ipairs({ a, b }) do r.stop(h) end
+        -- 215a: the running log, on a branch of its own
+        local name = "A-" .. a.dir:match("A%-(%d+)$")
+        local branch = m.runlog.branch(name)
+        local files = m.git.must(repo_a, { "ls-tree", "-r", "-l", branch })
+        out[#out + 1] = string.format("  A's running log, committed every sync cycle to %s (git.log-file-size = %s):",
+            branch, m.rooms.config_value(a.disk, "git.log-file-size"))
+        for line in files:gmatch("[^\n]+") do
+            local size, path = line:match("(%d+)\t(.+)$")
+            out[#out + 1] = string.format("      %s  %s bytes", path or line, size or "?")
+        end
+        local commits = m.git.must(repo_a, { "rev-list", "--count", branch })
+        local first_file = files:match("\t([^\n]+)")
+        local text = first_file and m.git.must(repo_a, { "show", branch .. ":" .. first_file }) or ""
+        out[#out + 1] = string.format("  %s commits on it; its first lines:", commits)
+        local n = 0
+        for line in (text .. "\n"):gmatch("([^\n]*)\n") do
+            n = n + 1
+            if n <= 3 then out[#out + 1] = "      " .. (line:gsub(a.mailbox, a.mailbox:sub(1, 8) .. "...")) end
+        end
+        out[#out + 1] = string.format("  the rooms' branch holds %s log file(s); the log branch %s room copies",
+            select(2, m.git.must(repo_a, { "ls-tree", "-r", "--name-only", "rooms" }):gsub("running%-log/", "")),
+            select(2, m.git.must(repo_a, { "ls-tree", "-r", "--name-only", branch }):gsub("rooms/", "")))
+        out[#out + 1] = string.format("  A's RAM running log now: %d bytes (emptied as each cycle is committed)",
+            #(read_all(a.folder .. "/running-log") or ""))
     end)
     r.stop_all()
     if not ok then error(failed, 0) end
-    gaps[#gaps + 1] = "215a (the running log committed each sync cycle) is not built"
     gaps[#gaps + 1] = "215b (sharing through a shared upstream) is not built"
     return { lines = out, gaps = gaps }
 end

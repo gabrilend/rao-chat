@@ -100,6 +100,7 @@ local START = first_variants()
 
 local count = 0
 local all_pids = {}
+local whole_running_log
 
 -- {{{ local function make_home
 -- name, address, port, overrides → a home {name, dir, disk, tag, mailbox,
@@ -121,6 +122,7 @@ local function make_home(name, address, port, overrides)
         members = {}, filed_under = "", mailbox_port = port })
     local mailbox = rooms.read_entry(h, tag).mailbox
     return { name = name, dir = dir, disk = h, tag = tag, mailbox = mailbox, address = address, port = port,
+             git_name = config["git.home-name"],
              pair = { address = address, port = port },
              folder = ram.home_ram(ROOT .. "/ram", dir) .. "/" .. mailbox }
 end
@@ -220,6 +222,20 @@ function missing(home, pair)
         return delivered.missing_for(rooms.open_home(home.folder .. "/home"), home.tag, pair)
     end)
     return ok and #list or math.huge
+end
+-- }}}
+
+-- {{{ local function whole_running_log
+-- A gatherer's running log: what it committed to running-log/<name>
+-- (215a: each sync cycle takes the lines out of RAM) and what RAM holds.
+whole_running_log = function(home)
+    local repo = home.dir .. "/git/" .. home.mailbox
+    local branch = "running-log/" .. home.git_name
+    local p = io.popen("cd " .. q(repo) .. " 2>/dev/null && for f in $(git ls-tree -r --name-only " .. q(branch)
+        .. " 2>/dev/null); do git cat-file blob " .. q(branch) .. ":\"$f\"; done")
+    local committed = p:read("*a")
+    p:close()
+    return committed .. (read_file(home.folder .. "/running-log") or "")
 end
 -- }}}
 
@@ -454,7 +470,7 @@ local function referee_throwing(broken)
     socket.sleep(math.max(0, 5 - (now() - t0)))
     local cpu = cpu_seconds(b.pid) - cpu0
     local lines = 0
-    for line in (read_file(b.folder .. "/running-log") or ""):gmatch("[^\n]+") do
+    for line in whole_running_log(b):gmatch("[^\n]+") do
         if line:find("problem filing", 1, true) or line:find("problem room-" .. second[b]:sub(1, 8), 1, true) then
             lines = lines + 1
         end

@@ -7,6 +7,13 @@
 --   digits, '.', '_' and '-'.  No default: a name chosen by the person,
 --   since a pushed author name says who ran the home (215b).
 
+-- git.log-file-size — the most bytes one file of the running log's branch
+--   may hold (issue 215a); a new file starts before a line would pass it.
+--   Written into config when a home is made: 100000000 (GitHub refuses a
+--   pushed file over 100 MiB and warns over 50 MiB; this is under both
+--   100 MB and 100 MiB).
+
 return {
     "git.home-name",
+    "git.log-file-size",
 }

@@ -204,6 +204,9 @@ check("git: a hand edit is committed, and changes neither log",
       gitscene:find("1 file changed", 1, true)
       and gitscene:find("both logs unchanged by it (nothing sent): A same bytes, B same bytes", 1, true), gitscene)
 check("git: one commit per sync cycle, by the home's name", gitscene:match("\n%s+%x+ A%-%d+: sync: %d+ cop"), gitscene)
+check("git: the running log on its own branch, apart from the rooms' (215a)",
+      gitscene:match("running%-log/A%-%d+/0001%.log  %d+ bytes")
+      and gitscene:find("the rooms' branch holds 0 log file(s); the log branch 0 room copies", 1, true), gitscene)
 
 -- broken version 1: one scene made to fail
 local broken, broken_status = run("RAO_PHASE2_DEMO_BREAK=keys " .. quote(DIR .. "/issues/completed/demos/phase-2-demo")

@@ -14,8 +14,8 @@
 # acknowledge-after switch both ways; 214's signature table; and each
 # mailbox's git repository (215): text copies byte-identical on two homes,
 # a commit per sync cycle, a hand edit that is committed and never sent,
-# and the code branch.  It prints what is really on disk and on the wire.
-# A part of a scene whose issue is not built yet (214's viewer field, 215a,
+# the code branch, and the running log on a branch of its own (215a).  It prints what is really on disk and on the wire.
+# A part of a scene whose issue is not built yet (214's viewer field,
 # 215b) is named as missing.  It reads input/ first and writes a goodbye
 # into output/ last.
 #

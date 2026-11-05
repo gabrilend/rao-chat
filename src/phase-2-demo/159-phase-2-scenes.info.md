@@ -29,7 +29,9 @@ empty.  `acknowledge` runs two gatherers with
 gatherers that each write a message, shows A's repository and a copy
 whole, compares A's and B's copies byte for byte, edits one of B's by
 hand and shows the commit and both logs unchanged, B's `labels`, and A's
-`code/<name>` branch (from its starter).  All three bring the
+`code/<name>` branch (from its starter), then A's running log on its
+own branch (215a): its files and sizes, its first lines, and that the
+two branches hold none of each other's files.  All three bring the
 namespace's loopback up (168) and stop every process they started.
 
 `signatures` reads 214's table (170) with 169's rule and shows each
@@ -44,6 +46,6 @@ syncing scene first shows the loopback homes' list coming out empty.
 Nothing leaves the in-memory relay either way.
 
 The scenes: delivery, down, join, keys, child, syncing, token, leaving,
-crosscheck, housemates, failed, signatures, git (215a's and 215b's
-parts named as not built), acknowledge, phase1; `gatherers` comes after
+crosscheck, housemates, failed, signatures, git (215b's part named as
+not built), acknowledge, phase1; `gatherers` comes after
 `down`.
