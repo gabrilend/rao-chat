@@ -54,6 +54,52 @@ for pointing out where to store the mailboxes."
   reaching it through their connection to the home (the rest of phase 3);
   a viewer running on the home machine itself reads it directly.
 
+## Status
+
+Step 1's message files built 2026-11-05 (`src/gatherer/181-inbox-files.lua`,
+referees in `182-test-inbox-files.lua`): every gatherer keeps
+`inbox/<room local tag>/<written>-<id>` in its RAM folder, in the shape
+above, written at start-up, by the filing hook after each record filed
+or typed, and at every sync.  Referees 1, 2, 3 and 5 pass and catch their
+broken versions.
+
+Left: the rest of step 1 (`.room` and `.tree`), step 2 (the `typed/`
+reader taking the `room:` / `written:` header and the signature; today's
+`typed/` file is 211's `room = <tag>` shape), step 3 (the reference
+viewer), and referee 4, which needs step 2.
+
+## Decisions (2026-11-05)
+
+Made by the builder; the owner can overturn each.
+
+1. **The first slice is the message files alone.**  They are what every
+   later step reads and what the referees mostly test; `.room`, `.tree`
+   and the new `typed/` shape are separate pieces with their own checks.
+2. **`from:` shows 103's `shown_as` text** (the direct-message label, or
+   `<address> <port>` when there is none), as the table above says, and
+   `me` for own messages.  The ignore level is looked up by the pair, so
+   a label does not hide a `mark`.
+3. **`<written>` is not zero-padded**, matching 215's copy names.  Name
+   order is the room's order while written times have ten digits, which
+   is every time from 2001 to 2286.
+4. **A `hide` added after a message was filed removes its file.**  The
+   rule "a `hide` address is never filed" is about arrival; a viewer
+   should not go on showing what the owner has since hidden.  Taking the
+   hide off brings the file back at the next pass.
+5. **Written when the text changes, and every sync rewrites what
+   differs.**  So an ignore-list change, or a file the person removed,
+   is made good within a sync interval; removing a file deletes nothing.
+6. **Open question 3 (the whole history in RAM): all of it, for now.**
+   The RAM home already holds every room's log; the inbox roughly
+   doubles that.  Keeping only recent messages needs a way for a viewer
+   to ask for older ones, which is the catching-up the remote viewers
+   need anyway — decide it there.
+7. **Open question 4 (problems belonging to no room): from each
+   gatherer's `state`**, as 211 already writes them; nothing new here.
+8. **Open questions 1 and 2 (the device port, mirroring the folder)
+   belong to the issues that build the remote viewers** and change
+   nothing in this folder's layout, so they are left for those issues.
+
 ## Rubric
 
 rmail's thin client and its inbox files are the neighbour (structure note,

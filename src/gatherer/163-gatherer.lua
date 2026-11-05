@@ -108,6 +108,7 @@ local git = require("172-git")
 local copies_m = require("173-text-copies")
 local runlog = require("177-running-log")
 local sharing_m = require("179-sharing")
+local inbox = require("181-inbox-files")
 
 ffi.cdef [[
 int getpid(void);
@@ -250,6 +251,13 @@ ram.log(FOLDER, now(), string.format("%s %d room(s); %d file(s) put back from wo
 state["acknowledge-after"] = ACK_AFTER
 state["last-sync"] = STARTED
 
+-- the viewer's inbox (301), from the RAM home just loaded
+do
+    local wrote, failed = pcall(inbox.write_all, FOLDER, home, rooms.list_rooms_by_mailbox(home, MAILBOX))
+    if not wrote then problem("inbox", tostring(failed), SYNC_EVERY)
+    elseif failed > 0 then ram.log(FOLDER, now(), string.format("inbox: %d message file(s) written", failed)) end
+end
+
 local stage_seams = {
     connect = function(pair) return wait.connect(ADDRESS, pair) end,
     now = now,
@@ -283,6 +291,9 @@ end
 local function run_hooks(tag)
     local ok, why = pcall(copy_hook, tag)
     if not ok then problem("hook-text-copy", "room " .. tostring(tag):sub(1, 8) .. ": " .. tostring(why), SYNC_EVERY) end
+    -- the viewer's inbox file (301); the next sync makes it if this fails
+    local wrote, failed = pcall(inbox.write_room, FOLDER, home, tag)
+    if not wrote then problem("hook-inbox-file", "room " .. tostring(tag):sub(1, 8) .. ": " .. tostring(failed), SYNC_EVERY) end
 end
 -- }}}
 
@@ -615,6 +626,10 @@ end
 
 -- {{{ local function sync_now
 local function sync_now()
+    -- the viewer's inbox (301): every room, so an ignore-list change or a
+    -- removed file is made good once a cycle
+    local wrote, failed = pcall(inbox.write_all, FOLDER, home, rooms.list_rooms_by_mailbox(home, MAILBOX))
+    if not wrote then problem("inbox", tostring(failed), SYNC_EVERY) end
     local result = ram.sync(sync_record)
     state["last-sync"] = math.floor(now())
     if result.written > 0 or #result.reloaded > 0 then

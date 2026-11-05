@@ -22,6 +22,11 @@ these threads under 162's loop:
 - state: written every second; a repeated problem is logged at most once
   per sync interval, with a count.
 
+The viewer's inbox (301, 181): `inbox/<room tag>/<written>-<id>` in the
+gatherer's RAM folder, written for every room at start-up and every sync
+cycle, and for the room just filed by the filing hook; a failure is an
+`inbox` or `hook-inbox-file` problem line and ends nothing.
+
 Text copies (215): git is required (without it the problem names the
 program and it exits, status 1); the mailbox's repository is made at
 start-up (173).  After each frame is answered, and after each typed

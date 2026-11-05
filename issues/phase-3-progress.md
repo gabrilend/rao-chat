@@ -12,3 +12,9 @@ Counts: `/home/ritz/programming/ai-stuff/scripts/progress-dashboard.lua
 
 ## Completed Issues
 (None yet.)
+
+## In Progress
+- 301 — the RAM inboxes as the viewer's interface: step 1's message
+  files built 2026-11-05 (`inbox/<room>/<written>-<id>`, written by each
+  gatherer; referees 1, 2, 3, 5).  `.room`, `.tree`, the `typed/` shape,
+  the reference viewer and referee 4 are left.
