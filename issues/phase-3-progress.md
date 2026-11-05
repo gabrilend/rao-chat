@@ -14,7 +14,9 @@ Counts: `/home/ritz/programming/ai-stuff/scripts/progress-dashboard.lua
 (None yet.)
 
 ## In Progress
-- 301 — the RAM inboxes as the viewer's interface: steps 1 and 2 built
-  2026-11-05 (`inbox/<room>/<written>-<id>`, `.room`, `.tree`, written by
-  each gatherer; `typed/` in 301's shape, filed once under its own id;
-  referees 1 to 5).  The reference viewer (step 3) is left.
+- 301 — the RAM inboxes as the viewer's interface: built 2026-11-05
+  (`inbox/<room>/<written>-<id>`, `.room`, `.tree`, written by each
+  gatherer; `typed/` in 301's shape, filed once under its own id; the
+  reference viewer, `src/viewer/183-viewer.lua`; referees 1 to 5).  Kept
+  here until the owner reviews it; the remote viewers are the next
+  issues.
