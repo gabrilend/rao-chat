@@ -44,3 +44,11 @@ owner, most blocking first: `notes/rmail-rubric/open-questions.md`.
 
 ## Completed Issues
 (None yet.)
+
+## Under way
+- **201** — built 2026-11-05 in `src/sealing/` (123–128): key from token,
+  sealing and opening, frames on a connection, the inner record table,
+  keyrings per mailbox, trial opening split for workers; open questions
+  1–5 answered as dated decisions the owner may overturn.  Left: the
+  workers and the port (211), the other kinds' rows (their issues), and
+  201a's referee.

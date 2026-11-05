@@ -6,7 +6,18 @@
 
 ## Current Behavior
 
-Nothing exists in phase 2.  Phase 1 already makes the two values this
+**Built 2026-11-05** in `src/sealing/` (123–127, referees in
+`tests/128-test-sealing.lua`, 37 checks; each referee also run against its
+broken version, which it catches): the key and tying value from a token,
+sealing and opening, frames read and written on a connection, the inner
+record table (the log's three kinds), the keyring per mailbox dropped on
+the change bell, and trial opening split into slices and combined.  Open
+questions 1–5 are answered below as the builder's decisions, under the
+owner's standing instruction to answer them; each may be overturned.
+What waits: the workers themselves and the mailbox port (211), the other
+kinds' rows (their own issues), and 201a's own referee.
+
+*Before this:* nothing existed in phase 2.  Phase 1 already makes the two values this
 issue starts from, in `src/room-folders/007-tokens.lua`: the room key's
 input (the token, a text string held in each room's `entry`) and the
 token fingerprint (`SHA-256(SHA-256(token))`, 64 lower-case hex
@@ -188,22 +199,93 @@ passes its broken version grades nothing.
 - Needs 101 (rooms and their tokens).  The trial-opening workers run
   inside the mailbox gatherer's opener stage (211).
 
+## Decisions (2026-11-05)
+
+Made by the builder: the owner's standing instruction is to answer open
+questions rather than wait, choosing the option easiest to undo.  Each is
+written so the owner can overturn it; what overturning costs is said.
+
+1. **The record inside a frame is the log's tab-separated shape**
+   (question 1, formation C): kind, then the kind's fields in a fixed
+   order, escaped by exactly the log's rule.  Undo: every frame passes
+   through `126-inner-records.lua`'s encode and decode, so another shape
+   replaces those two functions and nothing else.
+2. **The cap is 1 MiB** (question 2): the length field may be 28 to
+   1,048,576.  rao-chat carries text; a `members` list or `summary` of a
+   very large room is the biggest thing a frame holds, far under this.
+   Every reader takes the cap from `124-seal.lua`, and no reader may be
+   given a larger one.  Undo: one constant; raising it needs every reader
+   updated before any writer uses it.
+3. **Padding: inside the seal, to the next power of two, at least 256
+   bytes** (question 2): the sealed body (tying value, record, padding) is
+   256, 512, 1024 ... bytes; one that would pass 512 KiB is padded to the
+   largest body the cap allows.  Padding is `"\n"` and zero bytes: the
+   log's escaping keeps raw line breaks out of a record, so the first
+   `"\n"` ends it with no length field.  Readers accept padded and
+   unpadded bodies alike, so turning padding off or changing the sizes is
+   a change to the writer only.  Padding that is not exactly `"\n"` and
+   zeros is refused.
+4. **A token becomes bytes exactly as the entry holds it** (question 3):
+   no Unicode normalising, no trimming; a line break is an error, never
+   quietly cut off.  This is phase 1's rule for the fingerprint, so no
+   fingerprint changes.  Undo: normalising later changes the key and
+   fingerprint of exactly the tokens it alters, the same cost as choosing
+   it now, so waiting costs nothing.
+5. **The nonce budget is not counted** (question 4): nonces are 12 random
+   bytes from the kernel (`getrandom`) per frame; the usual bound is about
+   2^32 frames per key before a repeat becomes a real risk, and a room
+   seals nowhere near that.  Revisit with 209's cross-check at hundreds of
+   members.  Undo: adding a counter later changes nothing on the wire.
+6. **A mailbox port answers nothing in the clear, a health check
+   included** (question 5).  A person tests a port forward with a sealed
+   ping from their own viewer; building that is 212's.
+7. **The tying value is filled in now** (201a's intended behaviour):
+   sealing puts the room's fingerprint bytes first and opening checks it,
+   because 201's frame layout counts those 32 bytes and trial opening
+   needs them to stop at the first key.  201a keeps its own referee (a
+   frame made to pass GCM under two keys).
+8. **The table holds the log's three kinds** (`message`, `correction`,
+   `deletion`: `id`, `written`, `target`, `text`).  The other kinds' fields
+   are defined by their own issues (202 `ack`, 204 `did-you`, 205 `hello`,
+   207 `members`/`members-ask`, 208 `leave`, 209 `summary`, 213
+   `discover`/`here`), each of which adds its row; until then each is an
+   unknown kind, which is an error.
+9. **Workers: split and combine here, run in 211.**  `127-keyring.lua`
+   splits a keyring into one slice per worker (every key once, sizes
+   differing by at most one) and combines the answers (an opening in any
+   slice wins; two is an error); the slices run one after another until
+   the gatherer runs each in its own worker.
+10. **Nonces come from `getrandom(2)` on every frame**, not a buffered read
+    of `/dev/urandom`: a forked worker copies a read buffer and would
+    repeat its parent's nonces (referee 4 shows this).  Linux only for
+    now; macOS would use `getentropy`.
+11. **A slow connection**: reading and writing give up after 3 timeouts in
+    a row that moved no bytes; how long each timeout is belongs to the
+    connection and the gatherer's deadline (211), which is where the
+    sealing note's question 8 (10 s per read or a deadline per frame) is
+    answered.
+
 ## Open questions
 
-1. **The shape of the record inside a frame** (sealing note C6): the
+1. *(answered 2026-11-05 by the builder, decision 1; the owner may
+   overturn)* **The shape of the record inside a frame** (sealing note C6): the
    log's tab-separated shape (proposed, formation C above) or rmail's HTTP
    text with a JSON body?
-2. **The size cap, and padding** (C4, C5): rao-chat carries text, so a cap
+2. *(answered 2026-11-05 by the builder, decisions 2 and 3)* **The size
+   cap, and padding** (C4, C5): rao-chat carries text, so a cap
    near the largest `members` list or `summary` (say 1 MiB) cuts the cost
    of a garbage frame 64 times against rmail's 64 MiB.  Pad inside the seal
    to a few fixed sizes (which?) so short chat lines all look alike?
-3. **How a token becomes bytes** (R5): exactly as typed, or normalised
+3. *(answered 2026-11-05 by the builder, decision 4)* **How a token
+   becomes bytes** (R5): exactly as typed, or normalised
    (Unicode NFC, ends trimmed)?  Normalising changes the fingerprint of any
    phase 1 token it alters.
-4. **The nonce budget** (R1): count frames sealed per room key on this
+4. *(answered 2026-11-05 by the builder, decision 5)* **The nonce
+   budget** (R1): count frames sealed per room key on this
    server and suggest a token change past a number (about 2^32 frames for
    a whole room), or too far off to matter?
-5. **No plaintext answer on a mailbox port** (C11): confirm it covers a
+5. *(answered 2026-11-05 by the builder, decision 6)* **No plaintext
+   answer on a mailbox port** (C11): confirm it covers a
    health check too.  How does a person then test a port forward — a
    sealed "ping" from their own viewer (see 212)?
 6. *(answered 2026-09-26)* **Sharing code with rmail.**  Owner: rmail is a

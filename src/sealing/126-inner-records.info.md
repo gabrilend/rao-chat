@@ -1,0 +1,20 @@
+# 126-inner-records.lua
+
+The record inside a frame: kind, then that kind's fields in a fixed order,
+tab-separated, escaped by the log's rule (`\\ \t \n \r`; 083).  Decision of
+2026-11-05 (issue 201, open question 1): the log's own shape.  Load with
+`require("126-inner-records")`.
+
+The table holds `message`, `correction` and `deletion` (fields `id`,
+`written`, `target`, `text`: the log's record without `from` and
+`arrived`).  The other kinds get their rows from the issues that define
+their fields (202, 204, 205, 207, 208, 209, 213); until then they are
+unknown, and an unknown kind is an error.
+
+| function / value | takes | gives | what it does |
+|---|---|---|---|
+| `encode(record)` | `{kind, fields...}` | one line | Errors on an unknown kind, a missing field, a field the kind lacks, or a `written` that is not a whole number. |
+| `decode(line)` | one line | the record | Errors on an unknown kind, a field too many or too few, an unknown escape, or a `written` that is not a whole number. |
+| `kinds()` | — | sorted list | The kinds the table knows. |
+| `escape(text)` | | | The log's escaping. |
+| `KINDS` | — | table | The rows. |
