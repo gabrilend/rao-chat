@@ -89,9 +89,8 @@ owner, most blocking first: `notes/rmail-rubric/open-questions.md`.
   and adds it beside the pairs held; its own hello sent back adds
   nothing.  Referees 1–6 and part of 7 run in the simulated world.  Open
   questions 1–2 answered as dated decisions the owner may overturn.
-  Left: the mailbox's pairs (212, a seam until then), the members a
-  joiner receives (207), and the old port kept served after a merge
-  (211).
+  Left: the old port kept served after a merge (211).  (The mailbox's
+  pairs came with 212, and the members a joiner receives with 207.)
 - **208** — built 2026-11-05 in `src/delivery/` (147–148), with the
   `leave` row in 126.  Leaving sends a leave with a claim to every pair
   on the send list.  A receiver calls the leaving pair back, then removes
@@ -100,8 +99,8 @@ owner, most blocking first: `notes/rmail-rubric/open-questions.md`.
   re-adds it, and a leave older than its newest message is ignored.
   Referees 1–5 and a sixth for open question 1 run in the simulated
   world.  Open questions 1–2 answered as dated decisions the owner may
-  overturn.  Left: 207's members lists, which must call
-  `may_add_from_list`.
+  overturn.  207's members lists call `may_add_from_list`, so a
+  replayed list does not re-add a confirmed leaver.
 - **212** — built 2026-11-05 in `src/delivery/` (149–151).  Each mailbox
   has an outside port, written in the home's `outside-ports` file; a
   mailbox without one refuses to state pairs, naming the line to write.
@@ -115,3 +114,16 @@ owner, most blocking first: `notes/rmail-rubric/open-questions.md`.
   1–9 answered as dated decisions the owner may overturn.  Left: the
   starter and gatherers that run it (211), and the real operators, which
   were not reachable where this was built.
+- **207** — built 2026-11-05 in `src/delivery/` (152–153), with the
+  `members-digest`, `members-ask` and `members` rows in 126.  When a
+  call-back confirms a newcomer's hello, the home sends its digest to
+  every pair on the send list, the newcomer included.  A home whose
+  digest differs asks, and gets the list, which carries for each pair the
+  claim that pair answered yes to (the room's new `vouched` file).  Every
+  pair from a list is called back before it is added; ignored, private
+  and left pairs are skipped.  Anyone may ask with `ask_members`.
+  Referees 1–6 run in the simulated world, each against a broken version
+  where the issue names one.  Open questions 1–3 answered as dated
+  decisions the owner may overturn.  Left: automatic asking (not built,
+  by decision 1) and marking pairs confirmed only from inside the house
+  (213).

@@ -36,6 +36,13 @@
 --                            the log, and no hello is ever sent back.
 --                            Without on_claim it is refused (no word, so
 --                            the sender tries again later)
+--   a members-digest,        handed to seams.on_members (152's answer,
+--   members-ask or members   207) and answered with the record it gives:
+--   (207)                    an ack naming the id, a members-ask, or the
+--                            members list; the connection stays open for
+--                            the next frame of the exchange.  Without
+--                            on_members, or when it fails, an empty ack
+--                            (the problem goes to seams.on_problem)
 --   filed / duplicate        the log's own word
 --   hidden (ignored, hide)   `filed`: the record is dropped, and the sender
 --                            is not told it is ignored, so it stops
@@ -64,6 +71,8 @@
 --   seams.on_opened(tag, peer)         optional (134 uses it: question 1)
 --   seams.on_claim(tag, record, peer)  optional (145's receive, 205) →
 --                                      the ack's word
+--   seams.on_members(tag, record, peer) optional (152's answer, 207) →
+--                                      the record to answer with
 -- Receiving never sends anything but these answers, and never waits on
 -- the sender stage (R6): 211 runs this in its own stage.
 
@@ -83,6 +92,9 @@ local M = {}
 -- The records that carry a claim to call back (205's hello; 208's leave
 -- joins it), handed to seams.on_claim.
 M.CLAIMS = { hello = true, leave = true }
+
+-- The records of 207's members exchange, handed to seams.on_members.
+M.MEMBERS = { ["members-digest"] = true, ["members-ask"] = true, members = true }
 
 -- {{{ function M.sender_of
 -- home, tag, host, source_port → from_address, from_port, is_member, and
@@ -178,6 +190,16 @@ function M.serve(conn, seams)
                 seams.on_problem(tag, "a " .. asked.kind .. ": " .. tostring(word))
             end
             answer = records.encode({ kind = "ack", answers = send.write_answers(answers) })
+        elseif asked_ok and M.MEMBERS[asked.kind] then
+            -- 207: the stage's (152), never the log's
+            local ok, reply = false, "nothing here hears members lists"
+            if seams.on_members then ok, reply = pcall(seams.on_members, tag, asked, seams.peer) end
+            if ok and type(reply) == "table" then
+                answer = records.encode(reply)
+            else
+                if seams.on_problem then seams.on_problem(tag, "a " .. asked.kind .. ": " .. tostring(reply)) end
+                answer = records.encode({ kind = "ack", answers = send.write_answers({}) })
+            end
         else
             local word, id, problem = M.file_record(home, tag, opened, seams.peer, seams.now())
             local answers = {}

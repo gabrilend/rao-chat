@@ -3,9 +3,9 @@
 -- deliberately broken version it must catch.
 --
 -- The homes are real rao-homes on disk; between them runs 143's simulated
--- world.  Homes announce (a stand-in for 212's own_pairs).  207's members
--- lists are not built: referee 4 replays a list through a stand-in
--- receiver that calls 147's guard, as 207's will.
+-- world.  Homes announce (a stand-in for 212's own_pairs).  Referee 4
+-- replays a list through a stand-in receiver that calls 147's guard;
+-- 207's real receiver (152) is refereed the same way in 153's referee 6.
 --
 -- Run: luajit src/delivery/tests/148-test-leaving.lua [PROJECT_DIR]
 -- Prints PASS/FAIL per check, then "counts <passed> <failed>"; exit status
@@ -201,7 +201,8 @@ end)
 ------------------------------------------------------------------------------
 
 -- {{{ local function replay_list
--- A stand-in for 207's receiving of a members list: each pair is added
+-- A stand-in for 207's receiving of a members list (152's receive_list is
+-- the real one, refereed in 153): each pair is added
 -- unless 147's guard says it left.
 local function replay_list(node, list)
     for _, pair in ipairs(list) do

@@ -34,6 +34,15 @@
 -- gets no start-up hellos until this home writes in it again (147's
 -- `left-by-me`).
 --
+-- Members lists (207).  When a check confirms a hello and that adds the
+-- pair ("added" or "added-flagged"), and the claim did not come from a
+-- received members list, `notice_members` sends the room's digest (152)
+-- to every pair on the send list, the newcomer included: one job each,
+-- run like the hellos (152's `attempt`) and kept in the same table.
+-- `ask_members` asks one pair for its list (the viewer's button).  A pair
+-- added from a list sends nothing, and nothing else sends a digest, so
+-- idle homes stay quiet.
+--
 -- What runs where is 211's: it calls `write` from the viewer's stage,
 -- `pass` from a sender stage that never blocks the receiving stage (R6),
 -- and may run the jobs of one pass in parallel workers, as long as one
@@ -60,6 +69,7 @@ local send = require("132-send")
 local call_back = require("142-call-back")
 local hello = require("145-hello")
 local leaving = require("147-leaving")
+local members = require("152-members")
 
 local M = {}
 
@@ -100,6 +110,8 @@ end
 
 local Stage = {}
 Stage.__index = Stage
+-- the stage's methods, for tests that swap one
+M.Stage = Stage
 
 -- {{{ function M.new_stage
 -- home, seams ({connect}), floor, ceiling (omitted: read from the home's
@@ -116,20 +128,21 @@ end
 -- {{{ function Stage:check
 -- 204: tag, kind (hello | leave), claim id, the stated pair, now → the
 -- check, due now; one per claim and pair (a claim heard twice is one
--- check).  Its state: "unconfirmed" until a try gets "confirmed" or
--- "refused", which end it.
+-- check), and true when this call made it.  Its state: "unconfirmed"
+-- until a try gets "confirmed" or "refused", which end it.
 function Stage:check(tag, kind, claim_id, pair, now)
     if not self.answer_time then self.answer_time = call_back.settings(self.home) end
     local k = tag .. " " .. claim_id .. " " .. pair.address .. " " .. tostring(pair.port)
-    local check = self.checks[k]
+    local check, made = self.checks[k], false
     if not check then
+        made = true
         check = { tag = tag, kind = kind, claim = claim_id, pair = { address = pair.address, port = pair.port },
                   timer = timer.new(self.floor, self.ceiling), tries = 0, state = "unconfirmed" }
         check.timer:due_now(now)
         self.checks[k] = check
         self.check_order[#self.check_order + 1] = k
     end
-    return check
+    return check, made
 end
 -- }}}
 
@@ -141,6 +154,11 @@ function Stage:run_check(check, now)
     if not ok then state, why = "unconfirmed", tostring(state) end
     check.tries = check.tries + 1
     check.state, check.why = state, why
+    -- 207: a newcomer confirmed by its own hello → the room's digest to all
+    if state == "confirmed" and check.kind == "hello" and not check.from_list
+        and (why == "added" or why == "added-flagged") then
+        self:notice_members(check.tag, now)
+    end
     if state == "unconfirmed" then
         check.timer:failed(self.seams.now and self.seams.now() or now)
     else
@@ -180,7 +198,7 @@ function Stage:leave(tag, now)
     leaving.mark_own(self.home, tag, written)
     for _, k in ipairs(self.hello_order) do
         local job = self.hellos[k]
-        if job.tag == tag and job.kind == "hello" then job.done = true end
+        if job.tag == tag and job.kind ~= "leave" then job.done = true end
     end
     local made = {}
     for _, pair in ipairs(recipients.send_list(self.home, tag)) do
@@ -201,7 +219,7 @@ end
 -- One try at one hello: an ack naming its claim ends it; anything else,
 -- an error included, is one failure of its timer.
 function Stage:run_hello(job, now)
-    local ok, sent, why = pcall(hello.attempt, self.home, job, self.seams, now)
+    local ok, sent, why = pcall(job.attempt or hello.attempt, self.home, job, self.seams, now)
     job.tries = job.tries + 1
     if ok and sent then
         job.timer:held()
@@ -211,6 +229,42 @@ function Stage:run_hello(job, now)
         job.timer:failed(self.seams.now and self.seams.now() or now)
     end
     return job.done == true
+end
+-- }}}
+
+-- {{{ local function members_job
+-- 207: one members job (kind "members-digest" or "members-ask") to one
+-- pair, due now, kept with the hellos; a new one replaces an unfinished one.
+local function members_job(stage, kind, tag, pair, now)
+    local k = "members " .. job_key(tag, pair)
+    if not stage.hellos[k] then stage.hello_order[#stage.hello_order + 1] = k end
+    local job = { kind = kind, tag = tag, pair = { address = pair.address, port = pair.port }, stage = stage,
+                  attempt = members.attempt, timer = timer.new(stage.floor, stage.ceiling), tries = 0 }
+    job.timer:due_now(now)
+    stage.hellos[k] = job
+    return job
+end
+-- }}}
+
+-- {{{ function Stage:notice_members
+-- 207: tag, now → the digest jobs, one per pair on the send list.  Counted
+-- in `notices` (how many times a room's digest went out).
+function Stage:notice_members(tag, now)
+    if leaving.own_left(self.home, tag) then return {} end
+    self.notices = (self.notices or 0) + 1
+    local made = {}
+    for _, pair in ipairs(recipients.send_list(self.home, tag)) do
+        made[#made + 1] = members_job(self, "members-digest", tag, pair, now)
+    end
+    return made
+end
+-- }}}
+
+-- {{{ function Stage:ask_members
+-- 207: tag, pair, now → a job asking that pair for its list (anyone may
+-- ask; what comes back is only called back, never added).
+function Stage:ask_members(tag, pair, now)
+    return members_job(self, "members-ask", tag, pair, now)
 end
 -- }}}
 

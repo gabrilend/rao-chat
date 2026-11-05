@@ -30,6 +30,7 @@ local delivered = require("130-delivered")
 local receive = require("133-receive")
 local delivery = require("134-delivery")
 local leaving = require("147-leaving")
+local members = require("152-members")
 local reach = require("149-reach")
 
 local T = { passed = 0, failed = 0 }
@@ -302,7 +303,8 @@ local START_CONFIG = first_variants()
 -- (205).  options.ports: more listening ports than `port`, each served
 -- with its own keyring.  options.no_room: the home
 -- starts with no room (a joiner; node.tag is nil until it joins).
--- Hellos and leaves heard are handed to 147's on_claim (205, 208).
+-- Hellos and leaves heard are handed to 147's on_claim (205, 208);
+-- members digests, asks and lists to 152's answer (207).
 local function new_node(name, hosts, port, options)
     options = options or {}
     local home, tag, home_path
@@ -359,6 +361,9 @@ local function new_node(name, hosts, port, options)
             on_opened = function(room_tag, peer) node.stage:heard_at(room_tag, peer.host, sim.now) end,
             on_claim = function(room_tag, record, peer)
                 return leaving.on_claim(node.stage, room_tag, record, peer, math.floor(sim.now))
+            end,
+            on_members = function(room_tag, record, peer)
+                return members.answer(node.stage, room_tag, record, peer, math.floor(sim.now))
             end,
         }
     end

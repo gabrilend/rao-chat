@@ -86,6 +86,9 @@ change bell per running program.
                               208's format); absent = none
           left-by-me          the written time of this home's own leave (phase 2, 208); removed
                               when this home writes in the room again; absent = not left
+          vouched             the claim each member answered yes to in a hello's call-back,
+                              "address TAB port TAB claim id TAB confirmed" (phase 2, 207);
+                              absent = none
       people/                 links (104's)
         <direct-message label>/<link name> -> ../../rooms/<local tag>
 

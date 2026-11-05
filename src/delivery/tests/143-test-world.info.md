@@ -9,5 +9,8 @@ that 202's referees (137) and 204's (144) share it. It has:
   stage, that can be restarted on the same home;
 - the check kit.
 
+Each home's serving stage hands hellos and leaves to 147's `on_claim`
+and members frames to 152's `answer` (207).
+
 Use it as `dofile(...)(DIR, name)`, which returns a table of these. Its
 `finish()` prints the counts and exits.

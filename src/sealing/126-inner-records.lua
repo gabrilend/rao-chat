@@ -15,10 +15,10 @@
 --
 -- The table holds the kinds whose fields are settled: the log's three
 -- (message, correction, deletion), 202's `ack`, 204's `did-you` and
--- `did-you-answer`, 205's `hello` and 208's `leave`.  Every other kind
--- 201 names (members, members-ask, summary, discover, here) gets its row
--- from the issue that defines its fields (207, 209, 213), when that issue
--- is built.  Until then it is an unknown kind, and an unknown kind is an
+-- `did-you-answer`, 205's `hello`, 208's `leave`, and 207's
+-- `members-digest`, `members-ask` and `members`.  Every other kind 201
+-- names (summary, discover, here) gets its row from the issue that
+-- defines its fields (209, 213), when that issue is built.  Until then it is an unknown kind, and an unknown kind is an
 -- error.  205's hello and 208's leave each carry a `claim` field: the
 -- claim id 204's `claims` file keeps (141).
 --
@@ -35,6 +35,17 @@
 -- `claim`, `written` (the leaver's own clock, whole seconds: what "newer
 -- than the leave" is measured against) and `pairs`, the pairs leaving, in
 -- the hello's form.
+--
+-- 207's three (decision of 2026-11-05; the owner may overturn it): each
+-- carries an `id` (32 hex) that the answering `ack` names.
+--   members-digest  `digest` (64 hex: SHA-256 of the pairs held, sorted as
+--                   "<address> <port>" lines) and `count`: "this is what I
+--                   hold"
+--   members-ask     the asker's own `digest` and `count`: "send me yours"
+--   members         the lister's `digest`, its `pairs` (the hello's form)
+--                   and `claims`: one claim id per pair, in order,
+--                   separated by single spaces — the claim that pair
+--                   answered yes to, so a receiver can call it back (204)
 --
 -- `did-you` and `did-you-answer` (issue 204, decision of 2026-11-05; the
 -- owner may overturn it): a `did-you` names the claim id (32 hex) and the
@@ -72,6 +83,11 @@ KINDS["did-you"] = { { name = "claim", type = "text" }, { name = "address", type
                      { name = "port", type = "whole" } }
 KINDS["did-you-answer"] = { { name = "claim", type = "text" }, { name = "answer", type = "text" } }
 KINDS.hello = { { name = "claim", type = "text" }, { name = "pairs", type = "pairs" } }
+KINDS["members-digest"] = { { name = "id", type = "text" }, { name = "digest", type = "text" },
+                            { name = "count", type = "whole" } }
+KINDS["members-ask"] = KINDS["members-digest"]
+KINDS.members = { { name = "id", type = "text" }, { name = "digest", type = "text" },
+                  { name = "pairs", type = "pairs" }, { name = "claims", type = "text" } }
 KINDS.leave = { { name = "claim", type = "text" }, { name = "written", type = "whole" },
                 { name = "pairs", type = "pairs" } }
 
