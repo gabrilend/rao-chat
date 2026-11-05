@@ -23,13 +23,13 @@
 --   - when 212 reports a confirmed move (`moved`): a fresh hello, a new
 --     claim, to every pair.
 --
--- Where this mailbox can be reached is 212's (not built).  Decision of
--- 2026-11-05 (the owner may overturn it): the stage takes the pairs from
--- a seam, `seams.own_pairs(tag)` → list of {kind, address, port}, which
--- 212 will give; there is no default and no guessed port ("no way. no
--- default port numbers").  A stage made without that seam (202's and
--- 204's tests, or a home before 212 is wired) sends no hellos at all and
--- `join` refuses.  `home-network` pairs go only to a housemate (addresses
+-- Where this mailbox can be reached is 212's.  The stage takes the pairs
+-- from a seam, `seams.own_pairs(tag)` → list of {kind, address, port};
+-- 149's `seam(home, ram_root)` is the real one (the outside port, the
+-- public-address fact, the hostname, the machine's own addresses), which
+-- 211's gatherer gives its stage.  There is no default and no guessed port
+-- ("no way. no default port numbers").  A stage made without that seam
+-- (202's and 204's tests) sends no hellos at all and `join` refuses.  `home-network` pairs go only to a housemate (addresses
 -- R3): `seams.is_housemate(pair)` (213's; without it, nobody is one).
 --
 -- Receiving (133 hands a decoded hello to `receive` through its

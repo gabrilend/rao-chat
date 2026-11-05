@@ -104,4 +104,58 @@ return {
         },
         leaning = "8: rmail's limit for one exchange; silence never confirms, so a short wait is safe.",
     },
+    {
+        id = "address-recheck-earliest",
+        question = "How soon after a check is the home's public address checked again, at the earliest, in seconds?",
+        waits_on = "owner",
+        detail = "issue 212 (Intended Behavior, 'Rechecked while running'; open question 11)",
+        config_key = "address.recheck-earliest",
+        variants = {
+            {
+                name = "86400",
+                summary = "rmail's window starts at 24 hours.",
+                built_in = "src/delivery/150-public-address.lua (settings, Watcher:run)",
+                tests = "src/delivery/tests/151-test-reach.lua (referees 4, 5)",
+                findings = "After a check nobody answered, the next comes after a quarter to a half of "
+                    .. "this, so 6 to 12 hours.",
+            },
+        },
+        leaning = "86400: rmail's 24 to 48 hours, around the owner's 'once every 36 hours or so'.",
+    },
+    {
+        id = "address-recheck-latest",
+        question = "How long after a check is the home's public address checked again, at the latest, in seconds?",
+        waits_on = "owner",
+        detail = "issue 212 (Intended Behavior, 'Rechecked while running'; open question 11)",
+        config_key = "address.recheck-latest",
+        variants = {
+            {
+                name = "172800",
+                summary = "rmail's window ends at 48 hours.",
+                built_in = "src/delivery/150-public-address.lua (settings, Watcher:run)",
+                tests = "src/delivery/tests/151-test-reach.lua (referee 5)",
+                findings = "A move is noticed within this long; each wait is drawn from the kernel's "
+                    .. "random source, so homes started together do not check together.",
+            },
+        },
+        leaning = "172800: with 86400, an average of 36 hours.",
+    },
+    {
+        id = "address-hostname",
+        question = "Does the home have a hostname to state in hellos?",
+        waits_on = "owner",
+        detail = "issue 212 (Intended Behavior, the table of pairs)",
+        config_key = "address.hostname",
+        variants = {
+            {
+                name = "none",
+                summary = "No hostname: hellos state the public address, IPv6 and housemate pairs.",
+                built_in = "src/delivery/149-reach.lua (hostname, own_pairs)",
+                tests = "src/delivery/tests/151-test-reach.lua",
+                findings = "A hostname is stated with the outside port, beside the public address, "
+                    .. "never instead of it.",
+            },
+        },
+        leaning = "none, until the person has one.",
+    },
 }

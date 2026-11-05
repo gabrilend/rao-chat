@@ -69,6 +69,8 @@ change bell per running program.
       config                  settings: key = value lines (rmail's config format)
       mailboxes               one entry per mailbox (rmail's contacts format, below); 101's; made EMPTY by open_home
       ignore                  the ignore list (103a's format); made EMPTY by open_home
+      outside-ports           each mailbox's outside port, "<mailbox tag>.outside-port = N" (phase 2,
+                              212's); written by the person or the viewer; absent = none yet
       rooms/
         <local tag>/
           entry               one entry in rmail's contacts format (below); 101's

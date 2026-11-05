@@ -14,6 +14,15 @@
 -- callback.answer-time — whole seconds: how long a call-back check waits
 --   for the stated pair's answer before the claim stays unconfirmed for
 --   now (142, 204).  No default; at least 1.
+-- address.recheck-earliest — whole seconds: the soonest the public address
+--   is checked again after a check that got an answer (150, 212).  No
+--   default; at least 1.
+-- address.recheck-latest — whole seconds: the latest; each wait is drawn
+--   between the two from the kernel's random source (150, 212).  No
+--   default; at least address.recheck-earliest.
+-- address.hostname — a hostname the person has for the home, stated in
+--   hellos with each mailbox's outside port, or `none` (149, 212).
+--   No default.
 
 return {
     "delivery.retry-floor",
@@ -21,4 +30,7 @@ return {
     "failed-decryption.file-size",
     "failed-decryption.files-kept",
     "callback.answer-time",
+    "address.recheck-earliest",
+    "address.recheck-latest",
+    "address.hostname",
 }
