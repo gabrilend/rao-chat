@@ -114,6 +114,18 @@ owner, most blocking first: `notes/rmail-rubric/open-questions.md`.
   1–9 answered as dated decisions the owner may overturn.  Left: the
   starter and gatherers that run it (211), and the real operators, which
   were not reachable where this was built.
+- **213** — built 2026-11-05 in `src/delivery/` (154–155), with the
+  `discover` and `here` rows in 126.  A room is searched only when a
+  member is at this home's public address, or a connection in it came
+  from this machine's own network: a sealed `discover` goes to the
+  multicast group (time-to-live 1) and to every address of each own
+  network.  The pair inside the seal is called back, and on yes kept as a
+  housemate (in memory and the RAM folder), never as a member and never
+  in a members list.  Connections to its stated public pairs go to its
+  home-network pair.  A relaying router is logged once and kept nowhere.
+  Referees 1–4 run in the simulated world, against broken versions.  Open
+  questions 1–3 answered as dated decisions the owner may overturn.
+  Left: the gatherer's socket and timers (211).
 - **207** — built 2026-11-05 in `src/delivery/` (152–153), with the
   `members-digest`, `members-ask` and `members` rows in 126.  When a
   call-back confirms a newcomer's hello, the home sends its digest to
@@ -125,5 +137,5 @@ owner, most blocking first: `notes/rmail-rubric/open-questions.md`.
   Referees 1–6 run in the simulated world, each against a broken version
   where the issue names one.  Open questions 1–3 answered as dated
   decisions the owner may overturn.  Left: automatic asking (not built,
-  by decision 1) and marking pairs confirmed only from inside the house
-  (213).
+  by decision 1).  Pairs confirmed only from inside the house are 213's
+  housemates, kept apart from the members, so no list carries them.

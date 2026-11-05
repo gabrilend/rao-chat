@@ -106,6 +106,65 @@ source of claims, not a separate trust path.
    answers; sweep the ports the room's pairs name (proposed), or one
    multicast only?
 
+## Decisions (2026-11-05)
+
+Made by the builder.  The owner's standing instruction is to answer open
+questions rather than wait, choosing the option that is easiest to undo.
+The owner can overturn each one; what overturning costs is said with it.
+Built in `src/delivery/` (154 housemates, 155's referees), with the
+`discover` and `here` rows in 126, a `discover` claim kind in 141, its
+action in 142, and 143's simulated home network.  It replaces 205's
+stand-in: `seams.is_housemate` is now 154's.  Discovery is tested only
+inside the simulated world and, for the one real datagram, on 127.0.0.1
+inside a network namespace with only loopback; nothing was sent to a
+real network.
+
+1. **The same-network test** (open question 1): the real network mask,
+   as proposed, read from the kernel's routing table (`/proc/net/route`:
+   attached routes, no gateway, private destinations).  A /25 and a /20
+   are told apart exactly.  Undo: 154's `on_own_network` alone decides.
+2. **Found addresses across a restart** (open question 2): kept in the
+   gatherer's RAM folder (`<ram>/housemates`: room, home address and
+   port, the public pairs it stated), read back when the housemates
+   table is made, and not synced to disk.  They survive a gatherer
+   restart, but not a reboot, where the address may have changed anyway.
+   Every start searches again.  Undo: stop reading the file in `new`.
+3. **The sweep's ports** (open question 3): the ports named by the room's
+   members at this home's public address, plus this mailbox's own
+   listening port (a housemate on the same defaults).  The group and the
+   sweep both go to each.  A housemate whose router maps a different
+   outside port to its listening port is found only if it searches
+   itself, which it does at its own start.  Undo: 154's `ports`.
+4. **The claim:** a discover or here carries a `discover` claim (141)
+   stating every pair the mailbox states.  The receiver calls back the
+   home-network pair inside the seal, and on yes keeps it.  A claim kind
+   of its own keeps a found pair from ever being added as a member
+   (142's `discover` action calls 154's `keep`).
+5. **Routing:** a kept housemate's stated public pairs are routed to its
+   home-network pair (`route`), so a member at this home's public address
+   is reached inside the house.  The room's entry still holds the public
+   pair, so a housemate who moves away is still reached from outside.
+6. **What is called back:** only a home-network address on this
+   machine's own network.  A body naming any other address is ignored,
+   so a datagram cannot make this home call arbitrary addresses.
+7. **When a room is searched:** once a run (`start`), after a confirmed
+   move (`moved`), and when a connection in that room arrives from an
+   address on this machine's own network (`from_connection`).  A private
+   address on another network is a relay: one log line per address, kept
+   nowhere.
+8. **The multicast group** is 239.192.82.78, next to rmail's
+   239.192.82.77, so the two programs do not wake each other.
+   Time-to-live 1, and the sender does not hear its own copy.
+9. **The sweep** covers every host of each attached private network,
+   less the network, broadcast and own addresses.  A network wider than
+   /24 is swept on the /24 around this machine's address, so a /16 costs
+   253 packets, not 65,000.
+10. **Datagrams that do not open are dropped silently.**  Other programs
+    use multicast too, so they are not failed-decryption lines (203).
+11. **What runs it is 211's:** `udp_listen` (a socket on the mailbox's
+    port, joined to the group) and `udp_send` are ready for the gatherer,
+    which hands each datagram to `receive` and calls `start` and `moved`.
+
 ## Related documents
 
 - `notes/vision-planning.md` section 5 ("Finding each other at home")

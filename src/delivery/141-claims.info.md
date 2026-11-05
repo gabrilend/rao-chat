@@ -7,4 +7,5 @@ id of 32 hex characters. `answer` says `yes` only if that file holds the
 id stating the pair asked about, and `no` otherwise. Answering only reads
 the file, so a restart forgets nothing and a replayed question gets the
 same answer.  `make_for` (205) writes one line per pair a hello states,
-all with one claim id; each pair is still confirmed on its own.
+all with one claim id; each pair is still confirmed on its own.  213 adds
+the kind `discover`, the claim a housemate search carries.

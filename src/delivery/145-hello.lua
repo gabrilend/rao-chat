@@ -30,7 +30,9 @@
 -- 211's gatherer gives its stage.  There is no default and no guessed port
 -- ("no way. no default port numbers").  A stage made without that seam
 -- (202's and 204's tests) sends no hellos at all and `join` refuses.  `home-network` pairs go only to a housemate (addresses
--- R3): `seams.is_housemate(pair)` (213's; without it, nobody is one).
+-- R3): `seams.is_housemate(pair)` (213's: 154's `is_housemate`, true for
+-- a pair kept after a discovery's call-back; without the seam, nobody is
+-- one).
 --
 -- Receiving (133 hands a decoded hello to `receive` through its
 -- `on_claim` seam):
