@@ -63,3 +63,11 @@ owner, most blocking first: `notes/rmail-rubric/open-questions.md`.
   1–9 run in a simulation (fake clock, in-memory relay).  Open questions
   1–7 and 10 answered as dated decisions the owner may overturn.  Left:
   the stages, sockets and workers (211).
+- **203** — built 2026-11-05 in `src/delivery/` (138–140), with the line
+  grammar in `docs/failed-decryption-log.md` and a fail2ban filter and
+  jail in `docs/fail2ban/`: one line per frame no key opens and per length
+  refusal, carrying the source address and ports, in size-split files in
+  the mailbox's RAM folder (138 is the split rule 215a will share).  The
+  filter has been checked by a stand-in only; fail2ban was not installed
+  where this was built.  Open questions 1–3 answered as dated decisions
+  the owner may overturn.  Left: the opener stage and RAM folder (211).

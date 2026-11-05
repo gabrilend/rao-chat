@@ -1,0 +1,14 @@
+# jail-example.local — a fail2ban jail for rao-chat's failed-decryption
+# log (docs/failed-decryption-log.md).  Copy into /etc/fail2ban/jail.d/
+# and change logpath to your gatherer.ram-root: one * for the home's
+# folder, one for each mailbox's.
+
+[rao-chat-failed-decryption]
+enabled  = true
+filter   = rao-chat-failed-decryption
+logpath  = /dev/shm/rao-chat/*/*/failed-decryption
+# the ports your mailboxes listen on
+port     = 7501,7502
+maxretry = 20
+findtime = 60
+bantime  = 3600
