@@ -102,3 +102,16 @@ owner, most blocking first: `notes/rmail-rubric/open-questions.md`.
   world.  Open questions 1–2 answered as dated decisions the owner may
   overturn.  Left: 207's members lists, which must call
   `may_add_from_list`.
+- **212** — built 2026-11-05 in `src/delivery/` (149–151).  Each mailbox
+  has an outside port, written in the home's `outside-ports` file; a
+  mailbox without one refuses to state pairs, naming the line to write.
+  The public address is looked up over DNS from several operators, a
+  change counts only when a second operator agrees, and it is rechecked
+  at random points within a configured window.  A confirmed move sends
+  fresh hellos.  Hellos state public, hostname, IPv6 and home-network
+  pairs, each with its kind and the right port.  Carrier-grade
+  translation is named and never stated.  Referees 1–8 run, with the
+  simulated homes now stating their pairs through 149.  Open questions
+  1–9 answered as dated decisions the owner may overturn.  Left: the
+  starter and gatherers that run it (211), and the real operators, which
+  were not reachable where this was built.

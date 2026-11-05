@@ -30,6 +30,7 @@ local delivered = require("130-delivered")
 local receive = require("133-receive")
 local delivery = require("134-delivery")
 local leaving = require("147-leaving")
+local reach = require("149-reach")
 
 local T = { passed = 0, failed = 0 }
 -- {{{ local function check
@@ -257,7 +258,7 @@ function world.connect(from_host, pair)
     world.next_port = world.next_port + 1
     local client = setmetatable({ inp = down, out = up, timeout = 2.5 }, Conn)
     local server = setmetatable({ inp = up, out = down, timeout = 2.5,
-        peer = { host = from_host, port = world.next_port } }, Conn)
+        peer = { host = from_host, port = world.next_port }, listen_port = listener.port }, Conn)
     listener.queue[#listener.queue + 1] = server
     return client
 end
@@ -294,20 +295,25 @@ local START_CONFIG = first_variants()
 -- A home with one room (TOKEN) on its own mailbox port, listening at each
 -- of `hosts` on that port.  options.single_loop: a broken server that
 -- sends and accepts in one loop.  options.announce: the stage states
--- where it can be reached (212's own_pairs: a `public` pair for each
--- host on the port), so it sends hellos (205).  options.no_room: the home
+-- where it can be reached through 212's real own_pairs (149): the home's
+-- `public-address` fact (in the home's folder, `ram/`) names its first
+-- host, and every mailbox's outside port is its listening port unless
+-- options.outside maps a listening port to another; so it sends hellos
+-- (205).  options.ports: more listening ports than `port`, each served
+-- with its own keyring.  options.no_room: the home
 -- starts with no room (a joiner; node.tag is nil until it joins).
 -- Hellos and leaves heard are handed to 147's on_claim (205, 208).
 local function new_node(name, hosts, port, options)
     options = options or {}
-    local home, tag
+    local home, tag, home_path
     if options.restart then
         -- the same home on disk, started again: nothing in memory is kept
-        home, tag = options.restart.home, options.restart.tag
+        home, tag, home_path = options.restart.home, options.restart.tag, options.restart.home_path
         options.restart.retired = true
     else
         home_count = home_count + 1
-        home = rooms.open_home(SCRATCH .. "/" .. name .. "-" .. home_count)
+        home_path = SCRATCH .. "/" .. name .. "-" .. home_count
+        home = rooms.open_home(home_path)
         for key, value in pairs(START_CONFIG) do rooms.set_config(home, key, value) end
         rooms.set_config(home, "delivery.retry-floor", tostring(FLOOR))
         rooms.set_config(home, "delivery.retry-ceiling", tostring(CEILING))
@@ -317,27 +323,37 @@ local function new_node(name, hosts, port, options)
         end
     end
     local node = { name = name, host = hosts[1], port = port, home = home, tag = tag, problems = {},
-                   queue = {}, answers = {} }
+                   queue = {}, answers = {}, home_path = home_path, ram = home_path .. "/ram" }
     local stage_seams = {
         connect = function(pair) return world.connect(node.host, pair) end,
         now = function() return sim.now end,
     }
     if options.announce then
-        stage_seams.own_pairs = function()
-            local list = {}
-            for _, host in ipairs(hosts) do list[#list + 1] = { kind = "public", address = host, port = port } end
-            return list
+        os.execute("mkdir -p '" .. node.ram .. "'")
+        reach.write_fact(node.ram, { address = hosts[1], confirmed = math.floor(sim.now), operators = { "test" } })
+        local real = reach.seam(home, node.ram, function() return { ipv6 = {}, private = {} } end)
+        stage_seams.own_pairs = function(room_tag)
+            -- the person has written every mailbox's outside port
+            local written = reach.read_outside_ports(home)
+            for _, mailbox in ipairs(rooms.read_mailboxes(home)) do
+                if not written[mailbox.tag] then
+                    reach.set_outside_port(home, mailbox.tag, (options.outside or {})[mailbox.port] or mailbox.port)
+                end
+            end
+            return real(room_tag)
         end
     end
     node.stage = delivery.new_stage(home, stage_seams)
-    for _, host in ipairs(hosts) do
-        world.listeners[host .. " " .. port] = { up = true, queue = node.queue }
+    for _, listening in ipairs({ port, unpack(options.ports or {}) }) do
+        for _, host in ipairs(hosts) do
+            world.listeners[host .. " " .. listening] = { up = true, queue = node.queue, port = listening }
+        end
     end
     -- {{{ local function serve_seams
     local function serve_seams(conn)
         return {
             home = home, peer = conn.peer,
-            ring = function() return keyring.for_port(rooms, home, port) end,
+            ring = function() return keyring.for_port(rooms, home, conn.listen_port or port) end,
             now = function() return math.floor(sim.now) end,
             on_problem = function(_, words) node.problems[#node.problems + 1] = words end,
             on_opened = function(room_tag, peer) node.stage:heard_at(room_tag, peer.host, sim.now) end,

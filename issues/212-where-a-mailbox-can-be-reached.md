@@ -173,6 +173,72 @@ inferring from position, as rmail's `ip`/`ip[N]`/`local-ip` fields do.
 11. *(answered 2026-09-27)* **The recheck interval** is a config setting
     (planning section 15, "Git per mailbox").
 
+## Decisions (2026-11-05)
+
+Made by the builder.  The owner's standing instruction is to answer open
+questions rather than wait, choosing the option that is easiest to undo.
+The owner can overturn each one; what overturning costs is said with it.
+Built in `src/delivery/` (149 reach, 150 public address, 151's
+referees), three settings in 135 and 136, and 143's simulated homes, which
+now state their pairs through 149 instead of 205's stand-in.  The home
+starter and the gatherers (211) are not built: the watcher and the
+outside-port check are ready for the starter to run, and 149's `seam` is
+what a gatherer gives its sender stage.
+
+1. **Where the outside port lives** (open question 1): a new home file,
+   `outside-ports`, beside `mailboxes`, one line per mailbox:
+   `<mailbox tag>.outside-port = <number>`.  It is not a field of 101's
+   `mailboxes` entries, so phase 1's file and checks stay as they are.  A
+   mailbox with no line is an error naming the mailbox, its listening
+   port, and the exact line to write.  The listening port is never used in
+   its place.  Undo: move the line into `mailboxes`; only 149's reader
+   changes.
+2. **Both ports for IPv6** (open question 2): confirmed as the issue
+   says.  IPv6 pairs carry the listening port, public and hostname pairs
+   the outside port.  Kinds stay in hellos and lists, not in the room
+   entry.
+3. **Automatic port opening** (open question 3): not built and not
+   probed.  The person writes the outside port.  If it is wanted later it
+   needs its own setting, on or off, with no default.
+4. **Carrier translation at home** (open question 4): mailboxes run,
+   outbound only.  A public address in 100.64/10 is never stated in a
+   hello, because nobody outside could call it back, and `state` names
+   carrier-grade translation for the viewer.
+5. **Superseded pairs** (open question 5): not retired here.  A pair that
+   stops answering is slowed to the retry ceiling by 202's timers.
+   Retiring one is left for when 209's cross-check exists.
+6. **The lookup** (open question 6): rmail's rule and rmail's sources
+   (OpenDNS, Cloudflare and Google, two resolvers each), asked over DNS
+   from 150 itself with LuaSocket.  A change counts only when a second,
+   different operator gives the same new address.  "Nobody answered" is
+   kept apart from "no change".  The first address a home ever learns
+   needs the same two operators.  The same-network test by mask is 213's.
+7. **The open-router warning** (open question 7): not built, because it
+   belongs to automatic port opening (decision 3).
+8. **A home-network address change** (open question 8): not warned yet.
+   149 reads the machine's private addresses at every hello, so the
+   hellos follow a change.  A warning naming each mailbox's forward
+   needs the viewer (211).
+9. **Testing a forward** (open question 9): not built.
+10. **The recheck window** reads `address.recheck-earliest` and
+    `address.recheck-latest`, with no defaults.  The options offer
+    rmail's 86400 and 172800.  After a check nobody answered, or a
+    disagreement or an unconfirmed change, the next check comes after a
+    quarter to a half of the earliest.  Each wait is drawn from
+    `/dev/urandom`.
+11. **`address.hostname`** is a setting: a hostname, or `none`.  It is
+    stated with the outside port.
+12. **The public-address fact file** is one line: address, confirmed
+    time, and the operators that agreed.  Its folder (the home's RAM
+    root) is passed in, because 211 makes that folder.
+13. **The machine's own addresses** are read from the kernel's lists:
+    `/proc/net/if_inet6` for global IPv6, and `/proc/net/fib_trie` for
+    private IPv4.  No `ip` command is needed.
+
+What could not be checked here: the real DNS operators.  This machine
+has no outside network, so the question and answer were checked against
+a stand-in resolver on loopback UDP only.
+
 ## Related documents
 
 - `notes/vision-planning.md` sections 5 ("Keeping addresses current"), 15
