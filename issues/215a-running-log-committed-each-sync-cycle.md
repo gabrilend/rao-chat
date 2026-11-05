@@ -104,6 +104,50 @@ away, and a branch keeps it apart from what may be shared.
 3. **The failed-decryption lines** (203): in this log too, or only in
    their own file?
 
+## Decisions (2026-11-05)
+
+Made by the builder; the owner can overturn each.  Built in
+`src/git-copies/` (177 the running log, 178 the referees), with 138's
+numbered writer given a starting number, the setting declared in 174 with
+its options entry in 176, the line written into a new home's config by
+101's `open_home`, and the commit called from 211's sync cycle (163).
+178 passes 5 of 5 checks (referees 1–4 on repositories in the test
+folder with a fake clock's lines, and a real gatherer on loopback), each
+referee catching its broken version.
+
+1. **Push the running log** (open question 1): never pushed unless
+   config says so, as proposed; 215b builds the switch.
+2. **Bytes or MiB** (open question 2): 100,000,000 bytes, under both
+   100 MB and GitHub's 100 MiB, as proposed.  Written into the config of
+   every home made from now on (`git.log-file-size = 100000000`), so the
+   person sees it; a home made before has no line, and its gatherer stops
+   naming the setting (referee 4), as the house rule asks.  Undo: one
+   line in `open_home`.
+3. **Failed-decryption lines** (open question 3): only in 203's own files,
+   not in this log and not committed.  They are for fail2ban, they name
+   every address that sent garbage, and 203 already bounds them.
+4. **The branch is built without the working tree**: blobs, an index of
+   its own and `commit-tree` on the log branch's own tip, so the rooms'
+   branch, its index and the person's working tree are never touched,
+   and a concurrent rooms commit cannot collide with it.  The file
+   numbering starts from the newest file on the branch; older files are
+   never read again.
+5. **Lines as 211 writes them**: an ISO-8601 UTC stamp and the text.
+   211's lines do not carry a stage name; the text says what each is
+   about (`started:`, `sync:`, `problem <name>:`, `git:`).  Adding a stage
+   field is a change to 161's `log` and its callers: left.
+6. **Only whole lines are committed**; a line being written is left for
+   the next cycle.  After a commit only the committed bytes are taken off
+   the front of the RAM file, so a line written in between stays.  The lines a
+   gatherer writes after its last sync (`stopped: ...`) stay in RAM and
+   are committed by the next start's first cycle.
+7. **Referee 2's lock**: the issue says "a locked index"; the log branch
+   uses an index of its own, so the referee locks the branch's ref
+   instead (`refs/heads/running-log/<name>.lock`), which makes the commit
+   fail the same way.
+8. **The starter's own running log** (home-wide, not per mailbox) is not
+   committed: it belongs to no mailbox repository.  Left.
+
 ## Related documents
 
 - `notes/vision-planning.md` section 15 ("Key-tying, the log and git";

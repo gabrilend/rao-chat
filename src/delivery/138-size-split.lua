@@ -57,7 +57,8 @@ end
 
 -- {{{ function M.open
 -- {folder, name, limit (bytes), keep (rotate: files kept in all, ≥ 1),
--- naming ("rotate" | "numbered")} → a writer.
+-- naming ("rotate" | "numbered"), number (numbered, optional: the current
+-- file's number; otherwise found by looking from 1 up)} → a writer.
 function M.open(options)
     local limit, naming = options.limit, options.naming or "rotate"
     if type(limit) ~= "number" or limit < 1 or limit ~= math.floor(limit) then
@@ -72,7 +73,11 @@ function M.open(options)
     local self = setmetatable({ folder = options.folder, name = options.name, limit = limit,
         keep = options.keep, naming = naming }, Writer)
     self.base = self.folder .. "/" .. self.name
-    if naming == "numbered" then
+    if naming == "numbered" and options.number then
+        -- the caller knows the current file's number (215a: the newest
+        -- file in git, the older ones not copied out)
+        self.number = options.number
+    elseif naming == "numbered" then
         local n = 1
         while file_size(numbered_name(self.base, n + 1)) do n = n + 1 end
         self.number = n

@@ -8,4 +8,5 @@ and only `keep` files are kept; 203's failed-decryption log uses it. In
 "numbered" the files are `.0001`, `.0002` and so on, and none is ever
 removed; this is for 215a's running log. A write larger than the limit is
 split across files when numbered and refused when rotated. Issue 203,
-step 3.
+step 3.  A numbered writer may be told its current file's number
+(`number`), as 177 does with the newest file copied out of git.

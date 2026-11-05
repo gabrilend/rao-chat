@@ -28,7 +28,9 @@ start-up (173).  After each frame is answered, and after each typed
 message is written, the filing hook brings that room's copies up to date;
 a hook that fails is a `hook-text-copy` problem line and ends nothing.
 Each sync cycle brings every room's copies up to date from its log and
-commits once.  It reads `git.home-name`.
+commits once; then its running log's new lines go to the branch
+`running-log/<git.home-name>` (215a, 177) and leave RAM only once
+committed.  It reads `git.home-name` and `git.log-file-size`.
 
 `RAO_COPIES_BROKEN` and `RAO_COPIES_FAIL` are 175's.
 `RAO_GATHERER_BROKEN` and `RAO_GATHERER_CRASH` select the broken

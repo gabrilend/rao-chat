@@ -73,6 +73,7 @@ local MODULES = {
     { short = "signature",   file = "169-signature",       issue = "214" },
     { short = "git",         file = "172-git",             issue = "215" },
     { short = "copies",      file = "173-text-copies",     issue = "215" },
+    { short = "runlog",      file = "177-running-log",     issue = "215a" },
 }
 
 local RULE = string.rep("-", 78)

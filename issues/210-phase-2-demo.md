@@ -188,8 +188,9 @@ status 2).  160 passes 47 of 47 checks, including two broken versions.
     two real gatherers (and their starters inside the loopback-only
     namespace) and shows the copies byte-identical on both homes, a
     commit per sync cycle by the home's name, a hand edit committed and
-    both logs unchanged, `labels`, and the code branch.  215a's and 215b's
-    parts are named as not built, and 214's viewer field as waiting on
+    both logs unchanged, `labels`, the code branch, and (with 215a) the
+    running log on a branch of its own.  215b's part is named as not
+    built, and 214's viewer field as waiting on
     301, so 13 of 16 scenes run in full and 3 with a part missing.
 
 ## Related documents

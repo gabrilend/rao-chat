@@ -58,6 +58,12 @@ local NEW_CONFIG_TEXT =
     "# a quiet default; the error names the key to add.  A line naming a\n" ..
     "# setting no module reads is an error too, naming the line.\n"
 
+-- The settings a new home's config starts with (the owner's values, not
+-- defaults: each line is in the file for the person to see and change).
+-- git.log-file-size (215a): "as large as is possible to upload to github,
+-- defined in a config file with that as default" (owner, 2026-09-27).
+local NEW_CONFIG_LINES = "git.log-file-size = 100000000\n"
+
 -- How many words a suggested token has.  Answered by the owner (six:
 -- about 77.5 bits from the 7,772-word list, out of reach of an offline
 -- guesser; the measurement is in 019-options.lua's history and the
@@ -140,7 +146,7 @@ local function open_home(dir)
     -- starts empty — nobody ignored — and its lines are the ignore
     -- list's business from then on.
     if not disk.is_file(dir .. "/config") then
-        disk.write_atomic(dir .. "/config", NEW_CONFIG_TEXT)
+        disk.write_atomic(dir .. "/config", NEW_CONFIG_TEXT .. NEW_CONFIG_LINES)
     end
     if not disk.is_file(dir .. "/ignore") then
         disk.write_atomic(dir .. "/ignore", "")

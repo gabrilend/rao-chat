@@ -45,7 +45,9 @@
 -- into a room of the mailbox (the filer, once the frame is answered) or
 -- written there (typed): it writes that record's text copy.  A hook that
 -- fails is a problem line and ends nothing; each sync cycle brings every
--- room's copies up to date from its log and makes one commit.
+-- room's copies up to date from its log and makes one commit.  Then the
+-- running log's new lines go to the branch running-log/<home name> (215a,
+-- 177), split under git.log-file-size; they leave RAM only once committed.
 --
 -- Problems that belong to no room are kept one line per distinct problem
 -- in `state` (`problem.<name>`), rewritten in place, and written to the
@@ -96,6 +98,7 @@ local ram = require("161-ram-folders")
 local wait = require("162-wait-loop")
 local git = require("172-git")
 local copies_m = require("173-text-copies")
+local runlog = require("177-running-log")
 
 ffi.cdef [[ int getpid(void); ]]
 
@@ -202,6 +205,7 @@ if not git_path and COPIES_BROKEN ~= "no-git" then
     os.exit(1)
 end
 local HOME_NAME = git.check_name(setting("git.home-name"))
+local LOG_LIMIT = runlog.settings(disk_home)
 if root_note then problem("ram-root", root_note) end
 
 ------------------------------------------------------------------------------
@@ -577,6 +581,11 @@ local function sync_now()
         local ok, counts = pcall(sync_copies)
         if not ok then problem("copies", tostring(counts), SYNC_EVERY)
         elseif counts then ram.log(FOLDER, now(), "git: " .. counts.message .. " (" .. counts.commit:sub(1, 12) .. ")") end
+        -- the running log, to its own branch (215a); kept in RAM on failure
+        local logged, why = pcall(runlog.take_and_commit, FOLDER, copies.repo, HOME_NAME, LOG_LIMIT)
+        if not logged then
+            problem("running-log-commit", "not committed, kept in RAM for the next cycle: " .. tostring(why), SYNC_EVERY)
+        end
     end
 end
 -- }}}

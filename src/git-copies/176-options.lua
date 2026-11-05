@@ -25,4 +25,24 @@ return {
         },
         leaning = "a name the person chooses when the home is made.",
     },
+    {
+        id = "git-log-file-size",
+        question = "How large may one file of the running log's branch grow?",
+        waits_on = "owner",
+        detail = "issue 215a (Intended Behavior, 'Split before the limit'; open question 2)",
+        config_key = "git.log-file-size",
+        variants = {
+            {
+                name = "100000000",
+                summary = "100,000,000 bytes, written into config when a home is made: under GitHub's 100 MiB "
+                    .. "refusal for a pushed file, and under 100 MB.",
+                built_in = "src/git-copies/177-running-log.lua (138's numbered split, line by line); "
+                    .. "src/room-folders/002-room-folders.lua (open_home writes the line)",
+                tests = "src/git-copies/tests/178-test-running-log.lua (referees 1 and 4)",
+                findings = "Referee 1 (2026-11-05), with the limit at 1,000 bytes: 10,000 bytes in cycles, one of "
+                    .. "2,500, gave files of at most 1,000 bytes holding every line once.",
+            },
+        },
+        leaning = "100000000, as the owner asked (\"as large as is possible to upload to github\").",
+    },
 }
