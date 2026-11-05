@@ -16,5 +16,12 @@ rooms), `state` and `running-log`.
   changed on disk by hand (named in state), and reloads changed
   home-wide files.  `sync_file(record, path, true)` and `force_to_disk`
   fsync the file and its folder before returning.
+- `decode_typed` reads a `typed/` file in 301's shape (`room:` and
+  `written:` header lines, a blank line, the text with its signature) or
+  211's first shape (`room = <tag>`, a blank line, the text), and
+  refuses any other header; `typed_written` keeps the file's written
+  time but never later than the filer's clock; `typed_id` is the id a
+  typed file is filed under (32 hex of SHA-256 of its name and bytes), so
+  the same file put back after a crash is the same message.
 - `choose_root` falls back to `/tmp/rao-chat-ram` when the setting's
   folder cannot be written, and says why.

@@ -39,6 +39,32 @@
 -- for nothing.  Removing an inbox file deletes nothing (planning section
 -- 8): the next pass writes it again.
 --
+-- Beside the messages, a room's own facts (issue 301, step 1, second
+-- part), and the tree:
+--
+--   inbox/<room local tag>/.room
+--     label: <the room's label here>
+--     kind: <group | direct | tree ...: the entry's kind>
+--     parent: <the tag of the room it shows under (102), or none>
+--     path: <102's path of labels, top first, "/" between>
+--     members: <how many members the entry lists>
+--     flagged: <how many members wait for review (103: no, cannot-check)>
+--     pile: <address> <port> <missing> <oldest written>   one line per
+--           pair still owed something (202's pile), in the delivered
+--           file's order; none when nothing is owed
+--
+--   inbox/.tree    one line per room of this gatherer's mailbox, in 102's
+--                  order (top first, children by label then tag):
+--                  <tag> <parent tag or none> <kind> <label>
+--
+-- The parent and the path come from 102 on the disk home, which holds
+-- every room of the home; a room's parent may be in another mailbox, so
+-- the gatherer's own RAM home, which holds only its own rooms, cannot
+-- place it.  A viewer joins the gatherers' `.tree` files by tag: each
+-- room's parent is already worked out, so it places nothing itself.
+-- `.room` is rewritten (when it changes) after each record filed, after
+-- each sender pass, and every sync; `.tree` at start-up and every sync.
+--
 -- Room tags must be 32 hex and ids in 105's alphabet (letters, digits,
 -- `-`, `_`, at most 128) before any path is built (structure R14).
 --
@@ -46,7 +72,10 @@
 -- arrival), raw-text (edits not applied: the original text, never marked
 -- deleted), hide-shown (hidden addresses get a file) or in-place (written
 -- straight to the final name) are broken versions the referees must
--- catch.
+-- catch.  RAO_INBOX_BROKEN=ram-tree (the parent and path worked out on
+-- the gatherer's own RAM home) and stale-pile (`.room` written only
+-- when a record is filed, so a pile emptied by the sender stays) are the
+-- broken versions of `.room`'s referees.
 
 local disk = require("003-disk")
 local log = require("081-message-log")
@@ -54,6 +83,9 @@ local signature = require("169-signature")
 local ignore = require("042-ignore-list")
 local recipients = require("041-recipients")
 local ram = require("161-ram-folders")
+local rooms = require("002-room-folders")
+local tree = require("021-room-tree")
+local delivered = require("130-delivered")
 
 local M = {}
 
@@ -165,40 +197,159 @@ local function put(folder, name, text)
 end
 -- }}}
 
--- {{{ function M.write_room
--- gatherer RAM folder, home (the RAM home), room tag → how many files
--- were written or removed.  Brings `inbox/<tag>/` up to date with the
--- room's log: a file per message, written where missing or different.
-function M.write_room(gatherer_folder, home, tag)
+-- {{{ local function put_if_changed
+-- folder, name, text → 1 when the file was written, 0 when it held that.
+local function put_if_changed(folder, name, text)
+    local handle = io.open(folder .. "/" .. name, "rb")
+    local now = handle and handle:read("*a")
+    if handle then handle:close() end
+    if now == text then return 0 end
+    put(folder, name, text)
+    return 1
+end
+-- }}}
+
+-- {{{ local function make_folder
+local function make_folder(path)
+    if not disk.is_dir(path) then os.execute("mkdir -p " .. disk.shell_quote(path)) end
+end
+-- }}}
+
+-- {{{ local function one_line
+local function one_line(text)
+    return (tostring(text or ""):gsub("[%c]", " "))
+end
+-- }}}
+
+-- {{{ local function placements
+-- 102's place for every room, from the disk home when there is one (it
+-- holds every room of the home), else from the RAM home; {} when the
+-- tree cannot be drawn.
+local function placements(home, disk_home)
+    local where = disk_home
+    if not where or M.broken == "ram-tree" then where = home end
+    local ok, list = pcall(tree.placements, where)
+    return ok and list or {}
+end
+-- }}}
+
+-- {{{ function M.room_text
+-- home (RAM), disk home (or nil), room tag, and 102's placements when the
+-- caller has them → the text of `.room`.
+function M.room_text(home, disk_home, tag, places)
     checked_tag(tag)
-    local folder = M.folder(gatherer_folder) .. "/" .. tag
-    os.execute("mkdir -p " .. disk.shell_quote(folder))
-    local changed = 0
-    for _, view in ipairs(views(home, tag)) do
-        local name = M.file_name(view)
-        local path = folder .. "/" .. name
-        local text = M.file_text(home, tag, view)
-        local handle = io.open(path, "rb")
-        local now = handle and handle:read("*a")
-        if handle then handle:close() end
-        if text == nil then
-            if now then os.remove(path); changed = changed + 1 end
-        elseif now ~= text then
-            put(folder, name, text)
-            changed = changed + 1
+    local entry = rooms.read_entry(home, tag)
+    local place = (places or placements(home, disk_home))[tag] or {}
+    local parent, path = place.parent, place.path
+    local lines = {
+        "label: " .. one_line(entry.label),
+        "kind: " .. one_line(entry.kind),
+        "parent: " .. ((parent == nil or parent == "") and "none" or parent),
+        "path: " .. one_line(path or entry.label),
+        "members: " .. #recipients.members(home, tag),
+        "flagged: " .. #recipients.flagged(home, tag),
+    }
+    local owed = 0
+    for _, pair in ipairs(delivered.pile(home, tag)) do
+        if pair.missing > 0 then
+            owed = owed + 1
+            lines[#lines + 1] = string.format("pile: %s %d %d %d", one_line(pair.address), pair.port,
+                pair.missing, pair.oldest or 0)
         end
+    end
+    if owed == 0 then lines[#lines + 1] = "pile: none" end
+    return table.concat(lines, "\n") .. "\n"
+end
+-- }}}
+
+-- {{{ function M.tree_text
+-- home (RAM), disk home (or nil), this gatherer's room tags → `.tree`.
+-- 102's order where it holds the rooms; any it does not hold, after,
+-- by tag.
+function M.tree_text(home, disk_home, tags)
+    local mine = {}
+    for _, tag in ipairs(tags) do mine[checked_tag(tag)] = true end
+    local order, seen = {}, {}
+    local where = disk_home
+    if not where or M.broken == "ram-tree" then where = home end
+    local ok, forest = pcall(tree.forest, where)
+    local places = placements(home, disk_home)
+    local function walk(nodes)
+        for _, node in ipairs(nodes) do
+            if mine[node.tag] and not seen[node.tag] then order[#order + 1] = node.tag; seen[node.tag] = true end
+            walk(node.children)
+        end
+    end
+    if ok then walk(forest) end
+    local rest = {}
+    for tag in pairs(mine) do if not seen[tag] then rest[#rest + 1] = tag end end
+    table.sort(rest)
+    for _, tag in ipairs(rest) do order[#order + 1] = tag end
+    local lines = {}
+    for _, tag in ipairs(order) do
+        local entry = rooms.read_entry(home, tag)
+        local parent = (places[tag] or {}).parent
+        lines[#lines + 1] = string.format("%s %s %s %s", tag, (parent == nil or parent == "") and "none" or parent,
+            one_line(entry.kind), one_line(entry.label))
+    end
+    return table.concat(lines, "\n") .. (#lines > 0 and "\n" or "")
+end
+-- }}}
+
+-- {{{ function M.write_facts
+-- gatherer RAM folder, home, disk home, room tags → files written: each
+-- room's `.room` (and with `with_tree`, `inbox/.tree`), where changed.
+function M.write_facts(gatherer_folder, home, disk_home, tags, with_tree)
+    local changed = 0
+    local places = placements(home, disk_home)
+    for _, tag in ipairs(tags) do
+        local folder = M.folder(gatherer_folder) .. "/" .. checked_tag(tag)
+        make_folder(folder)
+        changed = changed + put_if_changed(folder, ".room", M.room_text(home, disk_home, tag, places))
+    end
+    if with_tree then
+        make_folder(M.folder(gatherer_folder))
+        changed = changed + put_if_changed(M.folder(gatherer_folder), ".tree", M.tree_text(home, disk_home, tags))
     end
     return changed
 end
 -- }}}
 
--- {{{ function M.write_all
--- gatherer RAM folder, home, list of room tags → files written or
--- removed in all of them.
-function M.write_all(gatherer_folder, home, tags)
+-- {{{ function M.write_room
+-- gatherer RAM folder, home (the RAM home), room tag, disk home (or nil)
+-- → how many files were written or removed.  Brings `inbox/<tag>/` up
+-- to date with the room's log: a file per message, written where missing
+-- or different, and the room's `.room`.
+function M.write_room(gatherer_folder, home, tag, disk_home, places)
+    checked_tag(tag)
+    local folder = M.folder(gatherer_folder) .. "/" .. tag
+    make_folder(folder)
     local changed = 0
-    for _, tag in ipairs(tags) do changed = changed + M.write_room(gatherer_folder, home, tag) end
+    for _, view in ipairs(views(home, tag)) do
+        local name = M.file_name(view)
+        local path = folder .. "/" .. name
+        local text = M.file_text(home, tag, view)
+        if text == nil then
+            local handle = io.open(path, "rb")
+            if handle then handle:close(); os.remove(path); changed = changed + 1 end
+        else
+            changed = changed + put_if_changed(folder, name, text)
+        end
+    end
+    changed = changed + put_if_changed(folder, ".room", M.room_text(home, disk_home, tag, places))
     return changed
+end
+-- }}}
+
+-- {{{ function M.write_all
+-- gatherer RAM folder, home, list of room tags, disk home (or nil) →
+-- files written or removed in all of them, `.tree` included.
+function M.write_all(gatherer_folder, home, tags, disk_home)
+    local changed = 0
+    local places = placements(home, disk_home)
+    for _, tag in ipairs(tags) do changed = changed + M.write_room(gatherer_folder, home, tag, disk_home, places) end
+    make_folder(M.folder(gatherer_folder))
+    return changed + put_if_changed(M.folder(gatherer_folder), ".tree", M.tree_text(home, disk_home, tags))
 end
 -- }}}
 
