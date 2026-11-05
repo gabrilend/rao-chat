@@ -14,11 +14,19 @@
 -- else.
 --
 -- The table holds the kinds whose fields are settled: the log's three
--- (message, correction, deletion) and 202's `ack`.  Every other kind 201
--- names (hello, members, members-ask, leave, did-you, did-you-answer,
--- summary, discover, here) gets its row from the issue that defines its
--- fields (204, 205, 207, 208, 209, 213), when that issue is built.  Until
--- then it is an unknown kind, and an unknown kind is an error.
+-- (message, correction, deletion), 202's `ack`, and 204's `did-you` and
+-- `did-you-answer`.  Every other kind 201 names (hello, members,
+-- members-ask, leave, summary, discover, here) gets its row from the issue
+-- that defines its fields (205, 207, 208, 209, 213), when that issue is
+-- built.  Until then it is an unknown kind, and an unknown kind is an
+-- error.  205's hello and 208's leave each carry a `claim` field: the
+-- claim id 204's `claims` file keeps (141).
+--
+-- `did-you` and `did-you-answer` (issue 204, decision of 2026-11-05; the
+-- owner may overturn it): a `did-you` names the claim id (32 hex) and the
+-- pair it is asked at (`address`, `port`); the answer names the claim id
+-- back and `yes` or `no`.  142 asks and reads the answer; 133 answers
+-- from 141.
 --
 -- `ack` (issue 202, decision of 2026-11-05; the owner may overturn it):
 -- one field, `answers`: the ids the answer covers, each followed by the
@@ -46,6 +54,9 @@ KINDS.message = LOG_FIELDS
 KINDS.correction = LOG_FIELDS
 KINDS.deletion = LOG_FIELDS
 KINDS.ack = { { name = "answers", type = "text" } }
+KINDS["did-you"] = { { name = "claim", type = "text" }, { name = "address", type = "text" },
+                     { name = "port", type = "whole" } }
+KINDS["did-you-answer"] = { { name = "claim", type = "text" }, { name = "answer", type = "text" } }
 
 local ESCAPE = { ["\\"] = "\\\\", ["\t"] = "\\t", ["\n"] = "\\n", ["\r"] = "\\r" }
 local UNESCAPE = { ["\\"] = "\\", t = "\t", n = "\n", r = "\r" }

@@ -119,6 +119,62 @@ simply how long it keeps its claims — for as long as the room exists.
 5. *(answered by the formation)* **The answer's time limit**: config
    `callback.answer-time`, declared, no default.
 
+## Decisions (2026-11-05)
+
+Made by the builder.  The owner's standing instruction is to answer open
+questions rather than wait, choosing the option that is easiest to undo.
+The owner can overturn each one; what overturning costs is said with it.
+Built in `src/delivery/` (141 claims, 142 call-back, 144's referees, 143
+the simulated world taken out of 137), the `did-you` and `did-you-answer`
+rows of `src/sealing/126-inner-records.lua`, the answering in 133's
+`serve`, and the checks in 134's stage.  205's hello and 208's leave are
+not built: they will make claims with 141's `make`, carry the claim id in
+a `claim` field, and hand what they hear to 142's `heard`.  The referees
+make claims with 141 directly in their place.
+
+1. **Tor-only members** (question 1): accepted as never confirmed.  A
+   claim at a pair nobody can call stays unconfirmed and keeps being
+   retried at the ceiling, and the pair is never added.  Onion addresses
+   are left for when Tor is planned.  Undo: a pair kind that skips the
+   check, which is the opposite of this issue's point, so it would want
+   its own rubric line.
+2. **Hairpin call-backs** (question 2): not marked yet.  Marking a pair
+   `home-only` needs this home's public address, which 212 finds.  212
+   should mark a pair confirmed from the same public address, and 207
+   should not pass such pairs on.  Nothing here prevents it.
+3. **Forged acknowledgements** (question 3): a call-back confirms
+   addresses only, never a delivery.  202's decision 5 stands: a forged
+   `ack` is outside the threat model, and 209's cross-check refills what
+   it hid.
+4. **How long a claimant remembers** (question 4): as long as the room
+   exists; the `claims` file is never trimmed.  Confirmed as the issue's
+   formation.
+5. **The answer time** (question 5): `callback.answer-time`, declared in
+   135 with no default.  The options file offers 8 s (rmail's connect
+   timeout).
+6. **A `did-you` names the pair it is asked at**, as well as the claim
+   id, and the claimant says `yes` only if its claim stated that pair.
+   So a key holder who passes on a genuine claim id with another pair is
+   answered `no` there.  Undo: drop two fields from the row.
+7. **The `claims` line carries the room's local tag** although the file
+   is already in the room's folder, as the issue lists it.  A line naming
+   another room is refused on reading.
+8. **What a confirmed claim does**: a hello adds the pair (103's
+   `add_member`, so the ignore list and the room tree's check still
+   apply), and a leave removes it (103's `confirm_leave`).  A `no` ends
+   the check, because asking again will not change the claimant's file.
+   No answer is one failure of the check's timer, and the check is tried
+   again (131's doubling and deck), never dropped.
+9. **Checks are not kept across a restart of the asker**, like 202's
+   timers (202 decision 2).  The claim is heard again when its maker
+   resends its hello or leave.
+10. **Checks run in 202's sender stage** (`Stage:check`, run in `pass`
+    after the deliveries), each with a 131 timer of its own.
+11. **The simulated world is shared.**  137's fake clock, relay and homes
+    moved to `tests/143-test-world.lua`, used by 137 and 144.  The relay
+    now records every connection attempt, and its connections have
+    `settimeout`.
+
 ## Related documents
 
 - `notes/vision-planning.md` section 14 ("Toward question 4", "Answers" 9,

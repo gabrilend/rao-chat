@@ -85,4 +85,23 @@ return {
         },
         leaning = "3: enough to look back over a flood, bounded at three files.",
     },
+    {
+        id = "callback-answer-time",
+        question = "How long does a call-back check wait for the stated pair's answer, in seconds?",
+        waits_on = "owner",
+        detail = "issue 204 (Intended Behavior, 'No answer means not confirmed'; open question 5)",
+        config_key = "callback.answer-time",
+        variants = {
+            {
+                name = "8",
+                summary = "rmail's connect timeout: about 8 seconds for the connection and the answer.",
+                built_in = "src/delivery/142-call-back.lua (settings, ask)",
+                tests = "src/delivery/tests/144-test-call-back.lua (referee 4)",
+                findings = "A check with no answer in time is not dropped: it stays unconfirmed and is "
+                    .. "tried again on 202's timers (30 s, then doubling), so a short wait costs only "
+                    .. "a later retry, never a wrong confirmation.",
+            },
+        },
+        leaning = "8: rmail's limit for one exchange; silence never confirms, so a short wait is safe.",
+    },
 }

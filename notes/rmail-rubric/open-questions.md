@@ -135,6 +135,8 @@ writing those issues are listed at the end.
     two-hour ceiling forever.  **Held by** 212 (question 5).
 19. **Tor-only members** can never be called back: accept them as never
     confirmed, or plan for onion addresses?  **Held by** 204 (question 1).
+    *Answered 2026-11-05 by the builder: accepted as never confirmed for
+    now; onion addresses wait until Tor is planned (204 decision 1).*
 20. **Keep rmail's public-address lookup** (three DNS operators, a change
     confirmed by a different one), its intervals as config; the
     "first three numbers match" same-network test, or the real network mask?
@@ -198,7 +200,8 @@ writing those issues are listed at the end.
     threat model), or checked?  **Held by** 202 (question 5) and 204
     (question 3).  *For 202, answered 2026-11-05 by the builder: outside
     the threat model here; 209's cross-check refills what such an answer
-    hid (202 decision 5); 204's question stands.*
+    hid (202 decision 5).  For 204, answered the same day: a call-back
+    confirms addresses only, never a delivery (204 decision 3).*
 
 ## The phase 2 demo (210)
 
@@ -243,7 +246,9 @@ writing those issues are listed at the end.
 49. **The whole history in RAM for the viewer; how remote viewers mirror
     the folder.**  **Held by** 301 (questions 2 and 3).
 50. **Hairpin call-backs** confirming a home-only pair.  **Held by** 204
-    (question 2).
+    (question 2).  *Answered in part 2026-11-05 by the builder: not marked
+    yet; 212, which knows this home's public address, marks such pairs and
+    207 does not pass them on (204 decision 2).*
 
 ## Not rao-chat's to answer
 

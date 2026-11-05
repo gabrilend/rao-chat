@@ -71,3 +71,12 @@ owner, most blocking first: `notes/rmail-rubric/open-questions.md`.
   filter has been checked by a stand-in only; fail2ban was not installed
   where this was built.  Open questions 1–3 answered as dated decisions
   the owner may overturn.  Left: the opener stage and RAM folder (211).
+- **204** — built 2026-11-05 in `src/delivery/` (141–144), with the
+  `did-you` and `did-you-answer` rows in 126.  A home keeps its claims in
+  each room's `claims` file and answers a `did-you` from it.  The asker
+  calls the stated pair, never the source; a `yes` adds the pair (hello)
+  or removes it (leave), a `no` ends the check, and no answer leaves it
+  unconfirmed and retried on 202's timers.  Referees 1–5 run in the
+  simulated world, now shared with 202's tests (143).  Open questions
+  1–5 answered as dated decisions the owner may overturn.  Left: 205's
+  hello and 208's leave, which carry the claims.
