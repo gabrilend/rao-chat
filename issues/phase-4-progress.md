@@ -55,3 +55,5 @@ home does not have yet.
 - 406 — writing from the page: built 2026-11-06 (`src/web/220-signature.js`,
   `221-writing.js`, the compose line in `207`; referees in
   `src/web/tests/222-test-writing-from-the-page.lua`).
+- 407 — live while the page is open: built 2026-11-06 (`src/web/223-live.js`;
+  referees in `src/web/tests/224-test-live-in-the-page.lua`).
