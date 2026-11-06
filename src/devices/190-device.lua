@@ -4,6 +4,7 @@
 --
 --   luajit src/devices/190-device.lua <device folder> test [--public]
 --   luajit src/devices/190-device.lua <device folder> catch-up
+--   luajit src/devices/190-device.lua <device folder> send
 --
 -- The device's settings are `<device folder>/config`, "name = value"
 -- lines, the lines 189's `add` prints plus the device's own:
@@ -44,6 +45,14 @@
 -- how many changed.  Every file is written under a temporary name and
 -- renamed (161's put), so a viewer on the mirror never sees half a file.
 --
+-- `send` (issue 305): the person writes into the mirror exactly as on the
+-- home machine (183's `write`, pointed at the mirror, drops a file into
+-- `<mailbox>/typed/`); each typed file goes to the home as `typed`, its
+-- name the id, the oldest first, and is removed only when the home
+-- answers `typed-ok`.  `typed-refused` leaves it, with the reason in
+-- `<name>.refused` beside it; such a file is not sent again until the
+-- person removes the reason (305 decision 4).
+--
 -- The project folder is found from this file's own place (or
 -- RAO_CHAT_DIR), as 183 does.
 
@@ -64,12 +73,14 @@ local frames = require("125-frames")
 local records = require("186-device-records")
 local mirror = require("192-mirror")
 local disk = require("003-disk")
+local ram = require("161-ram-folders")
 
 local M = {}
 
 -- For referees only (191): RAO_DEVICE_BROKEN=one-message (every failure
 -- is told the same way).  (193): no-path-check (a path from the home is
--- written into the mirror unchecked).
+-- written into the mirror unchecked).  (194): drop-refused (a typed file
+-- the home refused is removed anyway).
 M.broken = os.getenv("RAO_DEVICE_BROKEN") or ""
 
 -- {{{ function M.read_config
@@ -314,6 +325,84 @@ function M.catch_up(sock, pair, folder, where, config)
         end
     end
     summary.dropped = summary.dropped + prune(root)
+    -- a typed/ beside each mailbox's inbox, where 183 writes (305)
+    for _, mailbox in ipairs(disk.list_dir(root)) do
+        if mirror.is_tag(mailbox) and disk.is_dir(root .. "/" .. mailbox .. "/inbox")
+            and not disk.is_dir(root .. "/" .. mailbox .. "/typed") then
+            os.execute("mkdir -p " .. disk.shell_quote(root .. "/" .. mailbox .. "/typed"))
+        end
+    end
+    return summary
+end
+-- }}}
+
+-- {{{ function M.typed_files
+-- device folder → the typed files waiting in the mirror, oldest first:
+-- { mailbox, name, path }.  A file with a `<name>.refused` beside it
+-- waits for the person, not for the home; temporary names (".") and the
+-- reasons themselves are not typed files.
+function M.typed_files(folder)
+    local root = folder .. "/mirror"
+    local list = {}
+    for _, mailbox in ipairs(disk.is_dir(root) and disk.list_dir(root) or {}) do
+        local queue = root .. "/" .. mailbox .. "/typed"
+        if mirror.is_tag(mailbox) and disk.is_dir(queue) then
+            local names = {}
+            for _, name in ipairs(disk.list_dir(queue)) do names[name] = true end
+            for name in pairs(names) do
+                if name:sub(1, 1) ~= "." and not name:match("%.refused$") and not names[name .. ".refused"]
+                    and disk.is_file(queue .. "/" .. name) then
+                    list[#list + 1] = { mailbox = mailbox, name = name, path = queue .. "/" .. name }
+                end
+            end
+        end
+    end
+    table.sort(list, function(a, b) return a.name < b.name end)
+    return list
+end
+-- }}}
+
+-- {{{ function M.send_typed
+-- sock, pair, device folder, where, config → {sent, refused, lines}, or
+-- nil and the words that say what failed.  Each typed file goes as
+-- `typed` (its name the id), the oldest first; it is removed only on
+-- `typed-ok`; `typed-refused` leaves it, with the reason in
+-- `<name>.refused` beside it, so nothing typed is lost silently (305).
+function M.send_typed(sock, pair, folder, where, config)
+    local summary = { sent = 0, refused = 0, lines = {} }
+    for _, file in ipairs(M.typed_files(folder)) do
+        local content = mirror.read_file(file.path)
+        if content then
+            local ok = file.name:match("^[%w%-]+$") and #file.name <= 64
+                and M.send_record(sock, pair, { kind = "typed", id = file.name, content = content })
+            if not ok then
+                if not file.name:match("^[%w%-]+$") or #file.name > 64 then
+                    ram.put(file.path:match("^(.*)/[^/]+$"), file.name .. ".refused",
+                        "not sent: its name is not a typed file's name\n")
+                    summary.refused = summary.refused + 1
+                    summary.lines[#summary.lines + 1] = "kept " .. file.name .. ": its name is not a typed file's name"
+                else
+                    return nil, M.silence(config, where, "closed")
+                end
+            else
+                local reply, lost = M.read_record(sock, pair)
+                if not reply then return nil, M.silence(config, where, lost) end
+                if reply.id ~= file.name or (reply.kind ~= "typed-ok" and reply.kind ~= "typed-refused") then
+                    return nil, where .. " answered " .. file.name .. " with a " .. reply.kind .. " for " .. tostring(reply.id)
+                end
+                -- Path: taken — removed here.  Refused — kept, with why
+                -- (or, in the broken version drop-refused, removed).
+                if reply.kind == "typed-ok" or M.broken == "drop-refused" then
+                    os.remove(file.path)
+                    if reply.kind == "typed-ok" then summary.sent = summary.sent + 1 end
+                else
+                    ram.put(file.path:match("^(.*)/[^/]+$"), file.name .. ".refused", reply.why .. "\n")
+                    summary.refused = summary.refused + 1
+                    summary.lines[#summary.lines + 1] = "kept " .. file.name .. ": " .. reply.why
+                end
+            end
+        end
+    end
     return summary
 end
 -- }}}
@@ -328,10 +417,10 @@ end
 -- }}}
 
 -- {{{ local function main
-local USAGE = "usage: luajit 190-device.lua <device folder> test [--public] | catch-up\n"
+local USAGE = "usage: luajit 190-device.lua <device folder> test [--public] | catch-up | send\n"
 local function main(args)
     local folder, command = args[1], args[2]
-    if not folder or (command ~= "test" and command ~= "catch-up") then
+    if not folder or (command ~= "test" and command ~= "catch-up" and command ~= "send") then
         io.stderr:write(USAGE)
         return 2
     end
@@ -346,6 +435,14 @@ local function main(args)
     local where = address .. " " .. config.port
     local sock, failed = M.connect(config, address)
     if not sock then io.write(failed, "\n") return 1 end
+    if command == "send" then
+        local sent, lost = M.send_typed(sock, room_key.key_pair(config.token), folder, where, config)
+        sock:close()
+        if not sent then io.write(lost, "\n") return 1 end
+        io.write(string.format("sent %d typed file(s) to %s, %d kept\n", sent.sent, where, sent.refused))
+        for _, line in ipairs(sent.lines) do io.write(line, "\n") end
+        return sent.refused == 0 and 0 or 1
+    end
     local summary, lost = M.catch_up(sock, room_key.key_pair(config.token), folder, where, config)
     sock:close()
     if not summary then io.write(lost, "\n") return 1 end

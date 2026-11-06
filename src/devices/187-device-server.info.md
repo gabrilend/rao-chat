@@ -12,5 +12,7 @@ frame.  State, running log and the `stop` file are in
 `<home RAM folder>/devices/`.  Catching up (304): `catch-up` is answered
 with every `state`, `.tree` and `.room`, the message files after the
 device's position in each room, an `index` where the digests disagree,
-then `caught-up`; `want` with the named files and `sent`.  As a module
+then `caught-up`; `want` with the named files and `sent`.  Writing
+(305): a `typed` file checked as the filer will is put into the room's
+gatherer's `typed/` under the device's id, once per id.  As a module
 it gives `read_devices`, `ring_of`, `handlers` and `serve_connection` to later issues and tests.
