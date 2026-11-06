@@ -43,6 +43,22 @@ for what is read from the files.
   the same lists as text, so the referees and the demo read what the
   page would show.
 
+## Status
+
+Built 2026-11-06: `src/web/218-room-view.js` (`rao.view`: reading inbox
+files, the joined tree, the open room's lines, unread counts); the page
+draws the tree (nested lists that fold, each row with its last line,
+marks and unread count) and the open room (207); the stand-in's `tree`,
+`room` and `draw` (207 on a paper document).  Referees 1 to 6 pass, 1, 2
+and 5 catching their broken versions
+(`src/web/tests/219-test-how-a-room-looks.lua`), with 1b and 1c (a deeper
+hand-made tree: depths, first listing, a room whose parent is not held,
+equal labels, marks, last lines), 2b (another signature from the same
+address, or the same signature from another, is another speaker), 7 (a
+room the mirror does not hold is said) and 8 (207's drawing: nested
+lists, unread after a later catch-up and cleared on opening, sides,
+anchors, notices and markup as placed).
+
 ## Rubric
 
 - **What a person sees must be what the record says** (301): edits are
@@ -111,6 +127,26 @@ the owner can overturn each.
    receipts, is untouched).
 6. **Times are shown in the browser's own time zone**, as `YYYY-MM-DD
    HH:MM`, like 183.
+
+### While building, 2026-11-06
+
+7. **At the page's first catch-up everything held counts as read**: the
+   page keeps nothing between visits (404 decision 1), so it cannot know
+   what was read before; unread marks count what arrives while it is
+   open.
+8. **An unsigned message is signed by its last word** (the owner's rule,
+   214), so two unsigned messages from one address are two speakers and
+   each carries a name.  The person's own run is one speaker because the
+   compose line adds their signature to what they send (406).  The
+   referees sign every message as people do.  If the owner would rather
+   group unsigned messages by address alone, it is one line in
+   `rao.view.room`.
+9. **The body is shown exactly as the inbox file holds it** (181 ends it
+   with no line break of its own), line breaks kept, nothing trimmed.
+10. **207's drawing is tried on a paper document** in the stand-in (the
+    least of a browser's document the script uses), so a referee reads
+    what the page placed; what a browser then paints is still unchecked
+    here (no browser).
 
 ## Related documents
 

@@ -145,6 +145,100 @@
     };
     // }}}
 
+    // {{{ page.draw: the room tree and the open room (issue 405)
+    // rao.view works out what is shown; this only places it, as text.
+    // Unread counts live in this page only (405 decision 5): the messages
+    // a room holds beyond what it held when last open here.  At the first
+    // catch-up everything held counts as read, since the page has no
+    // memory of earlier visits (405, while building, decision 7).
+    page.seen = null;
+    page.folded = {};
+    page.openRoom = null;
+    page.draw = function () {
+        var counts = rao.view.messageCounts(page.files);
+        if (page.seen === null) { page.seen = counts; }
+        if (page.openRoom !== null) { page.seen[page.openRoom] = counts[page.openRoom] || 0; }
+        var unread = {};
+        Object.keys(counts).forEach(function (tag) {
+            unread[tag] = Math.max(0, counts[tag] - (page.seen[tag] === undefined ? 0 : page.seen[tag]));
+        });
+        drawTree(rao.view.tree(page.files, unread));
+        drawRoom();
+    };
+    page.open = function (tag) {
+        page.openRoom = tag;
+        page.openPanel(null);
+        page.draw();
+    };
+    // rows (in the order shown, each with its depth) -> nested lists
+    function drawTree(rows) {
+        var top = byId("tree-rows");
+        top.textContent = "";
+        byId("tree-empty").hidden = rows.length > 0;
+        var lists = [top];
+        rows.forEach(function (row) {
+            lists.length = row.depth + 1;
+            var item = element("li");
+            if (row.hasChildren) {
+                var fold = element("button", "tree-fold", page.folded[row.tag] ? "+" : "-");
+                fold.type = "button";
+                fold.title = page.folded[row.tag] ? "open" : "fold";
+                fold.addEventListener("click", function () {
+                    page.folded[row.tag] = !page.folded[row.tag];
+                    page.draw();
+                });
+                item.appendChild(fold);
+            }
+            var button = element("button", "tree-row" + (row.tag === page.openRoom ? " open" : ""));
+            button.type = "button";
+            button.appendChild(element("span", "label", row.label + (row.kind !== "group" ? " (" + row.kind + ")" : "")));
+            if (row.unread > 0) { button.appendChild(element("span", "unread", " (" + row.unread + ")")); }
+            if (row.flagged > 0) { button.appendChild(element("span", "marks", " [" + row.flagged + " flagged]")); }
+            if (row.waiting > 0) { button.appendChild(element("span", "marks", " [" + row.waiting + " waiting]")); }
+            button.appendChild(element("span", "last-line", row.last));
+            button.addEventListener("click", function () { page.open(row.tag); });
+            item.appendChild(button);
+            lists[row.depth].appendChild(item);
+            var children = element("ul");
+            children.hidden = !!page.folded[row.tag];
+            item.appendChild(children);
+            lists[row.depth + 1] = children;
+        });
+    }
+    function drawRoom() {
+        var title = byId("room-title");
+        var list = byId("room-lines");
+        var shown = page.openRoom === null ? null : rao.view.room(page.files, page.openRoom);
+        if (!shown) {
+            // no room open, or the home has left the one that was
+            page.openRoom = null;
+            title.textContent = "";
+            list.textContent = "";
+            return;
+        }
+        var atBottom = list.scrollTop + list.clientHeight >= list.scrollHeight - 4;
+        title.textContent = shown.title + "  (" + shown.kind + ", " + shown.members + " member(s))";
+        list.textContent = "";
+        shown.lines.forEach(function (line) {
+            if (line.type === "notice") { list.appendChild(element("li", "line notice", line.text)); return; }
+            var item = element("li", "line " + line.side);
+            item.id = line.anchor;
+            if (line.name !== null) {
+                var name = element("span", "name", line.name);
+                if (line.name !== line.from) { name.appendChild(element("span", "from", "  " + line.from)); }
+                item.appendChild(name);
+            }
+            var marked = line.marks.indexOf("deleted") >= 0 || line.marks.indexOf("ignored") >= 0;
+            item.appendChild(element("span", marked ? "body marked" : "body", line.text));
+            var foot = element("span", "when", "  " + line.when);
+            if (line.marks.length > 0) { foot.appendChild(element("span", "marks", "  " + line.marks.join(", "))); }
+            item.appendChild(foot);
+            list.appendChild(item);
+        });
+        if (atBottom) { list.scrollTop = list.scrollHeight; }
+    }
+    // }}}
+
     // {{{ page.start
     // doc: the page's document.  Wires the tabs and panels, and says
     // whether this browser gives the page what it needs.

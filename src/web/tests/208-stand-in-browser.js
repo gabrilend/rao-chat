@@ -57,6 +57,31 @@
 //                        connection and prints both summaries (404)
 //   positions --mirror-in <folder>
 //                        the catch-up's lines for that mirror (404)
+//   tree --mirror-in <folder> [--rows] [--backwards]
+//                        the room tree as 183's `tree` prints it (with
+//                        --backwards the mirror's paths are held in the
+//                        reverse of the folder's order, as a home may
+//                        send them in any order); with
+//                        --rows, one line per row: "<depth> <tag> <kind>
+//                        <flagged> <waiting> <label> | <last line>" (405)
+//   room --mirror-in <folder> --room <tag>
+//                        the open room's lines as text (rao.view.roomText);
+//                        exit 1 when the mirror holds no such room (405)
+//   draw --mirror-in <folder> [--then <folder>] [--open <tag>]
+//                        the page's own script (207) started on a paper
+//                        document (below), the mirror drawn, then (with
+//                        --then) the second mirror drawn as a later
+//                        catch-up would, then (with --open) that room
+//                        opened as a click opens it; prints what the
+//                        room tree and the room hold, one element a line:
+//                        "<indent><name>[.<classes>][#<id>][ hidden] |
+//                        <its own text>" (405)
+//
+// The paper document is the least of a browser's document that 207
+// uses: elements made by the HTML's ids, made anew by createElement,
+// appendChild, textContent (setting it empties the element; text is only
+// ever text), className, classList, hidden, and listeners that `click`
+// runs.  It draws nothing; it lets the referees read what the page placed.
 //
 // Exit status: 0 done, 1 the command failed (said on stderr), 2 usage.
 
@@ -280,7 +305,122 @@ COMMANDS.positions = function () {
 };
 // }}}
 
-module.exports = { readMirror, writeMirror, summaryLine, settingsOf, load, scriptsOf, pageFile, webFolder, COMMANDS, option, flag, say };
+// {{{ tree / room (405)
+COMMANDS.tree = function () {
+    load(PROJECT);
+    let files = readMirror(option("--mirror-in"));
+    if (flag("--backwards")) { files = new Map(Array.from(files).reverse()); }
+    if (!flag("--rows")) { process.stdout.write(globalThis.rao.view.treeText(files)); return 0; }
+    globalThis.rao.view.tree(files).forEach((row) => {
+        say(row.depth + " " + row.tag + " " + row.kind + " " + row.flagged + " " + row.waiting + " " + row.label
+            + " | " + row.last);
+    });
+    return 0;
+};
+COMMANDS.room = function () {
+    load(PROJECT);
+    const shown = globalThis.rao.view.room(readMirror(option("--mirror-in")), option("--room"));
+    if (!shown) { say("no room here is '" + option("--room") + "'"); return 1; }
+    process.stdout.write(globalThis.rao.view.roomText(shown));
+    return 0;
+};
+// }}}
+
+// {{{ the paper document, and draw (405)
+function paperElement(name) {
+    const made = {
+        tagName: name.toUpperCase(), id: "", className: "", children: [], ownText: "", hidden: false,
+        type: "", title: "", value: "", checked: false, disabled: false, listeners: {}, attributes: {},
+        scrollTop: 0, clientHeight: 100, scrollHeight: 100,
+        appendChild(child) { made.children.push(child); return child; },
+        addEventListener(kind, run) { (made.listeners[kind] = made.listeners[kind] || []).push(run); },
+        getAttribute(attribute) { return made.attributes[attribute] === undefined ? null : made.attributes[attribute]; },
+        click() { (made.listeners.click || []).forEach((run) => run({ preventDefault() {} })); },
+    };
+    Object.defineProperty(made, "textContent", {
+        get() { return made.ownText + made.children.map((child) => child.textContent).join(""); },
+        set(text) { made.children = []; made.ownText = String(text); },
+    });
+    made.classList = {
+        contains(word) { return made.className.split(/\s+/).indexOf(word) >= 0; },
+        toggle(word, on) {
+            const words = made.className.split(/\s+/).filter((w) => w !== "" && w !== word);
+            if (on === undefined ? !made.classList.contains(word) : on) { words.push(word); }
+            made.className = words.join(" ");
+        },
+    };
+    return made;
+}
+function paperDocument(html) {
+    const byId = {};
+    const all = [];
+    const pattern = /<([a-z0-9]+)\b([^>]*)>/g;
+    let found;
+    while ((found = pattern.exec(html)) !== null) {
+        const made = paperElement(found[1]);
+        const attributes = /\b([a-z-]+)="([^"]*)"/g;
+        let pair;
+        while ((pair = attributes.exec(found[2])) !== null) { made.attributes[pair[1]] = pair[2]; }
+        made.id = made.attributes.id || "";
+        made.className = made.attributes.class || "";
+        made.hidden = /\shidden\b/.test(found[2]);
+        if (made.id) { byId[made.id] = made; }
+        all.push(made);
+    }
+    return {
+        getElementById(id) { return byId[id] || null; },
+        createElement: paperElement,
+        querySelectorAll(selector) { return all.filter((made) => made.classList.contains(selector.replace(/^\./, ""))); },
+        addEventListener() {},
+    };
+}
+function paperText(made, depth, out) {
+    out.push("  ".repeat(depth) + made.tagName.toLowerCase() + (made.className ? "." + made.className.split(" ").join(".") : "")
+        + (made.id ? "#" + made.id : "") + (made.hidden ? " hidden" : "") + " | " + made.ownText);
+    made.children.forEach((child) => paperText(child, depth + 1, out));
+    return out;
+}
+// the paper element whose own text is this, under made (a row's button holds its label)
+function paperFind(made, text) {
+    if (made.ownText === text) { return made; }
+    for (const child of made.children) { const inside = paperFind(child, text); if (inside) { return inside; } }
+    return null;
+}
+COMMANDS.draw = function () {
+    load(PROJECT);
+    const rao = globalThis.rao;
+    const doc = paperDocument(fs.readFileSync(pageFile(PROJECT), "utf8"));
+    rao.page.start(doc);
+    rao.page.files = readMirror(option("--mirror-in"));
+    rao.page.draw();
+    if (option("--then")) {
+        rao.page.files = readMirror(option("--then"));
+        rao.page.draw();
+    }
+    if (option("--open")) {
+        const row = rao.view.tree(rao.page.files).filter((one) => one.tag === option("--open"))[0];
+        if (!row) { say("no room here is '" + option("--open") + "'"); return 1; }
+        // the label's span sits in the row's button: click that button
+        const tree = doc.getElementById("tree-rows");
+        const label = paperFind(tree, row.label + (row.kind !== "group" ? " (" + row.kind + ")" : ""));
+        const button = (function up(made, inside) {
+            for (const child of made.children) {
+                if (child === inside) { return made; }
+                const found = up(child, inside);
+                if (found) { return found; }
+            }
+            return null;
+        })(tree, label);
+        button.click();
+    }
+    paperText(doc.getElementById("tree-rows"), 0, []).forEach(say);
+    say(doc.getElementById("room-title").textContent);
+    paperText(doc.getElementById("room-lines"), 0, []).forEach(say);
+    return 0;
+};
+// }}}
+
+module.exports = { paperDocument, paperText, readMirror, writeMirror, summaryLine, settingsOf, load, scriptsOf, pageFile, webFolder, COMMANDS, option, flag, say };
 
 // {{{ main
 if (require.main === module) {
