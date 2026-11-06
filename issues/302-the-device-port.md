@@ -45,6 +45,14 @@ port.
   opened), problems as `problem.<name>`.  A `stop` file in that folder
   stops it.
 
+## Status
+
+Built 2026-11-06: `src/devices/185-settings.lua`, `186-device-records.lua`
+(`ping`, `pong`), `187-device-server.lua`; referees 1 to 6 pass and catch
+their broken versions (`src/devices/tests/188-test-device-port.lua`),
+with two more: 0 (the record table refuses what it was not written for)
+and 1b (a record the home does not answer closes the connection).
+
 ## Rubric
 
 From `notes/rmail-rubric/structure-and-defences.md` and the sealing note.
