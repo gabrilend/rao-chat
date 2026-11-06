@@ -50,6 +50,9 @@ decision in its issue, and the owner may overturn it.
   `196-test-choosing-an-address.lua`).
 - 308 — the locked-screen check-in: built 2026-11-06 (190's `M.deck` and
   `check-in`; referees in `197-test-check-in.lua`).
+- 309 — the browser's way in: built 2026-11-06 (the WebSocket upgrade and
+  wrapper in 187, `devices.websocket-path`; referees in
+  `198-test-browsers-way-in.lua`).
 - 301 — the RAM inboxes as the viewer's interface: built 2026-11-05
   (`inbox/<room>/<written>-<id>`, `.room`, `.tree`, written by each
   gatherer; `typed/` in 301's shape, filed once under its own id; the

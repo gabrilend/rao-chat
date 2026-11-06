@@ -18,4 +18,5 @@ it has sent nothing for its `keep-alive` seconds.  `catch-up`, `send` and `live`
 address first (quick-wait), then its public one (wait), and stop, said,
 at an address that connects but does not answer the ping (307).  `M.deck` and `check-in` (308): the locked screen's waits, a base
 (`check-in` setting) plus a card from a shuffled deck of −5 … +5 dealt
-without replacement, each followed by one catch-up.
+without replacement, each followed by one catch-up.  With `websocket-path` in its config it reaches the home as a
+browser does, through 309's upgrade.

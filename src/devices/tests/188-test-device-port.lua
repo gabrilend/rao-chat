@@ -89,7 +89,7 @@ local function make_home(name, options)
     local home = rooms.open_home(dir)
     local values = {
         ["devices.port"] = tostring(PORT), ["devices.address"] = ADDRESS,
-        ["devices.frame-deadline"] = "2", ["devices.idle-limit"] = "5", ["gatherer.ram-root"] = ROOT .. "/ram",
+        ["devices.frame-deadline"] = "2", ["devices.idle-limit"] = "5", ["devices.websocket-path"] = "/socket", ["gatherer.ram-root"] = ROOT .. "/ram",
     }
     for key, value in pairs(values) do
         if not (options.leave_out and options.leave_out[key]) then rooms.set_config(home, key, value) end

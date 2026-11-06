@@ -46,7 +46,8 @@
 -- before its next frame starts; longer, and it is closed.  Replies and
 -- pushes share one writer per connection, so their frames never mix.
 -- Nothing is ever sent in the clear: a connection whose first four bytes
--- are no frame length 124 accepts is closed without an answer (125).
+-- are no frame length 124 accepts is closed without an answer (125); the
+-- one exception is a browser's WebSocket upgrade (309), below.
 -- Each connection is a thread under 162's wait loop, so a stuck one stops
 -- nothing.
 
@@ -81,6 +82,7 @@ local M = {}
 -- no index however the digests disagree).  (194): no-dedupe (a typed
 -- file sent again is put again, though it was taken).  (195):
 -- only-writer (pushes go only to a device that has sent a typed file).
+-- (198): answer-404 (a request that is not the upgrade is answered 404).
 M.broken = os.getenv("RAO_DEVICES_BROKEN") or ""
 
 local function now() return socket.gettime() end
@@ -366,6 +368,229 @@ function M.go_live(session, found)
 end
 -- }}}
 
+-- {{{ The browser's way in (issue 309)
+--
+-- A browser cannot open a plain TCP connection, so the device port takes
+-- one clear-text exchange: an HTTP/1.1 `GET <devices.websocket-path>`
+-- asking for a WebSocket (Upgrade: websocket, Connection: Upgrade,
+-- Sec-WebSocket-Version: 13, a Sec-WebSocket-Key of 16 bytes), read with
+-- a byte cap (HEAD_MOST) and the frame deadline.  The answer is the
+-- standard 101 with Sec-WebSocket-Accept and nothing that names the
+-- server; any other request is closed with not a byte sent.  After it,
+-- each binary WebSocket message holds exactly one 302 frame, and the
+-- rest is 302 to 308 unchanged.  Messages from the browser must be
+-- masked (RFC 6455); a text message, a fragment, an unmasked message, or
+-- one whose 302 frame does not fill it exactly closes the connection.
+-- The connection a browser holds is wrapped (M.websocket) so 125's
+-- read_frame and write_frame work on it as on a plain one.
+
+local ffi = require("ffi")
+for _, declaration in ipairs({
+    "unsigned char *SHA1(const unsigned char *data, size_t length, unsigned char *digest);",
+    "int EVP_EncodeBlock(unsigned char *t, const unsigned char *f, int n);",
+}) do
+    local ok, problem = pcall(ffi.cdef, declaration)
+    if not ok and not tostring(problem):match("redefine") then error(problem) end
+end
+local libcrypto = ffi.load("crypto")
+
+M.HEAD_MOST = 4096
+M.WEBSOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+
+-- {{{ function M.base64
+function M.base64(bytes)
+    local out = ffi.new("unsigned char[?]", 4 * math.ceil(#bytes / 3) + 1)
+    local n = libcrypto.EVP_EncodeBlock(out, bytes, #bytes)
+    return ffi.string(out, n)
+end
+-- }}}
+
+-- {{{ function M.accept_value
+-- a Sec-WebSocket-Key → its Sec-WebSocket-Accept (RFC 6455 section 4.2.2).
+function M.accept_value(key)
+    local digest = ffi.new("unsigned char[20]")
+    local text = key .. M.WEBSOCKET_GUID
+    libcrypto.SHA1(text, #text, digest)
+    return M.base64(ffi.string(digest, 20))
+end
+-- }}}
+
+-- {{{ function M.read_head
+-- conn, what was read already → the request's head up to the blank line
+-- (without it), or nil when it is longer than HEAD_MOST or does not come.
+function M.read_head(conn, started)
+    local head = started
+    while #head < M.HEAD_MOST do
+        if head:sub(-4) == "\r\n\r\n" then return head:sub(1, -5) end
+        local byte = conn:receive(1)
+        if not byte then return nil end
+        head = head .. byte
+    end
+    return nil
+end
+-- }}}
+
+-- {{{ function M.upgrade_answer
+-- a request head, the websocket path → the 101 answer, or nil and why.
+function M.upgrade_answer(head, path)
+    local lines = {}
+    for line in (head .. "\r\n"):gmatch("(.-)\r\n") do lines[#lines + 1] = line end
+    local target = (lines[1] or ""):match("^GET (%S+) HTTP/1%.1$")
+    if not target then return nil, "not a GET of HTTP/1.1" end
+    if target ~= path then return nil, "another path" end
+    local headers = {}
+    for i = 2, #lines do
+        local name, value = lines[i]:match("^([%w%-]+):%s*(.-)%s*$")
+        if not name then return nil, "a header line that is not one" end
+        headers[name:lower()] = value
+    end
+    if (headers.upgrade or ""):lower() ~= "websocket" then return nil, "no Upgrade: websocket" end
+    local upgrade_token = false
+    for token in (headers.connection or ""):gmatch("[^,%s]+") do
+        if token:lower() == "upgrade" then upgrade_token = true end
+    end
+    if not upgrade_token then return nil, "no Connection: Upgrade" end
+    if headers["sec-websocket-version"] ~= "13" then return nil, "not Sec-WebSocket-Version 13" end
+    local key = headers["sec-websocket-key"] or ""
+    if not key:match("^[%w%+/]+=*$") or #key ~= 24 then return nil, "no Sec-WebSocket-Key of 16 bytes" end
+    return "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+        .. "Sec-WebSocket-Accept: " .. M.accept_value(key) .. "\r\n\r\n"
+end
+-- }}}
+
+-- {{{ M.websocket: a connection that carries one 302 frame per message
+local WebSocket = {}
+WebSocket.__index = WebSocket
+
+-- conn (a 162 connection or a LuaSocket socket), role ("server": what
+-- comes must be masked and what goes is not; "client": the other way)
+-- → a connection with receive, send, settimeout and close, as 125 needs.
+function M.websocket(conn, role)
+    return setmetatable({ conn = conn, sock = conn.sock, raw = conn, role = role, buffer = "", closed = false },
+        WebSocket)
+end
+
+function WebSocket:settimeout(seconds)
+    self.timeout = seconds
+    if self.conn.settimeout then self.conn:settimeout(seconds) end
+end
+
+-- → one message's payload (a whole 302 frame), or nil and why.
+function WebSocket:read_message()
+    local conn = self.conn
+    -- a 162 connection takes the wait and deadline as fields; a LuaSocket
+    -- socket has its own timeout, set through settimeout
+    if type(conn) == "table" then
+        if self.timeout then conn.timeout = self.timeout end
+        if self.deadline then conn.deadline = self.deadline end
+    end
+    local head, why = frames.receive_exactly(conn, 2)
+    if not head then return nil, why end
+    local b1, b2 = head:byte(1, 2)
+    local fin, opcode = bit.band(b1, 0x80) ~= 0, bit.band(b1, 0x0f)
+    local masked, length = bit.band(b2, 0x80) ~= 0, bit.band(b2, 0x7f)
+    if bit.band(b1, 0x70) ~= 0 then return nil, "reserved bits set" end
+    if masked ~= (self.role == "server") then return nil, masked and "a masked message to a browser" or "an unmasked message" end
+    if length == 126 or length == 127 then
+        local extra = frames.receive_exactly(conn, length == 126 and 2 or 8)
+        if not extra then return nil, "closed" end
+        length = 0
+        for i = 1, #extra do length = length * 256 + extra:byte(i) end
+    end
+    if length > seal.CAP + seal.LENGTH_BYTES then return nil, "a message over the cap" end
+    local mask = masked and frames.receive_exactly(conn, 4)
+    if masked and not mask then return nil, "closed" end
+    local payload = length > 0 and frames.receive_exactly(conn, length) or ""
+    if not payload then return nil, "closed" end
+    if masked then
+        local bytes, m = {}, { mask:byte(1, 4) }
+        for i = 1, #payload do bytes[i] = string.char(bit.bxor(payload:byte(i), m[(i - 1) % 4 + 1])) end
+        payload = table.concat(bytes)
+    end
+    if opcode == 0x8 then return nil, "closed" end
+    -- Path: a binary message, whole — its payload must be exactly one
+    -- 302 frame.  Anything else (text, a fragment, a control frame other
+    -- than close) is refused (309 decisions 3 and 4).
+    if opcode ~= 0x2 or not fin then return nil, "not one whole binary message" end
+    if #payload < seal.LENGTH_BYTES or seal.read_uint32_be(payload:sub(1, 4)) ~= #payload - seal.LENGTH_BYTES then
+        return nil, "a message that is not exactly one frame"
+    end
+    return payload
+end
+
+function WebSocket:receive(n)
+    if #self.buffer == 0 then
+        if self.closed then return nil, "closed", "" end
+        local payload, why = self:read_message()
+        if not payload then
+            if why ~= "timeout" then self.closed = true end
+            return nil, why == "timeout" and "timeout" or "closed", ""
+        end
+        self.buffer = payload
+    end
+    if #self.buffer < n then
+        local partial = self.buffer
+        self.buffer = ""
+        self.closed = true
+        return nil, "closed", partial
+    end
+    local out = self.buffer:sub(1, n)
+    self.buffer = self.buffer:sub(n + 1)
+    return out
+end
+
+-- data, i, j → j, the whole of data:sub(i, j) sent as one message.
+function WebSocket:send(data, i, j)
+    i, j = i or 1, j or #data
+    local payload = data:sub(i, j)
+    local head
+    if #payload < 126 then head = string.char(0x82, #payload)
+    elseif #payload < 65536 then head = string.char(0x82, 126, math.floor(#payload / 256), #payload % 256)
+    else
+        local bytes, n = {}, #payload
+        for k = 8, 1, -1 do bytes[k] = n % 256; n = math.floor(n / 256) end
+        head = string.char(0x82, 127, unpack(bytes))
+    end
+    if self.role == "client" then
+        local mask = assert(io.open("/dev/urandom", "rb")):read(4)
+        local m, bytes = { mask:byte(1, 4) }, {}
+        for k = 1, #payload do bytes[k] = string.char(bit.bxor(payload:byte(k), m[(k - 1) % 4 + 1])) end
+        head = head:sub(1, 1) .. string.char(bit.bor(head:byte(2), 0x80)) .. head:sub(3) .. mask
+        payload = table.concat(bytes)
+    end
+    if self.timeout and type(self.conn) == "table" then self.conn.timeout = self.timeout end
+    local sent, why = frames.write_frame(self.conn, head .. payload)
+    if not sent then return nil, why, i - 1 end
+    return j
+end
+
+function WebSocket:close()
+    self.closed = true
+    self.conn:close()
+end
+-- }}}
+
+-- {{{ function M.websocket_client
+-- a connected LuaSocket socket, host, path → the socket wrapped as a
+-- browser's WebSocket connection, or nil and why: the reference device
+-- speaking as the browser does (309), so the referees and the demo can
+-- drive the browser's way in.
+function M.websocket_client(sock, host, path)
+    local key = M.base64(assert(io.open("/dev/urandom", "rb")):read(16))
+    local request = "GET " .. path .. " HTTP/1.1\r\nHost: " .. host .. "\r\nUpgrade: websocket\r\n"
+        .. "Connection: Upgrade\r\nSec-WebSocket-Key: " .. key .. "\r\nSec-WebSocket-Version: 13\r\n\r\n"
+    if not frames.write_frame(sock, request) then return nil, "closed" end
+    local head = M.read_head(sock, "")
+    if not head then return nil, "closed" end
+    if not head:match("^HTTP/1%.1 101 ") or not head:find("\r\nSec%-WebSocket%-Accept: "
+        .. M.accept_value(key):gsub("%p", "%%%0") .. "\r?\n?") then
+        return nil, "the upgrade was not answered as the standard says"
+    end
+    return M.websocket(sock, "client")
+end
+-- }}}
+-- }}}
+
 -- {{{ function M.serve_connection
 -- conn (162's), server ({deadline, idle_limit, keys = function() → ring,
 -- by_label}, home_ram, spawn, on_refused, on_problem}) → nothing; the
@@ -373,6 +598,26 @@ end
 function M.serve_connection(conn, server)
     local session = { conn = conn, server = server }
     local pinned
+    -- Path: a browser's upgrade (309) — answered, and the connection
+    -- wrapped; anything else in the clear — closed, as 302 says.
+    conn.timeout = server.deadline
+    conn.deadline = now() + server.deadline
+    local start = frames.receive_exactly(conn, 4)
+    if not start then conn:close() return end
+    if start == "GET " then
+        local head = M.read_head(conn, start)
+        local answer = head and server.websocket_path and M.upgrade_answer(head, server.websocket_path)
+        if not answer then
+            if M.broken == "answer-404" then conn:send("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n") end
+            conn:close()
+            return
+        end
+        if not frames.write_frame(conn, answer) then conn:close() return end
+        conn = M.websocket(conn, "server")
+        session.conn = conn
+    else
+        conn.buffer = start .. conn.buffer
+    end
     while true do
         -- Path: the connection has its device — it may be quiet up to the
         -- idle limit before its next frame starts (306).
@@ -440,6 +685,10 @@ local function main(args)
         if not settings.idle_limit or settings.idle_limit < 1 or settings.idle_limit % 1 ~= 0 then
             error("devices.idle-limit must be a whole number of seconds, at least 1", 0)
         end
+        settings.websocket_path = rooms.config_value(home, "devices.websocket-path")
+        if not settings.websocket_path:match("^/[%w%-%._~/]*$") then
+            error("devices.websocket-path must be a path starting with /, of letters, digits and - . _ ~ /", 0)
+        end
         settings.ram_root = rooms.config_value(home, "gatherer.ram-root")
         for _, mailbox in ipairs(rooms.read_mailboxes(home)) do
             if mailbox.port == settings.port then
@@ -501,6 +750,7 @@ local function main(args)
     local server = {
         deadline = settings.deadline,
         idle_limit = settings.idle_limit,
+        websocket_path = settings.websocket_path,
         keys = keys,
         home_ram = ram.home_ram(root, home_dir),
         on_refused = function()

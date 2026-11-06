@@ -18,4 +18,7 @@ gatherer's `typed/` under the device's id, once per id.  Live (306):
 after a catch-up each new or changed file is pushed to every live
 device from one listing a second; a connection quiet for
 `devices.idle-limit` after its first frame is closed.  As a module
-it gives `read_devices`, `ring_of`, `handlers` and `serve_connection` to later issues and tests.
+it gives `read_devices`, `ring_of`, `handlers` and `serve_connection` to later issues and tests.  The browser's way in (309): an HTTP/1.1 WebSocket
+upgrade on `devices.websocket-path` is answered with the standard 101,
+any other request with not a byte; then one 302 frame per masked binary
+message (`M.websocket`, with a client half the reference device uses).
