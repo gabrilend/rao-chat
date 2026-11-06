@@ -43,3 +43,5 @@ home does not have yet.
 - 401 — the page's folder: built 2026-11-06 (`src/web/203` to `207`, the
   stand-in browser `tests/208`; referees in
   `src/web/tests/209-test-the-pages-folder.lua`).
+- 402 — sealing in the page: built 2026-11-06 (`src/web/210-sealing.js`,
+  `211-records.js`; referees in `src/web/tests/212-test-sealing-in-the-page.lua`).

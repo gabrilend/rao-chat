@@ -37,6 +37,16 @@ AES-GCM, so the token never leaves the browser."
   digest (304) is taken over exactly the bytes the home sent; text is
   decoded as UTF-8 only to be shown.
 
+## Status
+
+Built 2026-11-06: `src/web/210-sealing.js` (`rao.sealing`: key pair,
+seal, open, padding, the length check) and `211-records.js`
+(`rao.records`, 186's table); the stand-in's `key`, `seal`, `open` and
+`records`.  Referees 1 to 4 pass, 2 and 3 catching their broken versions
+(`src/web/tests/212-test-sealing-in-the-page.lua`), with 1b (124's frames
+open in the page), 1c (a 70000-byte record both ways, and an unpadded
+body) and 4b (a token with a line break, or none, refused).
+
 ## Rubric
 
 From `notes/rmail-rubric/sealing-and-framing.md`.
@@ -91,6 +101,15 @@ the owner can overturn each.
    the digests and the signature rule (214 counts characters from bytes)
    then read exactly as the Lua beside them, and an array is made only
    at WebCrypto's door.
+
+### While building, 2026-11-06
+
+4. **The key is not extractable**: WebCrypto is given the key's bytes
+   once, marked not extractable, so no later script of the page can read
+   them back; the token itself is used once to make it.
+5. **`open` never throws**: a frame that fails any check resolves to its
+   reason, so the connection's reader (403) closes on it the same way
+   whatever failed.
 
 ## Related documents
 

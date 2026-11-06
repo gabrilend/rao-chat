@@ -24,6 +24,17 @@
 //                        --no-subtle, crypto.subtle is taken away first,
 //                        as a browser does on a page it does not count as
 //                        secure)
+//   key --token <file>   the tying value of the token in <file> (its bytes,
+//                        read as UTF-8 text as typed), in hex (402)
+//   seal --token <file> --record <file> --out <file> [--no-pad]
+//                        the record sealed into a whole frame (402)
+//   open --token <file> --frame <file> --out <file>
+//                        a whole frame opened: "record" and the record
+//                        written to --out, or "nothing: <why>" (402)
+//   records --in <file>  each line of <file> decoded and encoded again:
+//                        "ok <kind> <the line again, hex> <field>=<hex>..."
+//                        or "refused <why>"; "table" lines give the kinds,
+//                        their fields, and the rule fields (402)
 //
 // Exit status: 0 done, 1 the command failed (said on stderr), 2 usage.
 
@@ -98,6 +109,54 @@ COMMANDS.load = function () {
     say("globals " + added.join(" "));
     const missing = globalThis.rao.bytes.cryptoMissing();
     say(missing ? "crypto missing: " + missing : "crypto ok");
+};
+// }}}
+
+// {{{ bytes in and out of files: one character per byte (206)
+function readBytes(file) { return fs.readFileSync(file).toString("latin1"); }
+function writeBytes(file, bytes) { fs.writeFileSync(file, Buffer.from(bytes, "latin1")); }
+function readToken(file) { return fs.readFileSync(file, "utf8"); }
+function hexOf(bytes) { return Buffer.from(bytes, "latin1").toString("hex"); }
+// }}}
+
+// {{{ key / seal / open / records (402)
+COMMANDS.key = function () {
+    load(PROJECT);
+    return globalThis.rao.sealing.keyPair(readToken(option("--token"))).then((pair) => say("tie " + hexOf(pair.tie)));
+};
+COMMANDS.seal = function () {
+    load(PROJECT);
+    const rao = globalThis.rao;
+    return rao.sealing.keyPair(readToken(option("--token")))
+        .then((pair) => rao.sealing.seal(pair, readBytes(option("--record")), { pad: !flag("--no-pad") }))
+        .then((frame) => { writeBytes(option("--out"), frame); say("sealed " + frame.length); });
+};
+COMMANDS.open = function () {
+    load(PROJECT);
+    const rao = globalThis.rao;
+    const frame = readBytes(option("--frame"));
+    if (rao.sealing.lengthOf(frame.slice(0, 4)) !== frame.length - 4) { say("nothing: not a frame's length"); return 0; }
+    return rao.sealing.keyPair(readToken(option("--token")))
+        .then((pair) => rao.sealing.open(pair, frame.slice(4)))
+        .then((opened) => {
+            if (opened.why) { say("nothing: " + opened.why); return; }
+            writeBytes(option("--out"), opened.record);
+            say("record");
+        });
+};
+COMMANDS.records = function () {
+    load(PROJECT);
+    const records = globalThis.rao.records;
+    Object.keys(records.KINDS).sort().forEach((kind) => say("table " + kind + " " + records.KINDS[kind].join(" ")));
+    say("rules " + Object.keys(records.RULES).sort().join(" "));
+    const text = readBytes(option("--in"));
+    text.split("\n").forEach((line) => {
+        if (line === "") { return; }
+        const decoded = records.decode(line);
+        if (decoded.why) { say("refused " + decoded.why); return; }
+        const fields = records.KINDS[decoded.record.kind].map((name) => name + "=" + hexOf(decoded.record[name]));
+        say("ok " + decoded.record.kind + " " + hexOf(records.encode(decoded.record)) + " " + fields.join(" "));
+    });
 };
 // }}}
 
