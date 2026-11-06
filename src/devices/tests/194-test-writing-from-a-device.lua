@@ -192,7 +192,7 @@ local function new_device(address)
     local folder = ROOT .. "/device-" .. devices
     os.execute("mkdir -p " .. q(folder))
     write_file(folder .. "/config", "port = " .. PORT .. "\nhome-network = " .. (address or ADDRESS)
-        .. "\npublic = unknown\ntoken = " .. PHONE .. "\nwait = 2\n", "600")
+        .. "\npublic = unknown\ntoken = " .. PHONE .. "\nwait = 2\nquick-wait = 0.5\n", "600")
     return folder
 end
 -- folder → exit status, what it printed, {files, messages, changed, dropped}
@@ -295,7 +295,10 @@ check("1b. a typed-ok for another file removes nothing (a stand-in home answers 
         "assert(listener:bind('127.0.0.4', " .. PORT .. ")); assert(listener:listen(1)); listener:settimeout(10)",
         "io.open(" .. string.format("%q", ready) .. ", 'w'):close()",
         "local conn = listener:accept(); if not conn then os.exit(1) end",
-        "conn:settimeout(3); frames.read_frame(conn)",
+        "conn:settimeout(3)",
+        "local ping = records.decode(seal.open(pair, frames.read_frame(conn)))",
+        "frames.write_frame(conn, seal.seal(pair, records.encode({ kind = 'pong', id = ping.id, at = 1 })))",
+        "frames.read_frame(conn)",
         "frames.write_frame(conn, seal.seal(pair, records.encode({ kind = 'typed-ok', id = '1000000000-000001-00000000' })))",
         "listener:close(); socket.sleep(0.5); conn:close()",
     }, "\n") .. "\n")

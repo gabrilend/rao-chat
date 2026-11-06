@@ -46,6 +46,8 @@ decision in its issue, and the owner may overturn it.
 - 306 — live pushing, and several devices at once: built 2026-11-06
   (pushing and `devices.idle-limit` in 187, 190's `live`; referees in
   `195-test-live-pushing.lua`).
+- 307 — choosing an address: built 2026-11-06 (190's `reach`; referees in
+  `196-test-choosing-an-address.lua`).
 - 301 — the RAM inboxes as the viewer's interface: built 2026-11-05
   (`inbox/<room>/<written>-<id>`, `.room`, `.tree`, written by each
   gatherer; `typed/` in 301's shape, filed once under its own id; the
