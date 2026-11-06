@@ -18,8 +18,8 @@ RAM folders (211).
 ## Intended Behavior
 
 - **A list of the homes installed from this program folder**,
-  `<project>/installed-homes`, one line per home: service name, service
-  manager, home folder.  The installer adds a line for each home it sets
+  `<project>/installed-homes`, one line per home: service name, kind of
+  service, log file, home folder (decision 4).  The installer adds a line for each home it sets
   up as a service (604) and changes nothing else in it.  The file is
   ignored by git (`.gitignore`), so it is never committed, and so never
   reaches a `code/` branch (164 commits the folder with its
@@ -32,7 +32,7 @@ RAM folders (211).
     says so for each, exit 0 only when all are;
   - `NAME...` restarts only those, once; `--check` says whether each
     listed service is installed, restarting nothing; `--list` prints the
-    list; `--add NAME MANAGER HOME` adds a line (the installer's way);
+    list; `--add NAME KIND LOG HOME` adds a line (the installer's way);
   - **asks before using `sudo`** (rubric I5), once for the run; `--yes`
     says yes; with no `sudo` and not root, says what is needed and
     restarts none of the ones that need it;
@@ -50,7 +50,26 @@ RAM folders (211).
 
 ## Status
 
-Not built yet.
+Built 2026-11-06 on branch `claude/605-after-an-update`:
+
+- `scripts/restart-homes` (Bash): restart all or named, `--check`,
+  `--list`, `--add`; `sudo` asked once; each checked running.
+- `scripts/view-logs` (Bash): the service's log or, with `--running`,
+  the home's running logs marked by whose; asks which home when several
+  are listed.
+- `scripts/install-home`: lists each home it sets up as a service
+  (`--homes-list` names another list), names `view-logs`, and asks the
+  last question, `--restart-homes`.
+- `.gitignore`: `/installed-homes`.
+- The stand-ins (242) gained `sv` and `rc-service` run states, a `sudo`
+  that runs its command (written down), and a `whoami` a referee can set.
+- Referees: `src/install/tests/244-test-after-an-update.lua`, 24 checks,
+  all passing; 243 now keeps its list in its scratch folder.  Mutations
+  caught: `sudo` used unasked; a second line for a home installed again;
+  an uninstalled service restarted; running-log lines unmarked; a
+  restart under `--silent` with no flag.  (Removing `/installed-homes`
+  from `.gitignore` could not be judged this way: the mutated copy has
+  no git; the check passes on the branch.)
 
 ## Rubric
 
@@ -78,7 +97,8 @@ scratch `HOME`):
 
 1. **The list**: the installer adds one line per home set up as a
    service, none for a home not set up as one; a second install of the
-   same home adds no second line; `git status` shows nothing new.
+   same home adds no second line; the list's default place is ignored by
+   git.
 2. **Restart**: two listed homes (one systemd user, one runit) are each
    restarted with their own manager's command and checked running; exit
    0.
@@ -118,6 +138,37 @@ the owner can overturn each.
    differently on the same machine.
 3. **`--running` reads the RAM folders through the home's code** (161's
    `home_ram`), as 603 does, so the folder is never worked out twice.
+
+### While building, 2026-11-06
+
+4. **Each line carries the service's log file** as its third word
+   (`<service> <kind> <log> <home>`): `view-logs` needs it, and only the
+   installer knew `--log-dir`.  The log file is held to plain characters
+   (604 decision 7), so the home, last, may hold spaces.
+5. **Under `--silent` the last question is answered no unless
+   `--restart-homes` is given**, and that is said with the command to
+   run.  It differs from every other yes/no question (an error under
+   `--silent`): restarting is the one answer that does something, the
+   question comes after the home is written, and an unattended install
+   should not fail at its end over a step it can leave for a person.
+6. **`--add` replaces a line of the same service or the same home**, so
+   a home given a new service name is listed once.
+7. **`--homes-list=FILE`** (installer, `restart-homes`, `view-logs`) and
+   **`--system-root`** (`restart-homes`, where it looks for installed
+   system services): for the referees, which must not write into the
+   program folder they test, and for a person keeping the list
+   elsewhere.
+8. **"Installed" is read from the files each manager runs from**
+   (`/etc/systemd/system/`, `/etc/sv/<name>/run`, `/etc/init.d/`, the
+   user unit), not from the manager, so `--check` needs no root.  A
+   NixOS home counts as installed once its unit is in
+   `/etc/systemd/system/` (where NixOS links it).
+9. **A user service the installer finds already running is listed and
+   left running** (604 decision 10); the last question is where every
+   listed home is restarted.
+10. **The stand-in `sudo` runs its command as the same user** and writes
+    the call down: the referees check when `sudo` was used, never that it
+    raised anything.
 
 ## Related documents
 

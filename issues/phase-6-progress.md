@@ -53,3 +53,7 @@ portable home on a drive (rmail #616).
   templates 237–241, the stand-ins `242-stand-in-service-managers.lua`,
   and the installer's service section; referees in
   `src/install/tests/243-test-running-as-a-service.lua`).
+- 605 — after an update: built 2026-11-06 (`scripts/restart-homes`,
+  `scripts/view-logs`, the list `installed-homes` ignored by git, the
+  installer's last question; referees in
+  `src/install/tests/244-test-after-an-update.lua`).

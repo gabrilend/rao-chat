@@ -1,0 +1,273 @@
+#!/usr/bin/env bash
+#
+# restart-homes — restarts the homes installed as services from this
+# program folder, so each runs the code it now holds (issue 605).  An
+# update to the program folder (a git pull) is finished only when every
+# home that runs from it has restarted.
+#
+# The homes are listed in <project>/installed-homes, one line each:
+#
+#   <service> <kind> <log file> <home folder>
+#
+# kind is systemd-user, systemd-system, runit, openrc or nixos; the home
+# folder is the rest of the line.  The installer adds the lines (--add);
+# the file is ignored by git, so it belongs to this machine alone.
+#
+# Usage:
+#   scripts/restart-homes [options]            restart every listed home
+#   scripts/restart-homes [options] NAME...    restart those (service names)
+#   scripts/restart-homes --check [NAME...]    is each one's service installed?
+#   scripts/restart-homes --list               print the list
+#   scripts/restart-homes --add SERVICE KIND LOG HOME
+#                                              add (or replace) a home's line
+#
+# Options:
+#   -y, --yes             use sudo without asking (asked once otherwise)
+#   --project=FOLDER      the program folder (the one this script is in)
+#   --homes-list=FILE     the list (<project>/installed-homes)
+#   --system-root=FOLDER  where installed system services are looked for (/)
+#
+# A system service is restarted with sudo, asked once for the run, unless
+# this is root.  A listed home whose service is not installed yet (its
+# printed commands not run) is said, not restarted.  After the restarts
+# each one is checked running with its manager's own status command.
+#
+# Exit status: 0 every home asked for restarted and running (or, with
+# --check, installed); 1 otherwise, each one said; 2 a mistaken argument.
+
+set -u
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+LIST=""
+SYSTEM_ROOT=""
+YES=false
+MODE=restart
+NAMES=()
+
+say() { printf '  %s\n' "$*"; }
+err() { printf '  error: %s\n' "$*" >&2; }
+
+# {{{ the arguments
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -h|--help) sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -y|--yes) YES=true; shift ;;
+        --check) MODE=check; shift ;;
+        --list) MODE=list; shift ;;
+        --add)
+            if [ $# -lt 5 ]; then err "--add takes SERVICE KIND LOG HOME"; exit 2; fi
+            MODE=add; ADD_SERVICE="$2"; ADD_KIND="$3"; ADD_LOG="$4"; ADD_HOME="$5"; shift 5 ;;
+        --project=*) DIR="$(cd "${1#--project=}" 2>/dev/null && pwd)" || { err "no folder ${1#--project=}"; exit 2; }; shift ;;
+        --homes-list=*) LIST="${1#--homes-list=}"; shift ;;
+        --system-root=*) SYSTEM_ROOT="${1#--system-root=}"; SYSTEM_ROOT="${SYSTEM_ROOT%/}"; shift ;;
+        -*) err "unknown argument: $1 (see --help)"; exit 2 ;;
+        *) NAMES+=( "$1" ); shift ;;
+    esac
+done
+[ -n "$LIST" ] || LIST="$DIR/installed-homes"
+# }}}
+
+# {{{ local function plain_word TEXT → whether it is letters, digits, - and _
+plain_word() { printf '%s' "$1" | grep -qE '^[A-Za-z0-9_-]+$'; }
+# }}}
+
+# {{{ --add
+if [ "$MODE" = add ]; then
+    plain_word "$ADD_SERVICE" || { err "a service name is letters, digits, '-' and '_', not '$ADD_SERVICE'"; exit 2; }
+    case "$ADD_KIND" in
+        systemd-user|systemd-system|runit|openrc|nixos) ;;
+        *) err "a kind is systemd-user, systemd-system, runit, openrc or nixos, not '$ADD_KIND'"; exit 2 ;;
+    esac
+    printf '%s' "$ADD_LOG" | grep -qE '^/[A-Za-z0-9._/-]*$' || { err "not a log file: '$ADD_LOG'"; exit 2; }
+    case "$ADD_HOME" in /*) ;; *) err "the home must be an absolute path, got '$ADD_HOME'"; exit 2 ;; esac
+    case "$ADD_HOME" in *$'\n'*) err "the home holds a newline"; exit 2 ;; esac
+    LINE="$ADD_SERVICE $ADD_KIND $ADD_LOG $ADD_HOME"
+    KEPT=""
+    REPLACED=""
+    if [ -f "$LIST" ]; then
+        while IFS= read -r line || [ -n "$line" ]; do
+            read -r service kind log home <<<"$line"
+            if [ "$service" = "$ADD_SERVICE" ] || [ "$home" = "$ADD_HOME" ]; then
+                REPLACED="$line"
+                continue
+            fi
+            KEPT="${KEPT}${line}
+"
+        done < "$LIST"
+    fi
+    if [ "$REPLACED" = "$LINE" ]; then
+        say "kept     $LINE  ($LIST)"
+        exit 0
+    fi
+    { printf '%s' "$KEPT"; printf '%s\n' "$LINE"; } > "$LIST.new" && mv "$LIST.new" "$LIST" \
+        || { err "could not write $LIST"; exit 1; }
+    if [ -n "$REPLACED" ]; then
+        say "changed  $REPLACED -> $LINE  ($LIST)"
+    else
+        say "listed   $LINE  ($LIST)"
+    fi
+    exit 0
+fi
+# }}}
+
+# {{{ the list, read
+SERVICES=(); KINDS=(); LOGS=(); HOMES=()
+if [ -f "$LIST" ]; then
+    number=0
+    while IFS= read -r line || [ -n "$line" ]; do
+        number=$((number + 1))
+        case "$line" in ''|'#'*) continue ;; esac
+        read -r service kind log home <<<"$line"
+        if [ -z "${home:-}" ]; then err "$LIST line $number is not 'service kind log home': $line"; exit 1; fi
+        SERVICES+=( "$service" ); KINDS+=( "$kind" ); LOGS+=( "$log" ); HOMES+=( "$home" )
+    done < "$LIST"
+fi
+if [ "$MODE" = list ]; then
+    for i in "${!SERVICES[@]}"; do
+        printf '%s %s %s %s\n' "${SERVICES[$i]}" "${KINDS[$i]}" "${LOGS[$i]}" "${HOMES[$i]}"
+    done
+    exit 0
+fi
+if [ "${#SERVICES[@]}" -eq 0 ]; then
+    say "no home is listed in $LIST: nothing to restart"
+    say "  (the installer lists each home it sets up as a service)"
+    exit 0
+fi
+# the ones asked for, by index
+CHOSEN=()
+if [ "${#NAMES[@]}" -eq 0 ]; then
+    CHOSEN=( "${!SERVICES[@]}" )
+else
+    for name in "${NAMES[@]}"; do
+        found=""
+        for i in "${!SERVICES[@]}"; do
+            if [ "${SERVICES[$i]}" = "$name" ]; then found=$i; fi
+        done
+        if [ -z "$found" ]; then err "$name is not listed in $LIST"; exit 1; fi
+        case " ${CHOSEN[*]:-} " in *" $found "*) ;; *) CHOSEN+=( "$found" ) ;; esac
+    done
+fi
+# }}}
+
+# {{{ per kind: installed? restart, status
+installed_file() {
+    local service="$1" kind="$2"
+    case "$kind" in
+        systemd-user) printf '%s' "$HOME/.config/systemd/user/$service.service" ;;
+        systemd-system|nixos) printf '%s' "$SYSTEM_ROOT/etc/systemd/system/$service.service" ;;
+        runit) printf '%s' "$SYSTEM_ROOT/etc/sv/$service/run" ;;
+        openrc) printf '%s' "$SYSTEM_ROOT/etc/init.d/$service" ;;
+    esac
+}
+needs_root() { [ "$1" != systemd-user ]; }
+restart_command() {
+    local service="$1" kind="$2"
+    case "$kind" in
+        systemd-user) printf 'systemctl --user restart %s' "$service" ;;
+        systemd-system|nixos) printf 'systemctl restart %s' "$service" ;;
+        runit) printf 'sv restart %s' "$service" ;;
+        openrc) printf 'rc-service %s restart' "$service" ;;
+    esac
+}
+running_now() {
+    local service="$1" kind="$2"
+    case "$kind" in
+        systemd-user) systemctl --user is-active "$service" >/dev/null 2>&1 ;;
+        systemd-system|nixos) systemctl is-active "$service" >/dev/null 2>&1 ;;
+        runit) sv status "$service" 2>/dev/null | grep -q '^run:' ;;
+        openrc) rc-service "$service" status >/dev/null 2>&1 ;;
+    esac
+}
+# }}}
+
+# {{{ which are installed
+PRESENT=()
+MISSING_ONES=0
+for i in "${CHOSEN[@]}"; do
+    file="$(installed_file "${SERVICES[$i]}" "${KINDS[$i]}")"
+    if [ -f "$file" ]; then
+        PRESENT+=( "$i" )
+        [ "$MODE" = check ] && say "installed      ${SERVICES[$i]} (${KINDS[$i]}): $file"
+    else
+        MISSING_ONES=$((MISSING_ONES + 1))
+        say "not installed  ${SERVICES[$i]} (${KINDS[$i]}): no $file"
+        say "               (the installer printed the commands that install it; home ${HOMES[$i]})"
+    fi
+done
+if [ "$MODE" = check ]; then
+    [ "$MISSING_ONES" -eq 0 ] && exit 0
+    exit 1
+fi
+# }}}
+
+# {{{ sudo, asked once
+SUDO=""
+SUDO_OK=true
+AS_ROOT=false
+[ "$(whoami 2>/dev/null)" = root ] && AS_ROOT=true
+ROOT_NEEDED=""
+for i in "${PRESENT[@]}"; do
+    needs_root "${KINDS[$i]}" && ROOT_NEEDED="$ROOT_NEEDED ${SERVICES[$i]}"
+done
+if [ -n "$ROOT_NEEDED" ] && ! $AS_ROOT; then
+    if ! command -v sudo >/dev/null 2>&1; then
+        SUDO_OK=false
+        say "these are system services, restarted as root, and sudo is not here:$ROOT_NEEDED"
+        say "  run this as root to restart them"
+    elif $YES; then
+        SUDO=sudo
+    else
+        printf '  Restart these system services with sudo?%s [y/N] ' "$ROOT_NEEDED" >&2
+        answer=""
+        IFS= read -r answer || printf '\n' >&2
+        case "$answer" in
+            [Yy]*) SUDO=sudo ;;
+            *) SUDO_OK=false; say "not restarting the system services (no sudo):$ROOT_NEEDED" ;;
+        esac
+    fi
+fi
+# }}}
+
+# {{{ restart, then check each
+FAILED=$MISSING_ONES
+RESTARTED=()
+for i in "${PRESENT[@]}"; do
+    service="${SERVICES[$i]}"; kind="${KINDS[$i]}"
+    if needs_root "$kind" && ! $AS_ROOT; then
+        if ! $SUDO_OK; then FAILED=$((FAILED + 1)); continue; fi
+        prefix="$SUDO "
+    else
+        prefix=""
+    fi
+    command="$(restart_command "$service" "$kind")"
+    say "restarting $service: ${prefix}$command"
+    # shellcheck disable=SC2086
+    if ${prefix}$command; then
+        RESTARTED+=( "$i" )
+    else
+        err "$service: the restart failed (above)"
+        FAILED=$((FAILED + 1))
+    fi
+done
+for i in "${RESTARTED[@]}"; do
+    service="${SERVICES[$i]}"; kind="${KINDS[$i]}"
+    up=false
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+        if running_now "$service" "$kind"; then up=true; break; fi
+        sleep 1
+    done
+    if $up; then
+        say "running    $service (home ${HOMES[$i]}); its log: ${LOGS[$i]}"
+    else
+        err "$service is not running after its restart: see its log, ${LOGS[$i]}"
+        FAILED=$((FAILED + 1))
+    fi
+done
+if [ "$FAILED" -eq 0 ]; then
+    say "every home asked for restarted and running (${#RESTARTED[@]})"
+    exit 0
+fi
+say "$FAILED of ${#CHOSEN[@]} not restarted or not running (above)"
+exit 1
+# }}}

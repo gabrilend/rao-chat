@@ -1,0 +1,162 @@
+#!/usr/bin/env bash
+#
+# view-logs — follows one home's log (issue 605).
+#
+#   scripts/view-logs [options] [service | home folder]
+#
+# Without --running it follows the service's log (tail -F: it keeps
+# following when the file is made again), the one the service manager
+# appends the launcher's and the programs' output to (604).  With
+# --running it follows the home's own running logs instead, in its RAM
+# folder: the starter's, the device server's and each gatherer's, each
+# line marked with whose ([starter], [devices], [gatherer <mailbox>]).
+#
+# With no argument and one home listed in <project>/installed-homes, that
+# one; with several, they are listed and it asks which.  It never follows
+# two homes at once.
+#
+# Options:
+#   --running            the home's running logs, not the service's log
+#   --no-follow          print the last lines and stop (-n 50; for every
+#                        line of the running logs)
+#   --project=FOLDER     the program folder (the one this script is in)
+#   --homes-list=FILE    the list (<project>/installed-homes)
+#
+# A home folder that is not listed works with --running (its RAM folder is
+# found from its config); a service's log needs the home to be listed.
+#
+# Exit status: 0; 1 nothing to show (and why was said); 2 a mistaken
+# argument.
+
+set -u
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+LIST=""
+RUNNING=false
+FOLLOW=true
+WANTED=""
+
+err() { printf '  error: %s\n' "$*" >&2; }
+
+# {{{ the arguments
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -h|--help) sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        --running) RUNNING=true; shift ;;
+        --no-follow) FOLLOW=false; shift ;;
+        --project=*) DIR="$(cd "${1#--project=}" 2>/dev/null && pwd)" || { err "no folder ${1#--project=}"; exit 2; }; shift ;;
+        --homes-list=*) LIST="${1#--homes-list=}"; shift ;;
+        -*) err "unknown argument: $1 (see --help)"; exit 2 ;;
+        *)
+            if [ -n "$WANTED" ]; then err "one home at a time"; exit 2; fi
+            WANTED="$1"; shift ;;
+    esac
+done
+[ -n "$LIST" ] || LIST="$DIR/installed-homes"
+# }}}
+
+# {{{ the list, read
+SERVICES=(); LOGS=(); HOMES=()
+if [ -f "$LIST" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in ''|'#'*) continue ;; esac
+        read -r service kind log home <<<"$line"
+        [ -n "${home:-}" ] || continue
+        SERVICES+=( "$service" ); LOGS+=( "$log" ); HOMES+=( "$home" )
+    done < "$LIST"
+fi
+# }}}
+
+# {{{ which home
+CHOSEN=""
+HOME_DIR=""
+if [ -n "$WANTED" ]; then
+    WANTED_DIR="${WANTED%/}"
+    for i in "${!SERVICES[@]}"; do
+        if [ "${SERVICES[$i]}" = "$WANTED" ] || [ "${HOMES[$i]}" = "$WANTED_DIR" ]; then CHOSEN=$i; fi
+    done
+    if [ -z "$CHOSEN" ]; then
+        if [ -f "$WANTED_DIR/config" ]; then
+            HOME_DIR="$WANTED_DIR"
+        else
+            err "$WANTED is neither a listed service nor a home folder (no config)"
+            exit 1
+        fi
+    fi
+elif [ "${#SERVICES[@]}" -eq 1 ]; then
+    CHOSEN=0
+elif [ "${#SERVICES[@]}" -eq 0 ]; then
+    err "no home is listed in $LIST: name a home folder (with --running)"
+    exit 1
+else
+    printf '  The homes listed in %s:\n' "$LIST" >&2
+    for i in "${!SERVICES[@]}"; do
+        printf '    %d. %s  (%s)\n' "$((i + 1))" "${SERVICES[$i]}" "${HOMES[$i]}" >&2
+    done
+    printf '  Which one? [1-%d] ' "${#SERVICES[@]}" >&2
+    answer=""
+    if ! IFS= read -r answer; then printf '\n' >&2; err "no answer (input ended)"; exit 1; fi
+    if ! printf '%s' "$answer" | grep -qE '^[0-9]+$' || [ "$answer" -lt 1 ] || [ "$answer" -gt "${#SERVICES[@]}" ]; then
+        err "not one of 1 to ${#SERVICES[@]}: '$answer'"
+        exit 1
+    fi
+    CHOSEN=$((answer - 1))
+fi
+[ -n "$CHOSEN" ] && HOME_DIR="${HOMES[$CHOSEN]}"
+# }}}
+
+# {{{ the service's log
+if ! $RUNNING; then
+    if [ -z "$CHOSEN" ]; then
+        err "$HOME_DIR is not listed as a service, so it has no service log here; --running shows its running logs"
+        exit 1
+    fi
+    LOG="${LOGS[$CHOSEN]}"
+    printf '  %s (home %s): %s\n' "${SERVICES[$CHOSEN]}" "$HOME_DIR" "$LOG" >&2
+    if $FOLLOW; then exec tail -n 50 -F "$LOG"; fi
+    if [ ! -f "$LOG" ]; then err "no log at $LOG yet"; exit 1; fi
+    exec tail -n 50 "$LOG"
+fi
+# }}}
+
+# {{{ the running logs, each line marked
+command -v luajit >/dev/null 2>&1 || { err "luajit is not on this PATH"; exit 1; }
+if ! HOME_RAM="$(luajit -e '
+    local DIR, HOME_DIR = arg[1], arg[2]
+    dofile(DIR .. "/src/room-folders/001-load-path.lua")(DIR)
+    local rooms = require("002-room-folders")
+    local ram = require("161-ram-folders")
+    local home = rooms.open_home(HOME_DIR)
+    local root = ram.choose_root(rooms.config_value(home, "gatherer.ram-root"))
+    io.write(ram.home_ram(root, HOME_DIR))' /dev/null "$DIR" "$HOME_DIR" 2>&1)"; then
+    err "the home at $HOME_DIR could not be read: $HOME_RAM"
+    exit 1
+fi
+MARKS=(); FILES=()
+MARKS+=( "starter" ); FILES+=( "$HOME_RAM/running-log" )
+MARKS+=( "devices" ); FILES+=( "$HOME_RAM/devices/running-log" )
+for folder in "$HOME_RAM"/*/; do
+    tag="$(basename "$folder")"
+    [ "$tag" = devices ] && continue
+    [ -f "$folder/state" ] || [ -f "$folder/running-log" ] || continue
+    MARKS+=( "gatherer $tag" ); FILES+=( "${folder%/}/running-log" )
+done
+printf '  the running logs of %s, in %s:\n' "$HOME_DIR" "$HOME_RAM" >&2
+if ! $FOLLOW; then
+    for i in "${!FILES[@]}"; do
+        [ -f "${FILES[$i]}" ] || continue
+        sed "s|^|[${MARKS[$i]}] |" "${FILES[$i]}"
+    done
+    exit 0
+fi
+# one follower per file, each marking its lines; all stopped together
+PIDS=()
+trap 'kill "${PIDS[@]}" 2>/dev/null; exit 0' INT TERM HUP
+for i in "${!FILES[@]}"; do
+    mark="${MARKS[$i]}"
+    tail -n 20 -F "${FILES[$i]}" 2>/dev/null | sed -u "s|^|[$mark] |" &
+    PIDS+=( "$!" )
+done
+wait
+# }}}
