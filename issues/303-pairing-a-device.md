@@ -33,11 +33,23 @@ exactly what failed)."
   `home-network`, `public`, `token`; mode 600).  Its `test` command says
   exactly what failed:
   - nothing listens at that address and port (refused);
-  - no answer from that address within the wait (unreachable or
-    filtered);
-  - the home answered nothing to a sealed ping (the token is not one this
-    home knows, or this is not a device port);
+  - the address cannot be reached (no route, or no answer to connect
+    within the wait);
+  - the home closed the connection without a word (the token is not one
+    this home knows);
+  - something listens but said nothing within the wait (this may not be
+    a device port, or the home is stuck);
   - or "answered in N ms".
+
+## Status
+
+Built 2026-11-06: `src/devices/189-pair.lua` (`add`, `list`, `remove`),
+`src/devices/190-device.lua` (`test`); referees 1 to 4 pass and catch
+their broken versions (`src/devices/tests/191-test-pairing.lua`), with
+1b (`list` and a second `add`), 2b (the owner's own lines kept), 3b
+(`--public` with no public address) and 3c (a pong for another ping is
+not an answer, against a stand-in home).
+Referee 5 (a non-device entry stops the server) is 302's referee 6c.
 
 ## Rubric
 
@@ -52,9 +64,11 @@ exactly what failed)."
    printed settings: answered.  *Broken:* writing the token with a
    trailing space (`trailing-space`).
 2. **Unpairing works at once.**  `remove phone`, then `test` from the old
-   settings: "answered nothing", with no server restart.
-3. **Each failure is named.**  A closed port: "nothing listens"; a
-   listener that never reads: "no answer"; a wrong token: "answered
+   settings: "closed the connection without a word", with no server
+   restart.
+3. **Each failure is named.**  A closed port: "nothing listens"; an
+   address with no route: "cannot be reached"; a wrong token: "closed
+   the connection without a word"; a listener that never answers: "said
    nothing".  *Broken:* one message for all (`one-message`).
 4. **The file is private.**  After `add`, the `devices` file is mode 600
    and was never seen half-written.
