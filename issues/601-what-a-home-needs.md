@@ -29,6 +29,7 @@ sources (rubric note `installing-and-services.md`, section 1, step 5).
   | git | `git --version` | yes |
   | a RAM folder | `/dev/shm` exists and can be written (161 falls back to `/tmp` and says so) | no: a note |
   | `flock` | on the path (603's one-home-one-launcher lock) | yes |
+  | `setsid` | on the path (603 starts the home's programs in a session of their own; added while building 603) | yes |
   | the usual tools | `find`, `sort`, `ls`, `mkdir`, `rm`, `mv`, `cp`, `touch`, `chmod`, `stat`, `kill`, `sleep` on the path (the programs run them through the shell; 001 lists `src/` with `find` and `sort`) | yes |
   | `ss` or `netstat` | on the path (602's port check) | no: the check is skipped and said |
   | Node 22 or later | `node --version` | no: only the web page's referees and the phase 4 demo |
@@ -121,7 +122,7 @@ overturn each.
 2. **The check is Lua, run by LuaJIT**, so it loads each thing exactly as
    the home's programs do; only "is LuaJIT there at all" is asked by the
    installer's Bash before it (602).
-3. **`flock` is required** because 603's launcher holds a lock so one
+3. **`flock` (and, from 603, `setsid`) is required** because 603's launcher holds a lock so one
    home is never run twice; it is part of util-linux on every Linux the
    home runs on.  `ss`/`netstat`, Node and `unshare` are notes.
 4. **Linux only**: the home reads `/proc` (164's `alive`) and the tests

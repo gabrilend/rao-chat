@@ -114,7 +114,8 @@ do
     os.execute("mkdir -p " .. quote(root) .. " && ln -s " .. quote(LUAJIT) .. " " .. quote(root .. "/luajit"))
     local output, status = run("PATH=" .. quote(root) .. " " .. CHECK)
     check("4: git is MISSING with only luajit on the PATH", line_of(output, "git") == "MISSING", output)
-    check("4: flock is MISSING", line_of(output, "flock") == "MISSING", output)
+    check("4: flock and setsid are MISSING", line_of(output, "flock") == "MISSING"
+        and line_of(output, "setsid") == "MISSING", output)
     local word, says = line_of(output, "tools")
     check("4: the usual tools are MISSING, each named",
         word == "MISSING" and says:find("find", 1, true) ~= nil and says:find("mkdir", 1, true) ~= nil, says)

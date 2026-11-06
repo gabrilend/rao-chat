@@ -22,6 +22,7 @@
 --   git          each mailbox's repository (215): the starter and every
 --                gatherer exit without it
 --   flock        one launcher per home (603)
+--   setsid       the launcher's programs in a session of their own (603)
 --   tools        find, sort, mkdir and the rest the programs run through
 --                the shell
 --   a RAM folder /dev/shm written to (161 falls back to /tmp and says so)
@@ -192,6 +193,18 @@ do
     else
         report("flock", false, true, "flock is not on this PATH; the launcher (603) holds a lock with it so"
             .. " one home is never run twice: it is part of util-linux")
+    end
+end
+-- }}}
+
+-- {{{ setsid
+do
+    local where = on_path("setsid")
+    if where then
+        report("setsid", true, true, where .. " — the launcher's programs in a session of their own (603)")
+    else
+        report("setsid", false, true, "setsid is not on this PATH; the launcher (603) starts the home's programs"
+            .. " with it so a Ctrl-C reaches the launcher alone: it is part of util-linux")
     end
 end
 -- }}}

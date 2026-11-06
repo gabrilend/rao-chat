@@ -1,0 +1,218 @@
+#!/usr/bin/env bash
+#
+# run-home — runs one rao-chat home in the foreground: its starter (164,
+# which starts a gatherer per mailbox) and its device server (187), held
+# together as one thing (issue 603).  A service manager runs this; so can a
+# person.
+#
+#   1. reads <home>/environment (written by scripts/install-home): PATH,
+#      LUA_PATH and LUA_CPATH lines only;
+#   2. finds luajit and git on that PATH, and says which is missing;
+#   3. takes the home's lock (<home>/.run-home.lock): a second run-home for
+#      a home already running says so and exits 1 before starting anything;
+#   4. starts the starter and the device server, each in a session of its
+#      own (setsid), so a Ctrl-C at the terminal reaches this script alone;
+#   5. on SIGTERM, SIGINT or SIGHUP asks both to stop their own way (their
+#      `stop` files), waits up to --stop-wait seconds (20), then stops what
+#      is left (SIGTERM to the gatherers, which sync once more, then SIGKILL)
+#      and says so; exits 0 when everything stopped of itself;
+#   6. when either program ends without being asked, stops the other the
+#      same way and exits 1, so a service manager restarts the whole home.
+#
+# Every line it prints starts with the time and "run-home:", so its lines
+# read apart from the programs' in one log.
+#
+# Usage:
+#   scripts/run-home [project] <home> [--stop-wait=SECONDS]
+#
+# The program folder is the one this script is in unless one is given
+# first.  Exit status: 0 stopped when asked, 1 otherwise (and why was said),
+# 2 a mistaken argument.
+
+set -u
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+STOP_WAIT=20
+
+say() { printf '%s run-home: %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"; }
+
+# {{{ the arguments
+PLAIN=()
+for argument in "$@"; do
+    case "$argument" in
+        --stop-wait=*)
+            STOP_WAIT="${argument#--stop-wait=}"
+            if ! printf '%s' "$STOP_WAIT" | grep -qE '^[0-9]+$'; then
+                say "--stop-wait takes whole seconds, not '$STOP_WAIT'"; exit 2
+            fi
+            ;;
+        -h|--help) sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -*) say "unknown argument: $argument"; exit 2 ;;
+        *) PLAIN+=( "$argument" ) ;;
+    esac
+done
+case "${#PLAIN[@]}" in
+    1) HOME_DIR="${PLAIN[0]}" ;;
+    2) DIR="${PLAIN[0]}"; HOME_DIR="${PLAIN[1]}" ;;
+    *) say "usage: run-home [project] <home>"; exit 2 ;;
+esac
+DIR="${DIR%/}"
+while [ "${HOME_DIR%/}" != "$HOME_DIR" ] && [ "$HOME_DIR" != "/" ]; do HOME_DIR="${HOME_DIR%/}"; done
+case "$HOME_DIR" in
+    /*) ;;
+    *) say "the home must be an absolute path, got $HOME_DIR"; exit 2 ;;
+esac
+if [ ! -f "$DIR/src/gatherer/164-home-starter.lua" ]; then
+    say "$DIR is not a rao-chat program folder (no src/gatherer/164-home-starter.lua)"; exit 1
+fi
+if [ ! -f "$HOME_DIR/config" ]; then
+    say "no home at $HOME_DIR (no config); make one with scripts/install-home"; exit 1
+fi
+# }}}
+
+# {{{ 1. the home's environment file
+ENV_FILE="$HOME_DIR/environment"
+if [ -f "$ENV_FILE" ]; then
+    number=0
+    while IFS= read -r line || [ -n "$line" ]; do
+        number=$((number + 1))
+        case "$line" in
+            ''|'#'*) continue ;;
+            PATH=*|LUA_PATH=*|LUA_CPATH=*)
+                export "${line%%=*}=${line#*=}"
+                ;;
+            *)
+                say "$ENV_FILE line $number is not a PATH, LUA_PATH or LUA_CPATH line: $line"
+                exit 1
+                ;;
+        esac
+    done < "$ENV_FILE"
+fi
+# }}}
+
+# {{{ 2. what it runs with
+MISSING=""
+for tool in luajit git flock setsid; do
+    command -v "$tool" >/dev/null 2>&1 || MISSING="$MISSING $tool"
+done
+if [ -n "$MISSING" ]; then
+    say "not on this PATH:$MISSING (PATH=$PATH); nothing was started"
+    say "  scripts/install-home writes the PATH a home runs with into $ENV_FILE"
+    exit 1
+fi
+# }}}
+
+# {{{ 3. one run-home per home
+exec 9>>"$HOME_DIR/.run-home.lock"
+if ! flock -n 9; then
+    say "the home at $HOME_DIR is already running (another run-home holds its lock); nothing was started"
+    exit 1
+fi
+# }}}
+
+# The home's RAM folder, found the home's way (161's home_ram of
+# gatherer.ram-root), never worked out again here.
+if ! HOME_RAM="$(luajit -e '
+    local DIR, HOME_DIR = arg[1], arg[2]
+    dofile(DIR .. "/src/room-folders/001-load-path.lua")(DIR)
+    local rooms = require("002-room-folders")
+    local ram = require("161-ram-folders")
+    local home = rooms.open_home(HOME_DIR)
+    local root = ram.choose_root(rooms.config_value(home, "gatherer.ram-root"))
+    io.write(ram.home_ram(root, HOME_DIR))' /dev/null "$DIR" "$HOME_DIR" 2>&1)"; then
+    say "the home at $HOME_DIR could not be read: $HOME_RAM"
+    exit 1
+fi
+mkdir -p "$HOME_RAM/devices"
+# a stop file left from a run that ended without being asked would stop
+# this one at once
+rm -f "$HOME_RAM/stop" "$HOME_RAM/devices/stop"
+
+# {{{ 4. the two programs
+STOP_ASKED=""
+trap 'STOP_ASKED=SIGTERM' TERM
+trap 'STOP_ASKED=SIGINT' INT
+trap 'STOP_ASKED=SIGHUP' HUP
+
+setsid luajit "$DIR/src/gatherer/164-home-starter.lua" "$DIR" "$HOME_DIR" </dev/null &
+STARTER=$!
+setsid luajit "$DIR/src/devices/187-device-server.lua" "$DIR" "$HOME_DIR" </dev/null &
+SERVER=$!
+say "home $HOME_DIR: starter pid $STARTER, device server pid $SERVER (program $DIR)"
+# }}}
+
+# {{{ local function running PID
+running() { kill -0 "$1" 2>/dev/null; }
+# }}}
+
+# {{{ local function gatherer_pids → the pids the home's gatherers last wrote
+gatherer_pids() {
+    local state
+    for state in "$HOME_RAM"/*/state; do
+        [ -f "$state" ] || continue
+        sed -n 's/^pid = \([0-9][0-9]*\)$/\1/p' "$state"
+    done
+}
+# }}}
+
+# {{{ local function stop_all WHY → 0 when everything stopped of itself
+stop_all() {
+    local why="$1" deadline left pid forced=""
+    say "stopping ($why): asking the starter and the device server"
+    touch "$HOME_RAM/stop" "$HOME_RAM/devices/stop"
+    deadline=$(( $(date +%s) + STOP_WAIT ))
+    while { running "$STARTER" || running "$SERVER"; } && [ "$(date +%s)" -lt "$deadline" ]; do
+        sleep 0.2
+    done
+    if running "$STARTER" || running "$SERVER"; then
+        forced=yes
+        left=""
+        running "$STARTER" && left="$left starter ($STARTER)"
+        running "$SERVER" && left="$left device server ($SERVER)"
+        say "still running after ${STOP_WAIT}s:$left; stopping it"
+        running "$STARTER" && kill -KILL "$STARTER" 2>/dev/null
+        running "$SERVER" && kill -KILL "$SERVER" 2>/dev/null
+    fi
+    # gatherers the starter could not stop (or that outlived it): SIGTERM,
+    # which each takes as its stop (sync once more), then SIGKILL
+    for pid in $(gatherer_pids); do
+        if running "$pid" && grep -q 163-gatherer "/proc/$pid/cmdline" 2>/dev/null; then
+            forced=yes
+            say "gatherer pid $pid still running; sending it SIGTERM"
+            kill -TERM "$pid" 2>/dev/null
+            deadline=$(( $(date +%s) + 10 ))
+            while running "$pid" && [ "$(date +%s)" -lt "$deadline" ]; do sleep 0.2; done
+            running "$pid" && kill -KILL "$pid" 2>/dev/null
+        fi
+    done
+    wait "$STARTER" 2>/dev/null
+    wait "$SERVER" 2>/dev/null
+    rm -f "$HOME_RAM/stop" "$HOME_RAM/devices/stop"
+    if [ -n "$forced" ]; then
+        say "stopped, some of it by force"
+        return 1
+    fi
+    say "stopped: the starter and the device server each stopped when asked"
+    return 0
+}
+# }}}
+
+# {{{ 5 and 6. wait for a stop, or for half the home to end
+while true; do
+    wait -n 2>/dev/null
+    status=$?
+    if [ -n "$STOP_ASKED" ]; then
+        stop_all "$STOP_ASKED"
+        exit $?
+    fi
+    gone=""
+    if ! running "$STARTER"; then gone="the starter (pid $STARTER)"; fi
+    if ! running "$SERVER"; then gone="${gone:+$gone and }the device server (pid $SERVER)"; fi
+    if [ -n "$gone" ]; then
+        say "$gone ended without being asked (status $status)"
+        stop_all "half the home ended"
+        exit 1
+    fi
+done
+# }}}
