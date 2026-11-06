@@ -2,3 +2,7 @@ tmp
 
 # Conversation pages, rebuilt before every push (install-pages-hook)
 **/llm-transcripts/HTML/
+
+# The homes installed as services from this program folder (issue 605):
+# this machine's alone, never committed (nor carried to a code/ branch).
+/installed-homes

@@ -20,6 +20,9 @@
 #      this machine's service manager, and a systemd user service started.
 #   6. What to do next: the ports to open, pairing a phone or a browser,
 #      the page's folder, running the home.
+#   7. The last question (605): with homes listed in <project>/installed-
+#      homes and every one's service installed, whether to restart them
+#      all now, so each runs this version.
 #
 # It never raises its own privileges.  It writes nothing outside the home
 # folder but a systemd user service's file (~/.config/systemd/user/); a
@@ -60,8 +63,8 @@ ALL_YES=false
 
 # The keys this installer knows.  Value keys take a string; yes/no keys a
 # yes or a no.
-VALUE_KEYS="home home_name device_port direct_port address ram_root project service_manager service_name log_dir system_root"
-YN_KEYS="setup_service user_service start_service"
+VALUE_KEYS="home home_name device_port direct_port address ram_root project service_manager service_name log_dir system_root homes_list"
+YN_KEYS="setup_service user_service start_service restart_homes"
 
 # {{{ show_help
 show_help() {
@@ -104,6 +107,11 @@ Flags with no question:
   --system-root=FOLDER  where installed system services are looked for, to
                         refuse a name already serving another home (/)
   --no-start-service    write a user service but do not start it
+  --homes-list=FILE     the list of homes installed as services from this
+                        program folder (<project>/installed-homes, 605)
+  --restart-homes       at the end, restart every listed home so each runs
+                        this version (asked; under --silent, not unless
+                        given)
 
 There are no default ports.  Asked, a free port is suggested; with
 --silent both ports must be given.
@@ -385,6 +393,7 @@ ADDRESS="$(ask_value address "The address this home listens on (any, or one of t
 # Asked and checked before anything is written (604): a service name that
 # already serves another home stops the installer here.
 SERVICE_KIND=""          # systemd-user systemd-system runit openrc nixos, or none
+HOMES_LIST="${OPT[homes_list]:-$DIR/installed-homes}"
 SERVICE_FILE=""
 SERVICE=""
 SERVICE_UPDATED=false
@@ -542,6 +551,12 @@ elif [ -n "$SERVICE_KIND" ]; then
         info "wrote    $SERVICE_FILE"
     fi
     LOG_FILE="${LOG_DIR%/}/$SERVICE.log"
+    # the list of homes run from this program folder (605): restart-homes
+    # restarts them after an update
+    LISTED="$("$DIR/scripts/restart-homes" --project="$DIR" --homes-list="$HOMES_LIST" \
+        --add "$SERVICE" "$SERVICE_KIND" "$LOG_FILE" "$HOME_DIR" 2>&1)" \
+        || { printf '%s\n' "$LISTED" >&2; err "the home was not listed in $HOMES_LIST"; exit 1; }
+    printf '%s\n' "$LISTED"
     q() { printf '%q' "$1"; }
     case "$SERVICE_KIND" in
         systemd-user)
@@ -641,5 +656,35 @@ if [ -x "$DIR/scripts/run-home" ]; then
     echo ""
     echo "  Running the home by hand, in the foreground (issue 603):"
     printf '    %q %q %q\n' "$DIR/scripts/run-home" "$DIR" "$HOME_DIR"
+fi
+if [ -n "$SERVICE_KIND" ] && [ "$SERVICE_KIND" != none ]; then
+    echo ""
+    echo "  Its log, followed (issue 605):"
+    printf '    %q %q\n' "$DIR/scripts/view-logs" "$SERVICE"
+fi
+
+# ---------------------------------------------------------------------------
+# 7. The last question (605): every home run from this program folder
+#    restarted, so each runs this version
+# ---------------------------------------------------------------------------
+
+RESTART=( "$DIR/scripts/restart-homes" --project="$DIR" --homes-list="$HOMES_LIST" )
+if [ -n "${OPT[system_root]:-}" ]; then RESTART+=( --system-root="${OPT[system_root]}" ); fi
+LISTED_HOMES="$("${RESTART[@]}" --list 2>/dev/null | wc -l)"
+if [ "$LISTED_HOMES" -gt 0 ]; then
+    echo ""
+    if ! CHECKED="$("${RESTART[@]}" --check 2>&1)"; then
+        info "$LISTED_HOMES home(s) are listed in $HOMES_LIST, and not every one's service is installed:"
+        printf '%s\n' "$CHECKED" | grep 'not installed' | sed 's/^/  /'
+        info "once they are, restart them all so each runs this version:"
+        printf '    %q\n' "$DIR/scripts/restart-homes"
+    elif { has_opt restart_homes || ! $SILENT; } \
+        && ask_yn restart_homes "Restart every listed home now ($LISTED_HOMES), so each runs this version?"; then
+        if $ALL_YES; then RESTART+=( --yes ); fi
+        "${RESTART[@]}" || { warn "not every home restarted (above)"; exit 1; }
+    else
+        info "the $LISTED_HOMES listed home(s) keep the code they started with until restarted:"
+        printf '    %q\n' "$DIR/scripts/restart-homes"
+    fi
 fi
 exit 0

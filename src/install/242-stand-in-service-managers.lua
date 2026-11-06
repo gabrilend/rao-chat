@@ -7,8 +7,8 @@
 --       <state>/root (the system root the stand-in systemctl reads system
 --       units under); prints the bin folder, to go first on a PATH
 --
--- Every call is written to <state>/calls, one line: the command's name and
--- its arguments, separated by single spaces.
+-- Every call but whoami's is written to <state>/calls, one line: the
+-- command's name and its arguments, separated by single spaces.
 --
 -- systemctl [--user] <verb> [unit]
 --   daemon-reload, enable, disable   written down, nothing else
@@ -24,9 +24,17 @@
 --                     SIGKILL after TimeoutStopSec; prints its exit status
 --   restart <unit>    stop, then start
 --   is-active <unit>  "active" (exit 0) or "inactive" (exit 3)
--- sv, rc-service, rc-update, loginctl, nixos-rebuild   written down
--- sudo              written down, and refused (exit 1): the installer
---                   must never run it
+-- sv restart|start|stop|status <name>, rc-service <name> restart|start|stop|status
+--                   a service's run state kept in <state>/<command>-<name>
+--                   (nothing is run); status says it in the manager's
+--                   words (sv: "run: ..." or "down: ..."; rc-service:
+--                   exit 0 started, 3 stopped)
+-- rc-update, loginctl, nixos-rebuild   written down
+-- sudo              written down, then runs its command as this user (so
+--                   a referee sees whether sudo was used, and for what)
+-- whoami            prints <state>/user when that file exists (a referee
+--                   that is root playing someone who is not), else the
+--                   real name
 --
 -- Only the referees' scratch HOME and <state> are read or written.
 -- Required as a module it gives unit_words (systemd's reading of an
@@ -196,7 +204,7 @@ local function systemctl(state, args)
 end
 -- }}}
 
-local COMMANDS = { "systemctl", "sv", "rc-service", "rc-update", "loginctl", "nixos-rebuild", "sudo" }
+local COMMANDS = { "systemctl", "sv", "rc-service", "rc-update", "loginctl", "nixos-rebuild", "sudo", "whoami" }
 
 -- {{{ local function make(state) → the bin folder
 local function make(state)
@@ -216,13 +224,40 @@ end
 
 -- {{{ local function run(state, name, args) → exit status
 local function run(state, name, args)
-    local f = assert(io.open(state .. "/calls", "ab"))
-    f:write(name .. (#args > 0 and (" " .. table.concat(args, " ")) or "") .. "\n")
-    f:close()
+    if name ~= "whoami" then
+        local f = assert(io.open(state .. "/calls", "ab"))
+        f:write(name .. (#args > 0 and (" " .. table.concat(args, " ")) or "") .. "\n")
+        f:close()
+    end
     if name == "systemctl" then return systemctl(state, args) end
     if name == "sudo" then
-        io.stderr:write("stand-in sudo: refused (nothing here may raise its privileges)\n")
-        return 1
+        if #args == 0 then return 1 end
+        local words = {}
+        for i, a in ipairs(args) do words[i] = quote(a) end
+        local ok = os.execute(table.concat(words, " "))
+        return (ok == 0 or ok == true) and 0 or 1
+    end
+    if name == "whoami" then
+        local user = read_all(state .. "/user")
+        if user then io.stdout:write((user:match("%S+") or "") .. "\n") return 0 end
+        return os.execute("PATH=/usr/bin:/bin whoami") == 0 and 0 or 1
+    end
+    -- sv <verb> <name>, rc-service <name> <verb>: a kept run state
+    local verb, service
+    if name == "sv" then verb, service = args[1], args[2] elseif name == "rc-service" then service, verb = args[1], args[2] end
+    if verb and service then
+        local file = state .. "/" .. name .. "-" .. service
+        if verb == "restart" or verb == "start" then write_file(file, "run\n") return 0 end
+        if verb == "stop" then os.remove(file) return 0 end
+        if verb == "status" then
+            local running = read_all(file) ~= nil
+            if name == "sv" then
+                print((running and "run: " or "down: ") .. service .. ": (stand-in)")
+                return running and 0 or 3
+            end
+            print(" * status: " .. (running and "started" or "stopped"))
+            return running and 0 or 3
+        end
     end
     return 0
 end

@@ -261,7 +261,7 @@ local LOGS = ROOT .. "/logs"
 local INSTALL = "HOME=" .. quote(USER_HOME) .. " PATH=" .. quote(BIN) .. ":\"$PATH\" "
     .. quote(DIR .. "/scripts/install-home") .. " --silent --setup-service --log-dir=" .. quote(LOGS)
     .. " --system-root=" .. quote(SYSTEM_ROOT) .. " --ram-root=" .. quote(ROOT .. "/ram")
-    .. " --home-name=alice --address=127.0.0.2"
+    .. " --home-name=alice --address=127.0.0.2 --homes-list=" .. quote(ROOT .. "/installed-homes")
 local function calls() return read_all(STATE .. "/calls") or "" end
 local function clear_calls() os.remove(STATE .. "/calls") end
 local function install(home, ports, more)
