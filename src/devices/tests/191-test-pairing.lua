@@ -85,7 +85,7 @@ local HOME = ROOT .. "/home"
 local function make_home()
     local home = rooms.open_home(HOME)
     for key, value in pairs({ ["devices.port"] = tostring(PORT), ["devices.address"] = ADDRESS,
-                              ["devices.frame-deadline"] = "2", ["gatherer.ram-root"] = ROOT .. "/ram" }) do
+                              ["devices.frame-deadline"] = "2", ["devices.idle-limit"] = "5", ["gatherer.ram-root"] = ROOT .. "/ram" }) do
         rooms.set_config(home, key, value)
     end
 end

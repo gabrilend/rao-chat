@@ -6,7 +6,8 @@
 --
 -- One small process per home, beside the home starter.  It reads the
 -- home's `config` (`devices.port`, `devices.address`,
--- `devices.frame-deadline`, `gatherer.ram-root`), the home's `devices`
+-- `devices.frame-deadline`, `devices.idle-limit`, `gatherer.ram-root`),
+-- the home's `devices`
 -- file, and nothing of the disk home else; its own `state` and
 -- `running-log` are in `<home RAM folder>/devices/`, and a `stop` file
 -- there stops it.
@@ -35,6 +36,15 @@
 --   - a frame that does not arrive whole within devices.frame-deadline,
 --     a record that does not decode, or a kind the home does not answer:
 --     closed.
+-- Live (issue 306): once a device has caught up, its connection stays
+-- open.  The home lists its RAM folder once a second while any device is
+-- live (192's listing: a listing is a hint to re-read) and sends each new
+-- or changed file to every live device as a `file` record, each
+-- connection keeping its own record of what it has been sent; a removed
+-- file reaches a device at its next catch-up (306 decision 3).  After its
+-- first frame a connection may be quiet for devices.idle-limit seconds
+-- before its next frame starts; longer, and it is closed.  Replies and
+-- pushes share one writer per connection, so their frames never mix.
 -- Nothing is ever sent in the clear: a connection whose first four bytes
 -- are no frame length 124 accepts is closed without an answer (125).
 -- Each connection is a thread under 162's wait loop, so a stuck one stops
@@ -69,7 +79,8 @@ local M = {}
 -- does not keep its device).  (193): from-start (a catch-up is sent every
 -- message file, whatever the device holds), no-digest (positions only:
 -- no index however the digests disagree).  (194): no-dedupe (a typed
--- file sent again is put again, though it was taken).
+-- file sent again is put again, though it was taken).  (195):
+-- only-writer (pushes go only to a device that has sent a typed file).
 M.broken = os.getenv("RAO_DEVICES_BROKEN") or ""
 
 local function now() return socket.gettime() end
@@ -151,7 +162,7 @@ end
 -- position is not the device's; then `caught-up`.
 M.INDEX_LINES = 4000   -- index lines per record, well under 124's cap
 function M.catch_up_replies(home_ram, positions)
-    local _, paths = mirror.listing(home_ram)
+    local found, paths = mirror.listing(home_ram)
     local replies = {}
     for _, path in ipairs(paths) do
         local kind, where = mirror.check_path(path)
@@ -185,7 +196,7 @@ function M.catch_up_replies(home_ram, positions)
         end
     end
     replies[#replies + 1] = { kind = "caught-up", at = math.floor(now()) }
-    return replies
+    return replies, found
 end
 -- }}}
 
@@ -251,25 +262,121 @@ M.handlers = {
     ["catch-up"] = function(session, record)
         local positions, why = mirror.read_positions(record.rooms)
         if not positions then return nil, why end
-        return M.catch_up_replies(session.server.home_ram, positions)
+        local replies, found = M.catch_up_replies(session.server.home_ram, positions)
+        M.go_live(session, found)
+        return replies
     end,
     want = function(session, record)
         return M.want_replies(session.server.home_ram, record)
     end,
     typed = function(session, record)
+        session.wrote = true
         return M.typed_replies(session.server, session.label, record)
     end,
 }
 -- }}}
 
+-- {{{ function M.send_replies
+-- session, records → true, or nil when the connection failed.  One
+-- writer at a time per connection (the connection's thread answering,
+-- its pusher pushing), so a frame is never cut by another.
+function M.send_replies(session, replies)
+    while session.writing do
+        wait.block(function() return not session.writing end, math.huge)
+    end
+    session.writing = true
+    local reply_pair = session.pair
+    if M.broken == "wrong-key" then reply_pair = room_key.key_pair("not this device's token") end
+    local sent = true
+    for _, reply in ipairs(replies) do
+        sent = frames.write_frame(session.conn, seal.seal(reply_pair, records.encode(reply)))
+        if not sent then break end
+    end
+    session.writing = false
+    return sent
+end
+-- }}}
+
+-- {{{ local function await_first_byte
+-- conn, seconds → true when a byte came (and is kept for the next
+-- read), false when none came in time or the connection closed.
+local function await_first_byte(conn, seconds)
+    conn.timeout = seconds
+    conn.deadline = now() + seconds
+    local byte = conn:receive(1)
+    if not byte then return false end
+    conn.buffer = byte .. conn.buffer
+    return true
+end
+-- }}}
+
+-- {{{ function M.push_round
+-- session → the `file` records of what changed since it was last told:
+-- every path of the server's latest listing whose stamp is not the one
+-- this connection last sent (the file is read again: a listing is a
+-- hint to re-read).
+function M.push_round(session)
+    local server, pushes = session.server, {}
+    local paths = {}
+    for path in pairs(server.found) do paths[#paths + 1] = path end
+    table.sort(paths)
+    for _, path in ipairs(paths) do
+        local stamp = server.found[path]
+        if session.known[path] ~= stamp then
+            session.known[path] = stamp
+            local content = server.read(path)
+            if content then pushes[#pushes + 1] = { kind = "file", path = path, content = content } end
+        end
+    end
+    for path in pairs(session.known) do
+        if not server.found[path] then session.known[path] = nil end
+    end
+    if M.broken == "only-writer" and not session.wrote then return {} end
+    return pushes
+end
+-- }}}
+
+-- {{{ function M.go_live
+-- session, the listing its catch-up answered from: from now on the
+-- connection is pushed each change (306).  Its pusher waits for each new
+-- listing (server.round) and sends what changed, until the connection
+-- closes.  Without a loop to run it in (a test calling the handler), the
+-- session only remembers what it was sent.
+function M.go_live(session, found)
+    session.known = {}
+    for path, stamp in pairs(found) do session.known[path] = stamp end
+    local server = session.server
+    if session.pusher or not server.spawn then return end
+    session.pusher = true
+    server.live = (server.live or 0) + 1
+    server.spawn("pusher for " .. tostring(session.label), function()
+        local seen = server.round or 0
+        while not session.closed do
+            wait.block(function() return session.closed or (server.round or 0) ~= seen end, math.huge)
+            if session.closed then break end
+            seen = server.round
+            local pushes = M.push_round(session)
+            if #pushes > 0 and not M.send_replies(session, pushes) then
+                session.closed = true
+                session.conn:close()
+            end
+        end
+        server.live = server.live - 1
+    end)
+end
+-- }}}
+
 -- {{{ function M.serve_connection
--- conn (162's), server ({deadline, keys = function() → ring, by_label},
--- home_ram, on_refused, on_problem}) → nothing; the connection is closed
--- at the end.
+-- conn (162's), server ({deadline, idle_limit, keys = function() → ring,
+-- by_label}, home_ram, spawn, on_refused, on_problem}) → nothing; the
+-- connection is closed at the end.
 function M.serve_connection(conn, server)
     local session = { conn = conn, server = server }
     local pinned
     while true do
+        -- Path: the connection has its device — it may be quiet up to the
+        -- idle limit before its next frame starts (306).
+        if pinned and server.idle_limit and not await_first_byte(conn, server.idle_limit) then break end
         conn.timeout = server.deadline
         conn.deadline = now() + server.deadline
         local frame = frames.read_frame(conn)
@@ -289,7 +396,7 @@ function M.serve_connection(conn, server)
                 break
             end
             pinned, record = by_label[label], opened
-            session.label = label
+            session.label, session.pair = label, pinned
         end
         local decoded, why = records.decode(record)
         local handler = decoded and M.handlers[decoded.kind]
@@ -304,15 +411,9 @@ function M.serve_connection(conn, server)
             if server.on_problem then server.on_problem(session.label, refused) end
             break
         end
-        local reply_pair = pinned
-        if M.broken == "wrong-key" then reply_pair = room_key.key_pair("not this device's token") end
-        local sent = true
-        for _, reply in ipairs(replies) do
-            sent = frames.write_frame(conn, seal.seal(reply_pair, records.encode(reply)))
-            if not sent then break end
-        end
-        if not sent then break end
+        if not M.send_replies(session, replies) then break end
     end
+    session.closed = true
     conn:close()
 end
 -- }}}
@@ -334,6 +435,10 @@ local function main(args)
         settings.deadline = tonumber(rooms.config_value(home, "devices.frame-deadline"))
         if not settings.deadline or settings.deadline < 1 or settings.deadline % 1 ~= 0 then
             error("devices.frame-deadline must be a whole number of seconds, at least 1", 0)
+        end
+        settings.idle_limit = tonumber(rooms.config_value(home, "devices.idle-limit"))
+        if not settings.idle_limit or settings.idle_limit < 1 or settings.idle_limit % 1 ~= 0 then
+            error("devices.idle-limit must be a whole number of seconds, at least 1", 0)
         end
         settings.ram_root = rooms.config_value(home, "gatherer.ram-root")
         for _, mailbox in ipairs(rooms.read_mailboxes(home)) do
@@ -395,6 +500,7 @@ local function main(args)
 
     local server = {
         deadline = settings.deadline,
+        idle_limit = settings.idle_limit,
         keys = keys,
         home_ram = ram.home_ram(root, home_dir),
         on_refused = function()
@@ -417,6 +523,24 @@ local function main(args)
                 local conn = wait.wrap(client)
                 loop:spawn("device connection " .. tostring(host) .. ":" .. tostring(port),
                     function() M.serve_connection(conn, server) end)
+            end
+        end
+    end)
+    server.spawn = function(name, fn) loop:spawn(name, fn) end
+    -- the listing live devices are pushed from: once a second while any
+    -- device is live (306 decision 1)
+    server.round, server.found = 0, {}
+    loop:spawn("poll", function()
+        while true do
+            wait.sleep(1)
+            if (server.live or 0) > 0 then
+                local cache = {}
+                server.found = mirror.listing(server.home_ram)
+                server.read = function(path)
+                    if cache[path] == nil then cache[path] = mirror.read_file(server.home_ram .. "/" .. path) or false end
+                    return cache[path] or nil
+                end
+                server.round = server.round + 1
             end
         end
     end)

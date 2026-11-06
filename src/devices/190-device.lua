@@ -5,6 +5,7 @@
 --   luajit src/devices/190-device.lua <device folder> test [--public]
 --   luajit src/devices/190-device.lua <device folder> catch-up
 --   luajit src/devices/190-device.lua <device folder> send
+--   luajit src/devices/190-device.lua <device folder> live [--for <seconds>]
 --
 -- The device's settings are `<device folder>/config`, "name = value"
 -- lines, the lines 189's `add` prints plus the device's own:
@@ -53,6 +54,12 @@
 -- `<name>.refused` beside it; such a file is not sent again until the
 -- person removes the reason (305 decision 4).
 --
+-- `live` (issue 306): a catch-up, then the connection stays open: what
+-- the home pushes is written into the mirror, what the person types is
+-- sent at once, and a `ping` goes when this device has sent nothing for
+-- `keep-alive` seconds (a config line `live` needs).  `--for` ends it
+-- after that many seconds.
+--
 -- The project folder is found from this file's own place (or
 -- RAO_CHAT_DIR), as 183 does.
 
@@ -82,6 +89,15 @@ local M = {}
 -- written into the mirror unchecked).  (194): drop-refused (a typed file
 -- the home refused is removed anyway).
 M.broken = os.getenv("RAO_DEVICE_BROKEN") or ""
+
+-- {{{ function M.config_values
+-- device folder → every "name = value" of its config (none: {}).
+function M.config_values(folder)
+    local text = mirror.read_file(folder .. "/config")
+    local ok, values = pcall(formats.parse_config, text or "", folder .. "/config")
+    return ok and values or {}
+end
+-- }}}
 
 -- {{{ function M.read_config
 -- device folder → the settings, or nil and why.
@@ -233,6 +249,25 @@ local function prune(root)
 end
 -- }}}
 
+-- {{{ function M.take_file
+-- mirror, a `file` record, a summary: the file written into the mirror
+-- when its path passes 192's check (counted in summary.refused, with
+-- why, when it does not).
+function M.take_file(root, record, summary)
+    summary.files = summary.files + 1
+    local kind, why = mirror.check_path(record.path)
+    if not kind and M.broken == "no-path-check" then kind = "unchecked" end
+    -- Path: a path outside 301's layout — refused, nothing written.
+    if not kind then
+        summary.refused[#summary.refused + 1] = why
+        return false
+    end
+    if kind == "message" then summary.messages = summary.messages + 1 end
+    if mirror.write(root, record.path, record.content) then summary.changed = summary.changed + 1 end
+    return true
+end
+-- }}}
+
 -- {{{ function M.catch_up
 -- sock, pair, device folder, where (for the words) → a summary {files,
 -- messages, changed, dropped, refused = {why...}}; or nil and the words
@@ -249,20 +284,7 @@ function M.catch_up(sock, pair, folder, where, config)
     if not M.send_record(sock, pair, { kind = "catch-up", rooms = positions_text }) then
         return nil, M.silence(config, where, "closed")
     end
-    -- {{{ local function take_file
-    local function take_file(record)
-        summary.files = summary.files + 1
-        local kind, why = mirror.check_path(record.path)
-        if not kind and M.broken == "no-path-check" then kind = "unchecked" end
-        -- Path: a path outside 301's layout — refused, nothing written.
-        if not kind then
-            summary.refused[#summary.refused + 1] = why
-            return
-        end
-        if kind == "message" then summary.messages = summary.messages + 1 end
-        if mirror.write(root, record.path, record.content) then summary.changed = summary.changed + 1 end
-    end
-    -- }}}
+    local function take_file(record) M.take_file(root, record, summary) end
     -- {{{ local function answer_until
     -- reads records until `stop(record)` is true; files are taken, an
     -- index is kept; anything else is the home breaking the exchange.
@@ -407,6 +429,76 @@ function M.send_typed(sock, pair, folder, where, config)
 end
 -- }}}
 
+-- {{{ local function keep_refused
+-- a typed file and the home's reason: kept, the reason beside it.
+local function keep_refused(file, why)
+    ram.put(file.path:match("^(.*)/[^/]+$"), file.name .. ".refused", why .. "\n")
+end
+-- }}}
+
+-- {{{ function M.live
+-- sock, pair, device folder, where, config, seconds (nil: until the
+-- connection ends), out(line) → the summary of what was pushed, or nil
+-- and the words that say how the connection ended (issue 306).  After a
+-- catch-up the connection stays open: each `file` the home pushes is
+-- written into the mirror (checked as in a catch-up); each typed file
+-- the person writes is sent as soon as it is seen (polled every 0.2 s)
+-- and removed on its `typed-ok`; and when this device has sent nothing
+-- for `keep-alive` seconds it sends a `ping`, so the home, which closes
+-- a connection quiet for its idle limit, keeps it (306 decision 4).
+function M.live(sock, pair, folder, where, config, seconds, out)
+    local root = folder .. "/mirror"
+    local stop_at = seconds and (socket.gettime() + seconds)
+    local summary = { files = 0, messages = 0, changed = 0, dropped = 0, refused = {} }
+    local pending = {}
+    local last_sent = socket.gettime()
+    local function send(record)
+        last_sent = socket.gettime()
+        return M.send_record(sock, pair, record)
+    end
+    while not stop_at or socket.gettime() < stop_at do
+        for _, file in ipairs(M.typed_files(folder)) do
+            if not pending[file.name] and file.name:match("^[%w%-]+$") and #file.name <= 64 then
+                local content = mirror.read_file(file.path)
+                if content then
+                    if not send({ kind = "typed", id = file.name, content = content }) then
+                        return nil, where .. " closed the connection"
+                    end
+                    pending[file.name] = file
+                end
+            end
+        end
+        if socket.gettime() - last_sent >= config["keep-alive"] then
+            if not send({ kind = "ping", id = new_id() }) then return nil, where .. " closed the connection" end
+        end
+        local readable = socket.select({ sock }, nil, 0.2)
+        if readable and #readable > 0 then
+            local record, lost = M.read_record(sock, pair)
+            if not record then
+                if lost == "closed" then return nil, where .. " closed the connection" end
+                return nil, M.silence(config, where, lost)
+            end
+            if record.kind == "file" then
+                if M.take_file(root, record, summary) then out("received " .. record.path) end
+            elseif (record.kind == "typed-ok" or record.kind == "typed-refused") and pending[record.id] then
+                local file = pending[record.id]
+                pending[record.id] = nil
+                if record.kind == "typed-ok" then
+                    os.remove(file.path)
+                    out("sent " .. file.name)
+                else
+                    keep_refused(file, record.why)
+                    out("kept " .. file.name .. ": " .. record.why)
+                end
+            elseif record.kind ~= "pong" then
+                return nil, where .. " sent a " .. record.kind .. " where it was not due"
+            end
+        end
+    end
+    return summary
+end
+-- }}}
+
 -- {{{ function M.summary_text
 function M.summary_text(summary, where)
     local out = { string.format("caught up with %s: %d file(s) received (%d message(s)), %d changed, %d dropped",
@@ -417,10 +509,11 @@ end
 -- }}}
 
 -- {{{ local function main
-local USAGE = "usage: luajit 190-device.lua <device folder> test [--public] | catch-up | send\n"
+local USAGE = "usage: luajit 190-device.lua <device folder> test [--public] | catch-up | send | live [--for <seconds>]\n"
+local COMMANDS = { test = true, ["catch-up"] = true, send = true, live = true }
 local function main(args)
     local folder, command = args[1], args[2]
-    if not folder or (command ~= "test" and command ~= "catch-up" and command ~= "send") then
+    if not folder or not COMMANDS[command] then
         io.stderr:write(USAGE)
         return 2
     end
@@ -443,11 +536,33 @@ local function main(args)
         for _, line in ipairs(sent.lines) do io.write(line, "\n") end
         return sent.refused == 0 and 0 or 1
     end
-    local summary, lost = M.catch_up(sock, room_key.key_pair(config.token), folder, where, config)
-    sock:close()
-    if not summary then io.write(lost, "\n") return 1 end
+    local live_for
+    if command == "live" then
+        config["keep-alive"] = tonumber(M.config_values(folder)["keep-alive"] or "")
+        if not config["keep-alive"] or config["keep-alive"] <= 0 then
+            sock:close()
+            io.stderr:write("device: live needs keep-alive = <seconds above 0> in " .. folder .. "/config\n")
+            return 1
+        end
+        if args[3] == "--for" then live_for = tonumber(args[4]) end
+    end
+    local pair = room_key.key_pair(config.token)
+    local summary, lost = M.catch_up(sock, pair, folder, where, config)
+    if not summary then sock:close() io.write(lost, "\n") return 1 end
     io.write(M.summary_text(summary, where), "\n")
-    return #summary.refused == 0 and 0 or 1
+    if command ~= "live" then
+        sock:close()
+        return #summary.refused == 0 and 0 or 1
+    end
+    io.flush()
+    local pushed, ended = M.live(sock, pair, folder, where, config, live_for,
+        function(line) io.write(line, "\n") io.flush() end)
+    sock:close()
+    if not pushed then io.write(ended, "\n") return 1 end
+    io.write(string.format("live for %s s: %d file(s) pushed, %d changed\n", tostring(live_for), pushed.files,
+        pushed.changed))
+    for _, why in ipairs(pushed.refused) do io.write("refused from the home: ", why, "\n") end
+    return #pushed.refused == 0 and 0 or 1
 end
 -- }}}
 
