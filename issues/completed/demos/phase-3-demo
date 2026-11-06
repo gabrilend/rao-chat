@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+#
+# phase-3-demo - shows phase 3 of rao-chat working: a home's own devices.
+#
+# Two homes at 127.0.0.2 and .3, each a real rao-home with its own RAM
+# folder, its gatherer process and its device server, with one room
+# between them; a "phone" and a "browser" paired with the first home (the
+# browser reaching it through a WebSocket upgrade, 309).  The demo pairs
+# both devices, catches each up, has the phone write while the browser is
+# live (the browser is pushed the message, and the second home receives
+# it), locks the phone (it catches up only at its check-ins, 308), and
+# edits a message, which reaches both devices.  It prints what is really
+# in the homes' and the devices' folders, and each scene passes or fails.
+# It reads input/ first and writes a goodbye into output/ last.
+#
+# Every process opens sockets on loopback addresses only (127.0.0.2 and
+# .3).  The demo runs in a network namespace of its own (unshare -rn),
+# where it brings the namespace's loopback up itself, so nothing can
+# reach a network.  It stops every process it started and removes its
+# folder at the end.
+#
+# Exit status: 0 every scene ran in full, 1 a scene could not run, 2 none
+# failed but some ran with a part missing.
+#
+# Usage (from any folder):
+#   phase-3-demo                 the project named below
+#   phase-3-demo <project dir>   another copy of the project
+
+DIR="/home/ritz/programs/rao-chat"
+if [ -n "${1:-}" ]; then
+    DIR="$1"
+fi
+
+if [ ! -d "${DIR}/src/phase-3-demo" ]; then
+    echo "phase-3-demo: ${DIR} does not look like the rao-chat project (no src/phase-3-demo)" >&2
+    exit 1
+fi
+
+# The scratch homes live in RAM: tmp/ points at /tmp/<project>, and inside it
+# shared-memory/ points at /dev/shm/<project>.  Make whichever piece is missing.
+PROJECT="$(basename "${DIR}")"
+mkdir -p "/dev/shm/${PROJECT}" "/tmp/${PROJECT}/tmp"
+if [ ! -e "/tmp/${PROJECT}/shared-memory" ]; then
+    ln -s "/dev/shm/${PROJECT}" "/tmp/${PROJECT}/shared-memory"
+fi
+if [ ! -e "${DIR}/tmp" ]; then
+    ln -s "/tmp/${PROJECT}" "${DIR}/tmp"
+fi
+
+if unshare -rn true 2>/dev/null; then
+    # a network namespace with nothing in it: no packet can leave
+    exec unshare -rn luajit "${DIR}/src/phase-3-demo/200-phase-3-demo.lua" "${DIR}"
+fi
+echo "phase-3-demo: unshare -rn is not allowed here, so running without a network namespace" \
+     "(the demo opens loopback sockets only; the home starters are not run)" >&2
+exec luajit "${DIR}/src/phase-3-demo/200-phase-3-demo.lua" "${DIR}"

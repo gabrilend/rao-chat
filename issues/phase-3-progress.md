@@ -53,6 +53,11 @@ decision in its issue, and the owner may overturn it.
 - 309 — the browser's way in: built 2026-11-06 (the WebSocket upgrade and
   wrapper in 187, `devices.websocket-path`; referees in
   `198-test-browsers-way-in.lua`).
+- 310 — phase 3 demo: built 2026-11-06 (`issues/completed/demos/phase-3-demo`,
+  `src/phase-3-demo/200` and `201`; referee `202-test-phase-3-demo.lua`).
+  Its edit scene files the correction itself, since no edit command
+  exists yet (decision 2), and its browser is 190 speaking WebSocket
+  until phase 4's web client (decision 1).
 - 301 — the RAM inboxes as the viewer's interface: built 2026-11-05
   (`inbox/<room>/<written>-<id>`, `.room`, `.tree`, written by each
   gatherer; `typed/` in 301's shape, filed once under its own id; the

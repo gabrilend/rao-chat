@@ -725,7 +725,8 @@ local function main(args)
     end
     local sock, where, setting = M.reach(config)
     if not sock then io.write(where, "\n") return 1 end
-    io.write("reached the home by its " .. setting .. " address, " .. where .. "\n")
+    io.write("reached the home by its " .. setting .. " address, " .. where
+        .. (config["websocket-path"] and (", through a WebSocket upgrade on " .. config["websocket-path"]) or "") .. "\n")
     if command == "send" then
         local sent, lost = M.send_typed(sock, room_key.key_pair(config.token), folder, where, config)
         sock:close()
