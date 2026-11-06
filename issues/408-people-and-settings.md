@@ -35,6 +35,18 @@ over the room view."  Section 8's tabs: Rooms · People · Settings.
 - **Panels open over the room** and close with Escape or their own
   close button; the room behind keeps its place.
 
+## Status
+
+Built 2026-11-06: `src/web/225-panels.js` (`rao.panels`: remembered homes
+by label, People, the top bar's words and name); the page fills the top
+bar, the People and Homes panels, opens on the last home remembered, and
+keeps each home's lines and signature under its name (207); the
+stand-in's `homes`, `people`, `topbar`, and a storage for `draw`.
+Referees 1 to 4 pass, 2 catching its broken version
+(`src/web/tests/226-test-people-and-settings.lua`), with 5 (the page's
+own script, on the paper document: the form, the top bar and both lists
+from what is remembered, and a browser with no storage said).
+
 ## Referees
 
 1. **Settings round trip**: remembered settings read back as the same
@@ -79,6 +91,20 @@ the owner can overturn each.
    address reached stands in until one is given.
 3. **Remembered homes are keyed by that label** in the browser's storage,
    each holding its lines without the token (403 decision 2).
+
+### While building, 2026-11-06
+
+4. **The signature is kept per home**, with that home's lines, rather
+   than once for the page (406 kept one): a person may sign differently
+   on different homes.
+5. **Remembering needs a name**: with "remember" ticked and no name, the
+   page says so and keeps nothing, since a home is found again by its
+   name.
+6. **The page opens on the last home it connected to** (its lines, name
+   and signature in the form; the token pasted again); Homes lists the
+   others to choose.
+7. **"Forget this home" forgets the home named in the form** and clears
+   the form; with no name it only clears the form, and says so.
 
 ## Related documents
 

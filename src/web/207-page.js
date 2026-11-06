@@ -58,32 +58,61 @@
     };
     // }}}
 
-    // {{{ settings: what is remembered, and the form (issue 403)
-    // The browser's storage holds the lines without the token, and only
-    // when "remember" is ticked (403 decision 2).  Storage a browser
-    // refuses (some do for pages opened from files) is said, not fatal.
-    var STORE = "rao-chat settings";
-    function stored() {
-        try { return globalThis.localStorage.getItem(STORE); } catch (problem) { return null; }
+    // {{{ settings: what is remembered, and the form (issues 403, 406, 408)
+    // The browser's storage holds each remembered home's lines, under the
+    // name the person gave it, without the token, and only when "remember"
+    // is ticked (403 decision 2, 408 decision 3; 225 keeps them).  Storage
+    // a browser refuses (some do for pages opened from files) is said, not
+    // fatal.
+    var REFUSING = {
+        getItem: function () { throw new Error("no storage"); },
+        setItem: function () { throw new Error("no storage"); },
+        removeItem: function () { throw new Error("no storage"); }
+    };
+    function storage() {
+        try { return globalThis.localStorage || REFUSING; } catch (problem) { return REFUSING; }
     }
-    function store(text) {
-        try {
-            if (text === null) { globalThis.localStorage.removeItem(STORE); } else { globalThis.localStorage.setItem(STORE, text); }
-            return "";
-        } catch (problem) {
-            return "This browser keeps nothing for this page (" + problem.message + "); paste the lines each time.";
+    page.storage = storage;
+    function label() { return byId("home-label").value.trim(); }
+    // the form's home kept, when "remember" is ticked
+    function keep() {
+        if (!byId("remember").checked) { return ""; }
+        var signature = byId("signature").value;
+        if (rao.writing.checkSignature(rao.bytes.fromText(signature))) { signature = ""; }
+        return rao.panels.homes.remember(storage(), label(), byId("settings-lines").value, signature);
+    }
+    // a remembered home into the form (its token is pasted again)
+    function choose(name) {
+        var found = rao.panels.homes.read(storage(), name);
+        if (found.why) { say(found.why, true); return; }
+        byId("home-label").value = name;
+        byId("settings-lines").value = found.lines;
+        byId("signature").value = found.signature;
+        byId("settings-token").value = "";
+        byId("remember").checked = true;
+        page.topBar();
+        openPanel("settings");
+        say("paste the token for " + name + ", then Connect", false);
+    }
+    page.choose = choose;
+    function drawHomes() {
+        var list = byId("homes-list");
+        list.textContent = "";
+        var found = rao.panels.homes.list(storage());
+        if (found.why) { list.appendChild(element("li", "quiet", found.why)); return; }
+        if (found.labels.length === 0) {
+            list.appendChild(element("li", "quiet", "No home remembered: tick \"remember\" in Settings to keep one."));
         }
+        found.labels.forEach(function (name) {
+            var item = element("li");
+            var button = element("button", name === label() ? "open" : null, name);
+            button.type = "button";
+            button.addEventListener("click", function () { choose(name); });
+            item.appendChild(button);
+            list.appendChild(item);
+        });
     }
-    // the signature is kept with the remembered lines (406), under its own name
-    var SIGNATURE = "rao-chat signature";
-    function storedSignature() {
-        try { return globalThis.localStorage.getItem(SIGNATURE); } catch (problem) { return null; }
-    }
-    function storeSignature(text) {
-        try {
-            if (text === null) { globalThis.localStorage.removeItem(SIGNATURE); } else { globalThis.localStorage.setItem(SIGNATURE, text); }
-        } catch (problem) { /* said by store() when the lines are kept */ }
-    }
+    page.drawHomes = drawHomes;
     function say(words, problem) {
         var place = byId("settings-words");
         place.textContent = words;
@@ -94,10 +123,9 @@
     function formSettings() {
         var read = rao.link.readSettings(byId("settings-lines").value, byId("settings-token").value);
         if (read.why) { say(read.why, true); return null; }
-        if (byId("remember").checked) {
-            var trouble = store(rao.link.rememberText(byId("settings-lines").value));
-            if (trouble) { say(trouble, true); }
-        }
+        var trouble = keep();
+        if (trouble) { say(trouble, true); }
+        drawHomes();
         return read.settings;
     }
     function testConnection() {
@@ -124,7 +152,7 @@
         page.settings = settings;
         if (page.session) { page.session.stop(); }
         page.session = new rao.live.Session(settings, page.files, page.outbox, {
-            state: page.setState,
+            state: function () { page.topBar(); },
             errors: page.showErrors,
             changed: function () { page.draw(); },
             caughtUp: function (summary) {
@@ -132,6 +160,15 @@
             }
         });
         page.session.start();
+    };
+    // the top bar: the home's name (the person's label for it, or the
+    // address reached) and the connection state's words (408)
+    page.topBar = function () {
+        var session = page.session;
+        if (session && session.link && session.link.where) { page.where = session.link.where; }
+        byId("home-name").textContent = rao.panels.homeName(label(), page.where);
+        var state = session ? session.state : "stopped";
+        page.setState(rao.panels.stateWords(state), state === "live");
     };
     // the strip's countdown, once a second while a retry waits
     function tick() {
@@ -159,7 +196,23 @@
         drawTree(rao.view.tree(page.files, unread));
         drawRoom();
         composeNote();
+        drawPeople();
     };
+    // the People panel: every mailbox's direct-message rooms (408 decision 1)
+    function drawPeople() {
+        var list = byId("people-list");
+        list.textContent = "";
+        rao.panels.people(page.files).forEach(function (person) {
+            var item = element("li");
+            var button = element("button", "tree-row" + (person.tag === page.openRoom ? " open" : ""));
+            button.type = "button";
+            button.appendChild(element("span", "label", person.label));
+            button.appendChild(element("span", "last-line", person.last));
+            button.addEventListener("click", function () { page.open(person.tag); });
+            item.appendChild(button);
+            list.appendChild(item);
+        });
+    }
     page.open = function (tag) {
         page.openRoom = tag;
         page.openPanel(null);
@@ -310,26 +363,36 @@
         });
         byId("home-name").addEventListener("click", function () { openPanel("homes"); });
         openPanel(null);
-        page.setState("not connected", false);
         var missing = rao.bytes.cryptoMissing();
         page.showErrors(missing ? [missing] : [], false);
-        var remembered = stored();
-        if (remembered) {
-            byId("settings-lines").value = remembered;
-            byId("remember").checked = true;
+        var last = rao.panels.homes.last(storage());
+        if (last) {
+            var found = rao.panels.homes.read(storage(), last);
+            if (!found.why) {
+                byId("home-label").value = last;
+                byId("settings-lines").value = found.lines;
+                byId("signature").value = found.signature;
+                byId("remember").checked = true;
+            }
         }
+        page.topBar();
+        drawHomes();
+        byId("home-label").addEventListener("change", function () { page.topBar(); });
         byId("settings-form").addEventListener("submit", function (event) {
             event.preventDefault();
             page.connect();
         });
         byId("test-connection").addEventListener("click", testConnection);
         byId("forget-home").addEventListener("click", function () {
-            store(null);
-            storeSignature(null);
+            var name = label();
+            var trouble = name ? rao.panels.homes.forget(storage(), name) : "";
             byId("settings-lines").value = "";
             byId("settings-token").value = "";
+            byId("signature").value = "";
             byId("remember").checked = false;
-            say("forgotten: this page keeps nothing of that home now", false);
+            drawHomes();
+            say(trouble || (name ? "forgotten: this page keeps nothing of " + name + " now"
+                : "the form is cleared; give a home's name to forget one this page remembers"), !!trouble);
         });
         byId("compose").addEventListener("submit", function (event) {
             event.preventDefault();
@@ -343,13 +406,11 @@
             }
         });
         byId("compose-text").addEventListener("input", grow);
-        var signature = storedSignature();
-        if (signature !== null) { byId("signature").value = signature; }
         byId("signature").addEventListener("change", function () {
-            var value = byId("signature").value;
-            var why = rao.writing.checkSignature(rao.bytes.fromText(value));
-            say(why || "signature kept" + (byId("remember").checked ? " on this computer" : " while this page is open"), !!why);
-            if (!why && byId("remember").checked) { storeSignature(value); }
+            var why = rao.writing.checkSignature(rao.bytes.fromText(byId("signature").value));
+            var trouble = why ? "" : keep();
+            say(why || trouble || "signature kept" + (byId("remember").checked ? " on this computer" : " while this page is open"),
+                !!(why || trouble));
         });
         byId("retry-now").addEventListener("click", function () {
             if (page.session) { page.session.retryNow(); }

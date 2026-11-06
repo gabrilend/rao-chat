@@ -8,4 +8,7 @@ marks kept in the page) and the open room from what `rao.view` works out.  From 
 line, growing to eight lines), the signature field, the outbox's sending
 after each catch-up, the marker and the refused items with their reasons.  From 407 Connect starts a live session (223) that stays connected
 while the page is open; "retry now" and the browser coming back online
-try at once, and the strip's countdown moves each second.
+try at once, and the strip's countdown moves each second.  From 408 it fills the top bar (the home's name and the state's words),
+the People panel (direct-message rooms, opened on a click) and the Homes
+panel (the homes remembered, chosen on a click), and keeps each home's
+lines and signature under its name.

@@ -57,3 +57,5 @@ home does not have yet.
   `src/web/tests/222-test-writing-from-the-page.lua`).
 - 407 — live while the page is open: built 2026-11-06 (`src/web/223-live.js`;
   referees in `src/web/tests/224-test-live-in-the-page.lua`).
+- 408 — People and Settings: built 2026-11-06 (`src/web/225-panels.js`;
+  referees in `src/web/tests/226-test-people-and-settings.lua`).
