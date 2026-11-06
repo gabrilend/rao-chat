@@ -45,6 +45,20 @@ failed)"; the client "tries its server's home-network address first
 - **What the page keeps**: the settings without the token, and only when
   the person ticks "remember on this computer" (decision 2).
 
+## Status
+
+Built 2026-11-06: `189-pair.lua add <label> --browser`;
+`src/web/213-reaching-the-home.js` (`rao.link`: the settings, the
+WebSocket link, choosing an address, the test's words); the page's
+Settings form (Connect, Test the connection, Forget this home, remember);
+the stand-in's `settings`, `remember`, `test` and `reach`; the referees'
+kit, `src/web/tests/214-kit-for-page-tests.lua`.  Referees 1 to 5 pass,
+2 to 4 catching their broken versions
+(`src/web/tests/215-test-reaching-the-home.lua`), with 1b (a phone's
+lines are as they were; the token box wins over a token line), 3b (a
+home that opens but refuses the ping is said, not passed over) and 3c (a
+pong for another ping is not an answer, against a stand-in home).
+
 ## Rubric
 
 - **The connection test says exactly what failed** (rmail's setup
@@ -105,6 +119,23 @@ the owner can overturn each.
 4. **`keep-alive` is printed as half the idle limit**, so a page that has
    sent nothing for that long pings well before the home would close it
    (306 decision 4).
+
+### While building, 2026-11-06
+
+5. **The settings' lines are read by 190's config rule**, which trims
+   each line, so a token written in a `token =` line loses spaces at its
+   ends; the token box's text is used byte for byte.  The page takes the
+   token box first and the `token` line only when the box is empty.
+6. **`wait = 10` and `quick-wait = 1` are what `--browser` prints**: a
+   browser has no faster way to learn that an address is away than its
+   own WebSocket giving up, so the home-network try is kept short.
+7. **A WebSocket that opens but whose home refuses the ping stops the
+   attempt** (307 decision 2), but one that cannot be opened is passed
+   over for the public address: a browser cannot tell a wrong path from
+   an address that is away, so a wrong path on the home network is
+   reported with the public address's words too.
+8. **The page opens Settings when it starts**, since the token is pasted
+   each time (decision 2).
 
 ## Related documents
 

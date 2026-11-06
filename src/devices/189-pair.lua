@@ -1,7 +1,7 @@
 -- 189-pair.lua — pairing a device with the home, on the home machine
 -- (issue 303).
 --
---   luajit src/devices/189-pair.lua <project> <disk home> add <label>
+--   luajit src/devices/189-pair.lua <project> <disk home> add <label> [--browser]
 --   luajit src/devices/189-pair.lua <project> <disk home> list
 --   luajit src/devices/189-pair.lua <project> <disk home> remove <label>
 --
@@ -15,6 +15,16 @@
 --   public = <the public address 212 last confirmed, or "unknown">
 --   token = <the token>
 --
+-- With `--browser` (issue 403), for the web client, it also prints the
+-- lines a page needs beside those: stated values the person can change,
+-- never defaults hidden in the page (403 decision 3: a phone's lines stay
+-- as they were, so 190 does not start speaking WebSocket):
+--
+--   websocket-path = <devices.websocket-path>   the upgrade's path (309)
+--   wait = 10                                   seconds to open, and to answer
+--   quick-wait = 1                              seconds for the home-network address
+--   keep-alive = <half of devices.idle-limit, whole seconds, at least 1>
+--
 -- `list` prints the labels, never a token.  `remove` takes the device's
 -- lines out.  The file is written whole: under a temporary name made
 -- private before a byte is written (umask 077), then renamed, so the
@@ -25,7 +35,7 @@
 
 local DIR = arg and arg[1]
 if not DIR or DIR == "" then
-    io.stderr:write("usage: luajit 189-pair.lua <project> <disk home> add <label> | list | remove <label>\n")
+    io.stderr:write("usage: luajit 189-pair.lua <project> <disk home> add <label> [--browser] | list | remove <label>\n")
     os.exit(2)
 end
 dofile(DIR .. "/src/room-folders/001-load-path.lua")(DIR)
@@ -105,8 +115,10 @@ end
 -- }}}
 
 -- {{{ function M.settings_text
--- home folder, token → the lines a device's config takes.
-function M.settings_text(home_dir, token)
+-- home folder, token, browser (true for --browser) → the lines a
+-- device's config takes.
+M.BROWSER_WAIT, M.BROWSER_QUICK_WAIT = 10, 1
+function M.settings_text(home_dir, token, browser)
     local rooms = require("002-room-folders")
     local home = rooms.open_home(home_dir)
     local address = rooms.config_value(home, "devices.address")
@@ -116,24 +128,38 @@ function M.settings_text(home_dir, token)
         .. "home-network = " .. (address == "any" and "unknown" or address) .. "\n"
         .. "public = " .. ((public and public ~= "") and public or "unknown") .. "\n"
         .. "token = " .. token .. "\n"
+        .. (browser and M.browser_text(home) or "")
+end
+-- }}}
+
+-- {{{ function M.browser_text
+-- the home (002's) → the lines a page needs beside a device's (403).
+function M.browser_text(home)
+    local rooms = require("002-room-folders")
+    local idle = tonumber(rooms.config_value(home, "devices.idle-limit")) or 2
+    return "websocket-path = " .. rooms.config_value(home, "devices.websocket-path") .. "\n"
+        .. "wait = " .. M.BROWSER_WAIT .. "\n"
+        .. "quick-wait = " .. M.BROWSER_QUICK_WAIT .. "\n"
+        .. "keep-alive = " .. math.max(1, math.floor(idle / 2)) .. "\n"
 end
 -- }}}
 
 -- {{{ local function main
 local function main(args)
-    local home_dir, command, label = args[2], args[3], args[4]
+    local home_dir, command, label, browser = args[2], args[3], args[4], args[5]
     if not home_dir or not command then
-        io.stderr:write("usage: luajit 189-pair.lua <project> <disk home> add <label> | list | remove <label>\n")
+        io.stderr:write("usage: luajit 189-pair.lua <project> <disk home> add <label> [--browser] | list | remove <label>\n")
         return 2
     end
-    if command == "add" and label then
+    if command == "add" and label and (browser == nil or browser == "--browser") then
         local ok, token, why = pcall(M.add, home_dir, label)
         if not ok then token, why = nil, token end
         if not token then
             io.stderr:write("pair: " .. tostring(why) .. "\n")
             return 1
         end
-        io.write("paired " .. label .. "; give the device these lines:\n", M.settings_text(home_dir, token))
+        io.write("paired " .. label .. "; give the " .. (browser and "page" or "device") .. " these lines:\n",
+            M.settings_text(home_dir, token, browser ~= nil))
     elseif command == "remove" and label then
         local done, why = M.remove(home_dir, label)
         if not done then io.stderr:write("pair: " .. why .. "\n") return 1 end
@@ -143,7 +169,7 @@ local function main(args)
         if not list then io.stderr:write("pair: " .. why .. "\n") return 1 end
         for _, device in ipairs(list) do io.write(device.label, "\n") end
     else
-        io.stderr:write("usage: luajit 189-pair.lua <project> <disk home> add <label> | list | remove <label>\n")
+        io.stderr:write("usage: luajit 189-pair.lua <project> <disk home> add <label> [--browser] | list | remove <label>\n")
         return 2
     end
     return 0
