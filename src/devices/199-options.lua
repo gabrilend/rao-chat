@@ -1,5 +1,5 @@
--- 199-options.lua — the undecided choices of the device port (issue
--- 302), written down for the options tally (scripts/tally-options, issue
+-- 199-options.lua — the undecided choices of the device port (issues
+-- 302 and 306), written down for the options tally (scripts/tally-options, issue
 -- 106) and the demos.  Plain data: nothing here runs.  Numbered at the
 -- end of the devices module's block, as 019, 039 and 059 are for theirs,
 -- so the module's later files keep their reading order.
@@ -64,5 +64,23 @@ return {
             },
         },
         leaning = "10, as the gatherer's.",
+    },
+    {
+        id = "devices-idle-limit",
+        question = "How long may a connected phone or browser stay quiet before the home closes it, in seconds?",
+        waits_on = "owner",
+        detail = "issue 306 (decision 2: a setting with no default, like every limit)",
+        config_key = "devices.idle-limit",
+        variants = {
+            {
+                name = "90",
+                summary = "90 seconds without a frame begun closes a live connection; a device that has "
+                    .. "heard nothing pings well within it (the reference device's keep-alive).",
+                built_in = BUILT .. " (serve_connection)",
+                tests = "src/devices/tests/195-test-live-pushing.lua (referee 3, with 3 s)",
+                findings = "A pinging device is kept; a quiet one is closed after the limit (referee 3).",
+            },
+        },
+        leaning = "90, so a phone on a slow network that pings every 30 s is never dropped.",
     },
 }

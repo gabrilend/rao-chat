@@ -25,6 +25,17 @@ and messages are "pushed the moment they arrive" while the app is shown.
   nothing for a while; the home closes a connection that has sent nothing
   for `devices.idle-limit` seconds.
 
+## Status
+
+Built 2026-11-06: the home's side in 187 (`go_live`, `push_round`, a
+listing once a second while any device is live, one writer per
+connection, `devices.idle-limit`); 190's `live [--for <seconds>]` (pushed
+files into the mirror, typed files sent as they appear, `keep-alive`
+pings).  Referees 1 to 3 pass and catch their broken versions
+(`src/devices/tests/195-test-live-pushing.lua`), with 1b (a corrected
+message is pushed), 3b (a live device with keep-alive stays past the
+idle limit) and 3c (the setting is required and checked).
+
 ## Referees
 
 1. **Pushed at once.**  A message filed while a device is connected
@@ -52,6 +63,26 @@ the owner can overturn each.
    so a listing is cheap, and polling needs no file-change library.
 2. **The idle limit is a setting with no default**, like every limit in
    the project.
+
+### While building, 2026-11-06
+
+3. **A file removed on the home is not pushed as a removal**: it reaches
+   a device at its next catch-up, where the digest catches it (304).
+   Removals are rare (a `hide` added, 301 decision 4), and a record of
+   their own would be one more thing a device must trust.
+4. **The device pings when it has *sent* nothing for `keep-alive`
+   seconds** (the issue says "heard nothing").  The home closes a
+   connection that has sent it nothing for the idle limit, so a device
+   pushed to all the time but silent would be dropped if it counted what
+   it heard.  `keep-alive` is a device setting with no default, needed
+   only by `live`.
+5. **The idle limit counts from the end of the last frame to the start
+   of the next**; the first frame of a connection still has only the
+   frame deadline (302), so a connection that never says who it is is
+   not kept for the idle limit.
+6. **One listing a second for the whole home, shared by every live
+   connection**, each keeping its own record of what it was sent (size
+   and time of each file, so only a file that changed is read again).
 
 ## Related documents
 

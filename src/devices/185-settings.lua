@@ -9,9 +9,13 @@
 -- devices.frame-deadline — whole seconds a connection has to deliver one
 --   whole frame, counted from when the server starts waiting for it.  No
 --   default; at least 1.
+-- devices.idle-limit — whole seconds a device's connection may be quiet
+--   (no frame begun) after its first frame before the home closes it
+--   (issue 306).  No default; at least 1.
 
 return {
     "devices.port",
     "devices.address",
     "devices.frame-deadline",
+    "devices.idle-limit",
 }

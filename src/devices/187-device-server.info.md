@@ -14,5 +14,8 @@ with every `state`, `.tree` and `.room`, the message files after the
 device's position in each room, an `index` where the digests disagree,
 then `caught-up`; `want` with the named files and `sent`.  Writing
 (305): a `typed` file checked as the filer will is put into the room's
-gatherer's `typed/` under the device's id, once per id.  As a module
+gatherer's `typed/` under the device's id, once per id.  Live (306):
+after a catch-up each new or changed file is pushed to every live
+device from one listing a second; a connection quiet for
+`devices.idle-limit` after its first frame is closed.  As a module
 it gives `read_devices`, `ring_of`, `handlers` and `serve_connection` to later issues and tests.

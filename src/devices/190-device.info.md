@@ -1,7 +1,7 @@
 # 190-device.lua
 
 The reference device (issue 303), as 183 is the reference viewer:
-`luajit src/devices/190-device.lua <device folder> test [--public] | catch-up | send`.
+`luajit src/devices/190-device.lua <device folder> test [--public] | catch-up | send | live [--for <seconds>]`.
 Reads `<device folder>/config` (port, home-network, public, token, wait),
 sends a sealed ping and says exactly what happened: answered in N ms;
 nothing listens (refused); cannot be reached; closed without a word (the
@@ -11,4 +11,6 @@ home's folder in 301's layout under `<device folder>/mirror`: one
 exchange of positions and digests per room, every path checked by 192
 before it is written.  `send` (305) sends each file 183 wrote into the mirror's
 `typed/`, removing it on `typed-ok` and keeping it with a `.refused`
-reason otherwise.
+reason otherwise.  `live` (306) stays connected after a catch-up: pushed files go into
+the mirror, typed files are sent as they appear, and a `ping` goes when
+it has sent nothing for its `keep-alive` seconds.
