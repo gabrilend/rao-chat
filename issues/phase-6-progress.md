@@ -57,3 +57,12 @@ portable home on a drive (rmail #616).
   `scripts/view-logs`, the list `installed-homes` ignored by git, the
   installer's last question; referees in
   `src/install/tests/244-test-after-an-update.lua`).
+- 606 — phase 6 demo: built 2026-11-06
+  (`issues/completed/demos/phase-6-demo`, `src/phase-6-demo/245-*`,
+  `246-*`; referee `src/phase-6-demo/tests/247-test-phase-6-demo.lua`).
+
+Every phase 6 issue is built, each on its own branch stacked on the one
+before, waiting on the owner's review.  The check left for a person: a
+real install on the owner's machine (`scripts/install-home` with
+`--setup-service`, then `systemd-analyze verify` on the unit and a
+`systemctl --user start`), since no real service manager was used here.

@@ -24,6 +24,8 @@ and running as a service — as rmail's installer does."
 - **The homes talk**: a room made between them (the demo stands in for
   the viewer, which cannot make rooms yet), a device paired with A
   (189, the reference device 190) writes, and B's RAM inbox has it.
+  The demo's timing settings (sync every 2 s, quick retries) are set
+  with 232 first, as a person would edit the config (decision 4).
 - **An update**: `restart-homes --yes` restarts both, each checked
   running again, and A's device catches up after it.
 - **The stop**: `systemctl --user stop` for each; each launcher exits 0,
@@ -34,7 +36,17 @@ and running as a service — as rmail's installer does."
 
 ## Status
 
-Not built yet.
+Built 2026-11-06 on branch `claude/606-phase-6-demo`:
+
+- `issues/completed/demos/phase-6-demo` (the wrapper, run by
+  `run-phase-demo 6`), `src/phase-6-demo/245-phase-6-demo.lua` (the
+  driver), `src/phase-6-demo/246-phase-6-scenes.lua` (eight scenes:
+  needs, install, again, room, services, talk, update, stop).
+- Referee: `src/phase-6-demo/tests/247-test-phase-6-demo.lua`, 28 checks,
+  all passing.  Two mutations were caught: `restart-homes` not running
+  the restart command, and the launcher ignoring SIGTERM (each stop then
+  ends in the stand-in's SIGKILL after 60 s).
+- The whole demo runs in about 15 s.
 
 ## Referees
 
@@ -64,6 +76,21 @@ the owner can overturn each.
    referees show them), and their files are shown.
 3. **310's world is borrowed where it fits** (its helpers, as 409
    decision 3), and the homes themselves are the installer's.
+
+### While building, 2026-11-06
+
+4. **The demo's timing is a hand edit after the install**, with 232
+   (`gatherer.sync-interval = 2` and five more), not installer flags:
+   the installer asks only five questions, and the first variants (a
+   30 s sync) would make the demo wait minutes.  It also shows that the
+   installer keeps hand edits: the second install comes before it and
+   changes nothing.
+5. **Without a network namespace the demo does not run** (exit 1, said),
+   where 106 to 409 run with a part missing: here every scene runs the
+   homes' own starters, which check the public address.
+6. **Printed paths read `<demo>` and `<project>`**, so the output reads
+   the same wherever the project is; the service names still carry the
+   real path (they are made from it).
 
 ## Related documents
 

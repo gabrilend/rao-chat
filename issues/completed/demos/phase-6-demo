@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+#
+# phase-6-demo - shows phase 6 of rao-chat working: homes installed and run
+# as services.
+#
+# Two homes at 127.0.0.2 and .3, each made by the installer
+# (scripts/install-home) unattended, each set up as a systemd user service;
+# installed again, nothing changes; one room between them; each service
+# started, running the home through its launcher (scripts/run-home): its
+# starter, a gatherer per mailbox and its device server; a phone paired
+# with A writes and B receives it; an update finished by restarting every
+# listed home (scripts/restart-homes), the phone catching up after; and
+# each service stopped, each home stopping its own programs.  It prints
+# what is really in the homes' folders, the unit files and the services'
+# logs, and each scene passes or fails.  It reads input/ first and writes a
+# goodbye into output/ last.
+#
+# No real service manager is used, and nothing is installed on this
+# machine: the systemctl the installer and the scenes call is a stand-in
+# (src/install/242-stand-in-service-managers.lua) on a scratch PATH, with
+# HOME a scratch folder, and it runs each unit file as the installer wrote
+# it.
+#
+# Every process opens sockets on loopback addresses only (127.0.0.2 and
+# .3).  The demo runs in a network namespace of its own (unshare -rn),
+# where it brings the namespace's loopback up itself, so nothing can reach
+# a network; without one it does not run (the homes' starters check the
+# public address).  It stops every process it started and removes its
+# folder at the end.
+#
+# Exit status: 0 every scene ran in full, 1 a scene could not run, 2 none
+# failed but some ran with a part missing.
+#
+# Usage (from any folder):
+#   phase-6-demo                 the project named below
+#   phase-6-demo <project dir>   another copy of the project
+
+DIR="/home/ritz/programs/rao-chat"
+if [ -n "${1:-}" ]; then
+    DIR="$1"
+fi
+
+if [ ! -d "${DIR}/src/phase-6-demo" ]; then
+    echo "phase-6-demo: ${DIR} does not look like the rao-chat project (no src/phase-6-demo)" >&2
+    exit 1
+fi
+
+# The scratch homes live in RAM: tmp/ points at /tmp/<project>, and inside it
+# shared-memory/ points at /dev/shm/<project>.  Make whichever piece is missing.
+PROJECT="$(basename "${DIR}")"
+mkdir -p "/dev/shm/${PROJECT}" "/tmp/${PROJECT}/tmp"
+if [ ! -e "/tmp/${PROJECT}/shared-memory" ]; then
+    ln -s "/dev/shm/${PROJECT}" "/tmp/${PROJECT}/shared-memory"
+fi
+if [ ! -e "${DIR}/tmp" ]; then
+    ln -s "/tmp/${PROJECT}" "${DIR}/tmp"
+fi
+
+if unshare -rn true 2>/dev/null; then
+    # a network namespace with nothing in it: no packet can leave
+    exec unshare -rn luajit "${DIR}/src/phase-6-demo/245-phase-6-demo.lua" "${DIR}"
+fi
+echo "phase-6-demo: unshare -rn is not allowed here, so the demo cannot run: the homes' starters check" \
+     "the public address, and a demo reaches no network" >&2
+exit 1
