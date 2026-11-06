@@ -6,5 +6,5 @@ in for the browser's, and runs the page's work from the command line for
 the referees and the demo, as 190 does for a phone.
 `node src/web/tests/208-stand-in-browser.js <project> <command> [...]`.
 Commands: `load` (401); `key`, `seal`, `open`, `records` (402); `settings`, `remember`, `test`,
-`reach` (403); each
+`reach` (403); `catch-up`, `positions` (404); each
 later issue adds its own.

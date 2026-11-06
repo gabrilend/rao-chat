@@ -45,6 +45,18 @@
 //   reach --settings <file> [--token <file>]
 //                        "reached <address> <port> by way of <setting>",
 //                        or why not; exit 1 unless reached (403)
+//   catch-up --settings <file> [--token <file>] [--mirror-in <folder>]
+//            [--mirror-out <folder>] [--twice]
+//                        reach the home and catch up once, starting from
+//                        the mirror in <folder> (none: empty) and writing
+//                        the mirror into --mirror-out at the end; prints
+//                        "<n> file(s) received (<m> message(s)), <c>
+//                        changed, <d> dropped", then "refused <why>" for
+//                        each path refused (exit 1 if any); --twice
+//                        catches up a second time on the same
+//                        connection and prints both summaries (404)
+//   positions --mirror-in <folder>
+//                        the catch-up's lines for that mirror (404)
 //
 // Exit status: 0 done, 1 the command failed (said on stderr), 2 usage.
 
@@ -206,7 +218,69 @@ COMMANDS.reach = function () {
 };
 // }}}
 
-module.exports = { load, scriptsOf, pageFile, webFolder, COMMANDS, option, flag, say };
+// {{{ catch-up / positions (404)
+// a folder of 301's layout -> the page's mirror (a Map of path -> bytes)
+function readMirror(folder) {
+    const files = new Map();
+    if (!folder || !fs.existsSync(folder)) { return files; }
+    (function walk(relative) {
+        for (const name of fs.readdirSync(path.join(folder, relative))) {
+            const inside = relative ? relative + "/" + name : name;
+            const full = path.join(folder, inside);
+            if (fs.statSync(full).isDirectory()) { walk(inside); }
+            else if (!globalThis.rao.mirror.checkPath(inside).why) { files.set(inside, readBytes(full)); }
+        }
+    })("");
+    return files;
+}
+// the page's mirror -> a folder of 301's layout, made afresh
+function writeMirror(folder, files) {
+    fs.rmSync(folder, { recursive: true, force: true });
+    for (const [inside, content] of files) {
+        // only a path the rule passes is written (a broken version may
+        // hold others: said, never written outside the folder)
+        if (globalThis.rao.mirror.checkPath(inside).why) { say("held-unchecked " + inside); continue; }
+        fs.mkdirSync(path.dirname(path.join(folder, inside)), { recursive: true });
+        writeBytes(path.join(folder, inside), content);
+    }
+    fs.mkdirSync(folder, { recursive: true });
+}
+function summaryLine(summary) {
+    return summary.files + " file(s) received (" + summary.messages + " message(s)), " + summary.changed
+        + " changed, " + summary.dropped + " dropped";
+}
+COMMANDS["catch-up"] = function () {
+    load(PROJECT);
+    const rao = globalThis.rao;
+    const settings = settingsOf();
+    const files = readMirror(option("--mirror-in"));
+    return rao.link.reach(settings).then((reached) => {
+        if (!reached.link) { say(reached.why); return 1; }
+        return rao.mirror.catchUp(reached.link, files, settings).then((summary) => {
+            if (summary.why || !flag("--twice")) { return summary; }
+            // --twice: at once again on the same connection, from the
+            // mirror the first made, as a page holding it does
+            say(summaryLine(summary));
+            return rao.mirror.catchUp(reached.link, files, settings);
+        }).then((summary) => {
+            reached.link.close();
+            if (summary.why) { say(summary.why); return 1; }
+            if (option("--mirror-out")) { writeMirror(option("--mirror-out"), files); }
+            say(summaryLine(summary));
+            summary.refused.forEach((why) => say("refused " + why));
+            return summary.refused.length > 0 ? 1 : 0;
+        });
+    });
+};
+COMMANDS.positions = function () {
+    load(PROJECT);
+    return globalThis.rao.mirror.positionsText(readMirror(option("--mirror-in"))).then((text) => {
+        process.stdout.write(text);
+    });
+};
+// }}}
+
+module.exports = { readMirror, writeMirror, summaryLine, settingsOf, load, scriptsOf, pageFile, webFolder, COMMANDS, option, flag, say };
 
 // {{{ main
 if (require.main === module) {

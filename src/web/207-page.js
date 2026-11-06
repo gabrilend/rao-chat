@@ -120,7 +120,27 @@
             page.link = result.link;
             page.showErrors([], false);
             say("reached " + result.where + " by way of " + result.setting, false);
-            page.setState("connected to " + result.where, true);
+            page.catchUp(result.link);
+        });
+    };
+    // }}}
+
+    // {{{ page.catchUp
+    // The mirror stays in this page's memory for as long as it is open
+    // (404 decision 1), so a second connection catches up from it.
+    page.files = new Map();
+    page.catchUp = function (link) {
+        page.setState("catching up…", false);
+        return rao.mirror.catchUp(link, page.files, page.settings).then(function (summary) {
+            if (summary.why) {
+                page.setState("not connected", false);
+                page.showErrors([summary.why], false);
+                return summary;
+            }
+            page.setState("caught up with " + link.where, true);
+            page.showErrors(summary.refused.map(function (why) { return "refused from the home: " + why; }), false);
+            if (page.draw) { page.draw(); }
+            return summary;
         });
     };
     // }}}

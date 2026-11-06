@@ -34,6 +34,19 @@ after.  ... A new client gets the full history."
   (`--mirror-out`), so the referees compare it with the home's file for
   file, as 304's do.
 
+## Status
+
+Built 2026-11-06: `src/web/216-mirror.js` (`rao.mirror`: the path rule,
+rooms, digests, positions, taking a file, the index and want, pruning,
+`catchUp`); the page catches up after reaching its home and keeps the
+mirror for as long as it is open; the stand-in's `catch-up` (with
+`--mirror-in`, `--mirror-out`, `--twice`) and `positions`.  Referees 1 to
+5 pass, 2 to 4 catching their broken versions
+(`src/web/tests/217-test-catching-up-in-the-page.lua`), with 3b (a file
+the home no longer holds is dropped), 3c (a room the home has left leaves
+the mirror), 3d (a late message is fetched, and a second catch-up at once
+gets none) and 4b (a record not due ends the catch-up, said).
+
 ## Referees
 
 1. **A new page gets everything**: its mirror equals the home's RAM
@@ -82,6 +95,18 @@ the owner can overturn each.
    table is held to 186.
 3. **`state` files are mirrored as files** like the rest; 407 reads their
    problem lines for the error strip.
+
+### While building, 2026-11-06
+
+4. **The broken version `no-digest` is the page's side of it**: the page
+   still sends digests, but does nothing with the home's index, so an
+   edit is never fetched.  (187's own `no-digest` is the home's side,
+   tried by 304's referees.)
+5. **Names compare byte for byte**, as Lua compares them, so the page's
+   position in a room is the home's.
+6. **The stand-in writes only paths the rule passes** when it saves its
+   mirror into a folder; a broken version holding another is said
+   ("held-unchecked"), never written outside the folder.
 
 ## Related documents
 
