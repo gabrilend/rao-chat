@@ -25,6 +25,16 @@ zero so the waits average exactly 30 seconds.
   closed.
 - 190's `check-in --for <seconds>` runs the loop, for the referees.
 
+## Status
+
+Built 2026-11-06: the deck as `M.deck` in `src/devices/190-device.lua`
+(cards −5 … +5, Fisher–Yates with the kernel's random bytes, dealt
+without replacement and shuffled again when empty), and 190's `check-in
+--for <seconds>`.  Referees 1 to 3 pass and catch their broken versions
+(`src/devices/tests/197-test-check-in.lua`), with 3b (the shuffle is
+fair) and 4 (a check-in loop with a 6 s base catches up each time and
+keeps no connection between).
+
 ## Referees
 
 1. **Without replacement.**  Eleven deals from a fresh deck are the
@@ -53,6 +63,20 @@ the owner can overturn each.
    eleven cards, 0 … 10: a spread ten seconds wide.  −5 … +5 keeps both
    the count and the width and moves them so they add up to zero, which
    the owner's "averages 30" needs.
+
+### While building, 2026-11-06
+
+2. **The deck lives in 190, the reference device** (as `M.deck`), not
+   a file of its own: the device module's numbers end at 199 (the
+   options file closes the block), and 309 needs the last free one.
+3. **The base wait is the device's `check-in` setting** (no default;
+   the planning document's 30 for a phone), so the referee and the demo
+   can use 6 s.  It must be above 5, so a wait is never under one second.
+4. **A check-in waits first, then catches up**: the screen locks just
+   after a live connection (306) closed, which had caught up already.
+5. **A check-in only catches up**: nothing is typed on a locked screen,
+   so it sends no typed files.
+6. **A check-in reaches the home as 307 says** (home network first).
 
 ## Related documents
 

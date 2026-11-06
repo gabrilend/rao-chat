@@ -6,6 +6,7 @@
 --   luajit src/devices/190-device.lua <device folder> catch-up
 --   luajit src/devices/190-device.lua <device folder> send
 --   luajit src/devices/190-device.lua <device folder> live [--for <seconds>]
+--   luajit src/devices/190-device.lua <device folder> check-in --for <seconds>
 --
 -- The device's settings are `<device folder>/config`, "name = value"
 -- lines, the lines 189's `add` prints plus the device's own:
@@ -67,6 +68,11 @@
 -- sent at once, and a `ping` goes when this device has sent nothing for
 -- `keep-alive` seconds (a config line `live` needs).  `--for` ends it
 -- after that many seconds.
+--
+-- `check-in` (issue 308): the locked screen's rule, with no connection
+-- kept: a wait of `check-in` seconds (a config line, above 5; the
+-- planning document's 30) plus a card from M.deck, then one catch-up,
+-- again and again for `--for` seconds.
 --
 -- The project folder is found from this file's own place (or
 -- RAO_CHAT_DIR), as 183 does.
@@ -555,6 +561,107 @@ function M.live(sock, pair, folder, where, config, seconds, out)
 end
 -- }}}
 
+-- {{{ M.deck
+-- The locked-screen check-in's deck (issue 308; planning section 6): each
+-- wait is the base (30 s) plus a card dealt from a shuffled deck of
+-- whole-second cards, without putting cards back; when the deck runs out
+-- it is shuffled again.  The cards are -5 ... +5 (308 decision 1): eleven
+-- cards adding up to zero, so any whole number of passes through the
+-- deck averages exactly the base.  Shuffled with the kernel's random
+-- bytes (Fisher-Yates, each draw by 007's rule: no modulo bias).  The
+-- Android app follows this.
+M.deck = {}
+M.deck.CARDS = { -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5 }
+
+-- {{{ local function random_below
+-- n → a whole number from 1 to n, every value equally likely.
+local function random_below(n)
+    local source = assert(io.open("/dev/urandom", "rb"))
+    local range = 4294967296
+    local limit = range - (range % n)
+    while true do
+        local bytes = source:read(4)
+        if bytes == nil or #bytes ~= 4 then source:close() error("could not read 4 bytes from /dev/urandom", 2) end
+        local b1, b2, b3, b4 = bytes:byte(1, 4)
+        local value = ((b1 * 256 + b2) * 256 + b3) * 256 + b4
+        if value < limit then source:close() return (value % n) + 1 end
+    end
+end
+-- }}}
+
+-- {{{ function M.deck.shuffled
+-- → the cards in a fresh random order (Fisher-Yates).
+function M.deck.shuffled()
+    local cards = {}
+    for i, card in ipairs(M.deck.CARDS) do cards[i] = card end
+    for i = #cards, 2, -1 do
+        local j = random_below(i)
+        cards[i], cards[j] = cards[j], cards[i]
+    end
+    return cards
+end
+-- }}}
+
+-- {{{ function M.deck.new
+-- → a deck: deck:deal() gives the next card, shuffling again when the
+-- deck has run out.  For referees only (197): RAO_DEVICE_BROKEN=replace
+-- (each card drawn from the whole deck, put back), no-reshuffle (the
+-- first order dealt again and again).
+function M.deck.new()
+    local deck = { left = {}, first = nil }
+    function deck:deal()
+        if M.broken == "replace" then return M.deck.CARDS[random_below(#M.deck.CARDS)] end
+        if #self.left == 0 then
+            if M.broken == "no-reshuffle" and self.first then
+                for i, card in ipairs(self.first) do self.left[i] = card end
+            else
+                self.left = M.deck.shuffled()
+                self.first = self.first or { unpack(self.left) }
+            end
+        end
+        return table.remove(self.left, 1)
+    end
+    return deck
+end
+-- }}}
+-- }}}
+
+-- {{{ function M.check_in
+-- device folder, config, seconds, out(line) → how many check-ins, and
+-- how many failed.  While the screen is locked (issue 308) there is no
+-- connection: each wait is `check-in` seconds plus the next card, then
+-- one check-in, which is a 304 catch-up exchange (reached as 307 says),
+-- and the connection is closed again.  Stops when the next wait would end
+-- after `seconds`.
+function M.check_in(folder, config, seconds, out)
+    local deck = M.deck.new()
+    local stop_at = socket.gettime() + seconds
+    local done, missed = 0, 0
+    while true do
+        local wait = config["check-in"] + deck:deal()
+        if socket.gettime() + wait > stop_at then break end
+        out("next check-in in " .. wait .. " s")
+        socket.sleep(wait)
+        local sock, where = M.reach(config)
+        if not sock then
+            missed = missed + 1
+            out("check-in failed: " .. where)
+        else
+            local summary, lost = M.catch_up(sock, room_key.key_pair(config.token), folder, where, config)
+            sock:close()
+            if summary then
+                done = done + 1
+                out("checked in: " .. M.summary_text(summary, where))
+            else
+                missed = missed + 1
+                out("check-in failed: " .. lost)
+            end
+        end
+    end
+    return done, missed
+end
+-- }}}
+
 -- {{{ function M.summary_text
 function M.summary_text(summary, where)
     local out = { string.format("caught up with %s: %d file(s) received (%d message(s)), %d changed, %d dropped",
@@ -565,8 +672,9 @@ end
 -- }}}
 
 -- {{{ local function main
-local USAGE = "usage: luajit 190-device.lua <device folder> test [--public] | catch-up | send | live [--for <seconds>]\n"
-local COMMANDS = { test = true, ["catch-up"] = true, send = true, live = true }
+local USAGE = "usage: luajit 190-device.lua <device folder> test [--public] | catch-up | send | live [--for <seconds>]"
+    .. " | check-in --for <seconds>\n"
+local COMMANDS = { test = true, ["catch-up"] = true, send = true, live = true, ["check-in"] = true }
 local function main(args)
     local folder, command = args[1], args[2]
     if not folder or not COMMANDS[command] then
@@ -579,6 +687,18 @@ local function main(args)
         local ok, words = M.test(config, args[3] == "--public" and config.public or config["home-network"])
         io.write(words, "\n")
         return ok and 0 or 1
+    end
+    if command == "check-in" then
+        config["check-in"] = tonumber(M.config_values(folder)["check-in"] or "")
+        local seconds = args[3] == "--for" and tonumber(args[4])
+        if not config["check-in"] or config["check-in"] <= 5 then
+            io.stderr:write("device: check-in needs check-in = <seconds above 5> in " .. folder .. "/config\n")
+            return 1
+        end
+        if not seconds then io.stderr:write(USAGE) return 2 end
+        local done, missed = M.check_in(folder, config, seconds, function(line) io.write(line, "\n") io.flush() end)
+        io.write(string.format("checked in %d time(s), %d failed\n", done, missed))
+        return missed == 0 and 0 or 1
     end
     local sock, where, setting = M.reach(config)
     if not sock then io.write(where, "\n") return 1 end
