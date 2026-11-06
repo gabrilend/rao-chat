@@ -50,3 +50,5 @@ home does not have yet.
   `src/web/tests/215-test-reaching-the-home.lua`, with the kit `214`).
 - 404 — catching up in the page: built 2026-11-06 (`src/web/216-mirror.js`;
   referees in `src/web/tests/217-test-catching-up-in-the-page.lua`).
+- 405 — how a room looks: built 2026-11-06 (`src/web/218-room-view.js`,
+  drawing in `207`; referees in `src/web/tests/219-test-how-a-room-looks.lua`).
