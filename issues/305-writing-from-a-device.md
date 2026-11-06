@@ -26,6 +26,17 @@ nowhere.
   device (in RAM), so a device that lost the `typed-ok` and sends again
   gets `typed-ok` without a second file.
 
+## Status
+
+Built 2026-11-06: `typed`, `typed-ok` and `typed-refused` in 186; the
+home's side in 187 (`typed_replies`); 190's `send`, and a `typed/`
+beside each mailbox of the mirror for 183 to write into.  Referees 1 to
+3 pass and catch their broken versions
+(`src/devices/tests/194-test-writing-from-a-device.lua`), with 1b (a
+`typed-ok` for another file removes nothing, against a stand-in home),
+2b (the home refuses what the filer would) and 3b (after a server
+restart the same file is put under the same name and bytes).
+
 ## Referees
 
 1. **Typed on the phone, sent by the home.**  A file written by 183 into
@@ -54,6 +65,26 @@ the owner can overturn each.
 2. **Accepted ids are remembered for the server's life only**: a typed
    file whose answer was lost across a server restart could be filed
    twice; the filer's own id check (161's `typed_id`) is the second line.
+
+### While building, 2026-11-06
+
+3. **The file goes into the gatherer's `typed/` under the device's id as
+   its name, not a fresh one** (the intended behaviour above says "under
+   a fresh name").  161's `typed_id` is made from the file's name and
+   bytes, so with a fresh name a file sent again after a server restart
+   would get a new id and be filed twice: decision 2's second line would
+   not hold.  Under the device's id the name and bytes are the same each
+   time, so the filer finds it in the log and files it once (referee 3b).
+   The id must have 161's `new_name` shape (`<seconds>-<sequence>-<8
+   hex>`), so it sorts by time and can never be a temporary or dot name.
+4. **A refused file is not sent again** while its `<name>.refused` is
+   beside it: the reason is for the person (a room that is gone does not
+   come back by retrying).  Removing the reason sends it at the next
+   `send`.
+5. **"A room of this home"** is a room folder in some gatherer's inbox in
+   the home's RAM folder, with that gatherer's `typed/` present: the
+   server reads only RAM, as 302 says, so it does not open the disk home
+   to look.
 
 ## Related documents
 

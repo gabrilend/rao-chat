@@ -59,6 +59,7 @@ local keyring = require("127-keyring")
 local wait = require("162-wait-loop")
 local records = require("186-device-records")
 local mirror = require("192-mirror")
+local ram = require("161-ram-folders")
 
 local M = {}
 
@@ -67,7 +68,8 @@ local M = {}
 -- clear), any-key (every frame tried under every key, so a connection
 -- does not keep its device).  (193): from-start (a catch-up is sent every
 -- message file, whatever the device holds), no-digest (positions only:
--- no index however the digests disagree).
+-- no index however the digests disagree).  (194): no-dedupe (a typed
+-- file sent again is put again, though it was taken).
 M.broken = os.getenv("RAO_DEVICES_BROKEN") or ""
 
 local function now() return socket.gettime() end
@@ -208,6 +210,37 @@ function M.want_replies(home_ram, record)
 end
 -- }}}
 
+-- {{{ function M.typed_replies
+-- the server, the device's label, a typed record → its answer (issue
+-- 305).  The file is checked as the filer will check it (161's
+-- decode_typed, a room of this home with a gatherer's typed/), then put
+-- into that gatherer's typed/ with 161's put, under the device's own id
+-- as its name (305 decision 3: the same file sent again after a restart
+-- has the same name and bytes, so 161's typed_id files it once).  An id
+-- this device sent before, in the server's life, is answered typed-ok
+-- and not put again (305 decision 2).
+M.TYPED_NAME = "^%d%d%d%d%d%d%d%d%d%d%-%d%d%d%d%d%d%-%x%x%x%x%x%x%x%x$"   -- 161's new_name
+function M.typed_replies(server, label, record)
+    server.accepted = server.accepted or {}
+    local accepted = server.accepted[label] or {}
+    server.accepted[label] = accepted
+    local function refused(why) return { { kind = "typed-refused", id = record.id, why = why } } end
+    if accepted[record.id] and M.broken ~= "no-dedupe" then return { { kind = "typed-ok", id = record.id } } end
+    if not record.id:match(M.TYPED_NAME) then
+        return refused("the id is not a typed file's name (" .. "<seconds>-<sequence>-<8 hex>)")
+    end
+    local typed, why = ram.decode_typed(record.content)
+    if not typed then return refused(why) end
+    local room = mirror.rooms(server.home_ram)[typed.room]
+    if not room then return refused("this home has no room " .. typed.room) end
+    local queue = server.home_ram .. "/" .. room.mailbox .. "/typed"
+    if not disk.is_dir(queue) then return refused("the room's gatherer has no typed/ folder (is it running?)") end
+    ram.put(queue, record.id, record.content)
+    accepted[record.id] = true
+    return { { kind = "typed-ok", id = record.id } }
+end
+-- }}}
+
 -- {{{ M.handlers
 -- kind → function(session, record) → a list of reply records, or nil and
 -- why to close the connection.  Later issues add their kinds.
@@ -222,6 +255,9 @@ M.handlers = {
     end,
     want = function(session, record)
         return M.want_replies(session.server.home_ram, record)
+    end,
+    typed = function(session, record)
+        return M.typed_replies(session.server, session.label, record)
     end,
 }
 -- }}}
@@ -289,7 +325,6 @@ local function main(args)
         return 2
     end
     local rooms = require("002-room-folders")
-    local ram = require("161-ram-folders")
     local settings = {}
     local ok, problem = pcall(function()
         local home = rooms.open_home(home_dir)

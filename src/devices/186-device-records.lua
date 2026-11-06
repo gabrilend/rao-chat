@@ -27,6 +27,11 @@
 --                              that the home holds has been sent
 --   caught-up  at              home → device: the end of the answer to a
 --                              catch-up, the home's clock  (304)
+--   typed  id, content         device → home: a file the person typed into
+--                              the mirror's typed/, its name as the id
+--   typed-ok  id               home → device: put into the room's
+--                              gatherer's typed/ (or already was)
+--   typed-refused  id, why     home → device: not taken, and why  (305)
 
 local KINDS = {
     ping = { "id" },
@@ -37,6 +42,9 @@ local KINDS = {
     want = { "id", "room", "names" },
     sent = { "id" },
     ["caught-up"] = { "at" },
+    typed = { "id", "content" },
+    ["typed-ok"] = { "id" },
+    ["typed-refused"] = { "id", "why" },
 }
 
 -- Field rules: a field not named here may hold any text.

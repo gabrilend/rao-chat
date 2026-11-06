@@ -7,4 +7,5 @@ kinds never mix.  `encode(record)` errors on a wrong record; `decode(line)`
 gives the record or nil and why.  302's kinds: `ping` (id), `pong` (id,
 at). 304's: `catch-up` (rooms), `file` (path,
 content), `index` (room, entries), `want` (id, room, names), `sent`
-(id), `caught-up` (at).
+(id), `caught-up` (at). 305's: `typed`
+(id, content), `typed-ok` (id), `typed-refused` (id, why).
