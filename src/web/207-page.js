@@ -112,48 +112,31 @@
     }
     // }}}
 
-    // {{{ page.connect
-    // Reaches the home with the form's settings (403); later issues carry
-    // on from the link it gives.
+    // {{{ page.connect: live while the page is open (issues 403, 404, 407)
+    // The mirror stays in this page's memory for as long as it is open
+    // (404 decision 1), so each new connection catches up from it.  The
+    // session (223) reaches the home, catches up, sends what the outbox
+    // waits on, listens, and tries again after a drop.
+    page.files = new Map();
     page.connect = function () {
         var settings = formSettings();
         if (!settings) { return; }
         page.settings = settings;
-        page.setState("connecting…", false);
-        rao.link.reach(settings).then(function (result) {
-            if (!result.link) {
-                page.setState("not connected", false);
-                page.showErrors([result.why], false);
-                return;
+        if (page.session) { page.session.stop(); }
+        page.session = new rao.live.Session(settings, page.files, page.outbox, {
+            state: page.setState,
+            errors: page.showErrors,
+            changed: function () { page.draw(); },
+            caughtUp: function (summary) {
+                say("caught up: " + summary.messages + " new message file(s)", false);
             }
-            if (page.link) { page.link.close(); }
-            page.link = result.link;
-            page.showErrors([], false);
-            say("reached " + result.where + " by way of " + result.setting, false);
-            page.catchUp(result.link);
         });
+        page.session.start();
     };
-    // }}}
-
-    // {{{ page.catchUp
-    // The mirror stays in this page's memory for as long as it is open
-    // (404 decision 1), so a second connection catches up from it.
-    page.files = new Map();
-    page.catchUp = function (link) {
-        page.setState("catching up…", false);
-        return rao.mirror.catchUp(link, page.files, page.settings).then(function (summary) {
-            if (summary.why) {
-                page.setState("not connected", false);
-                page.showErrors([summary.why], false);
-                return summary;
-            }
-            page.setState("caught up with " + link.where, true);
-            page.showErrors(summary.refused.map(function (why) { return "refused from the home: " + why; }), false);
-            if (page.draw) { page.draw(); }
-            page.flush();
-            return summary;
-        });
-    };
+    // the strip's countdown, once a second while a retry waits
+    function tick() {
+        if (page.session && page.session.state === "waiting") { page.session.showErrors([]); }
+    }
     // }}}
 
     // {{{ page.draw: the room tree and the open room (issue 405)
@@ -258,7 +241,6 @@
     // the page holds a connection; it stays there, in this page only,
     // until the home answers (406 decision 2).
     page.outbox = new rao.writing.Outbox();
-    page.sending = false;
     function composeNote() {
         var note = byId("compose-note");
         note.textContent = "";
@@ -286,20 +268,9 @@
         byId("compose-send").disabled = page.openRoom === null;
     }
     page.composeNote = composeNote;
-    // sends what waits, one sending at a time, then draws
+    // sends what waits on the live connection (223), if there is one
     page.flush = function () {
-        if (!page.link || page.sending || page.outbox.waiting().length === 0) { return; }
-        page.sending = true;
-        page.outbox.send(page.link, page.files, page.settings).then(function (result) {
-            page.sending = false;
-            if (result.why) {
-                page.setState("not connected", false);
-                page.showErrors([result.why], false);
-                page.link = null;
-            }
-            page.draw();
-            if (!result.why) { page.flush(); }
-        });
+        if (page.session) { page.session.sendWaiting(); }
     };
     page.send = function () {
         if (page.openRoom === null) { return; }
@@ -380,8 +351,17 @@
             say(why || "signature kept" + (byId("remember").checked ? " on this computer" : " while this page is open"), !!why);
             if (!why && byId("remember").checked) { storeSignature(value); }
         });
-        // something still sending when the page closes: the browser asks
+        byId("retry-now").addEventListener("click", function () {
+            if (page.session) { page.session.retryNow(); }
+        });
+        // something still sending when the page closes: the browser asks;
+        // the browser saying it is online again is a "retry now" (407);
+        // the strip's countdown moves once a second
         if (typeof globalThis.addEventListener === "function") {
+            globalThis.addEventListener("online", function () {
+                if (page.session) { page.session.retryNow(); }
+            });
+            globalThis.setInterval(tick, 1000);
             globalThis.addEventListener("beforeunload", function (event) {
                 if (page.outbox.waiting().length > 0) {
                     event.preventDefault();

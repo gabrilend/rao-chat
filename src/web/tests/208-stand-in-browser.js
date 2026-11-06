@@ -100,6 +100,21 @@
 //                        after <name>", "marker <words>"), and what is
 //                        still unanswered is sent again on a new
 //                        connection (406)
+//   live --settings <file> [--token <file>] --for <seconds>
+//        [--mirror-in <folder>] [--mirror-out <folder>]
+//        [--write <seconds> --room <tag> --text <file> [--signature <file>]]
+//                        the page live for that long (223): reach, catch
+//                        up, listen, retry after a drop; prints, each with
+//                        the seconds since it started, "state <words>",
+//                        "errors[ retrying]: <line> | <line>..." (or
+//                        "errors none"), "caught up: <summary>", "got
+//                        <path>" for each file the mirror took or changed,
+//                        "typed <name>" (with --write, at that second),
+//                        and at the end "end <state>, tries <n>, pending
+//                        <n>" (407)
+//   waits                the retry waits from the first, and countdowns:
+//                        "waits 5 10 ...", "countdown <seconds> <words>"
+//                        (407)
 //
 // The paper document is the least of a browser's document that 207
 // uses: elements made by the HTML's ids, made anew by createElement,
@@ -421,6 +436,58 @@ COMMANDS.write = function () {
             return 0;
         });
     });
+};
+// }}}
+
+// {{{ live / waits (407)
+COMMANDS.live = function () {
+    load(PROJECT);
+    const rao = globalThis.rao;
+    const settings = settingsOf();
+    const files = readMirror(option("--mirror-in"));
+    const outbox = new rao.writing.Outbox();
+    const started = Date.now();
+    const stamp = () => ((Date.now() - started) / 1000).toFixed(1);
+    let seen = new Map(files);
+    const session = new rao.live.Session(settings, files, outbox, {
+        state(words) { say(stamp() + " state " + words); },
+        errors(lines, retrying) {
+            say(stamp() + " errors" + (retrying ? " retrying" : "") + (lines.length > 0 ? ": " + lines.join(" | ") : " none"));
+        },
+        changed() {
+            for (const [inside, content] of files) { if (seen.get(inside) !== content) { say(stamp() + " got " + inside); } }
+            seen = new Map(files);
+        },
+        caughtUp(summary) { say(stamp() + " caught up: " + summaryLine(summary)); },
+    });
+    if (option("--write")) {
+        setTimeout(() => {
+            const added = outbox.add(option("--room"), readBytes(option("--text")),
+                option("--signature") ? readBytes(option("--signature")) : "", Date.now() / 1000);
+            if (added.why) { say(stamp() + " refused: " + added.why); return; }
+            say(stamp() + " typed " + added.item.name);
+            session.sendWaiting();
+        }, Number(option("--write")) * 1000);
+    }
+    session.start();
+    return new Promise((resolve) => {
+        setTimeout(() => {
+            say(stamp() + " end " + session.state + ", tries " + session.tries + ", pending " + outbox.waiting().length);
+            session.stop();
+            if (option("--mirror-out")) { writeMirror(option("--mirror-out"), files); }
+            resolve(0);
+        }, Number(option("--for")) * 1000);
+    });
+};
+COMMANDS.waits = function () {
+    load(PROJECT);
+    const rao = globalThis.rao;
+    const waits = [];
+    let wait = 0;
+    for (let i = 0; i < 9; i++) { wait = rao.live.nextWait(wait); waits.push(wait); }
+    say("waits " + waits.join(" "));
+    [0, 5, 40, 59, 60, 90, 240, 300].forEach((seconds) => say("countdown " + seconds + " " + rao.live.countdown(seconds)));
+    return 0;
 };
 // }}}
 

@@ -10,4 +10,4 @@ Commands: `load` (401); `key`, `seal`, `open`, `records` (402); `settings`, `rem
 (405, `draw` on a paper document: the least of a browser's document that
 the page's script uses, so the referees read what it placed);
 `signature`, `typed`, `write`, and typing into the compose line in
-`draw` (406); each later issue adds its own.
+`draw` (406); `live`, `waits` (407); each later issue adds its own.

@@ -35,6 +35,18 @@ open"; section 8: an "error strip across the top, as in rmail, with
 - **Several devices at once** needs nothing new in the page: a phone
   and the page both live hear each other's messages (306).
 
+## Status
+
+Built 2026-11-06: `src/web/223-live.js` (`rao.live`: the waits, the
+countdown, the home's problem lines, the session that reaches, catches
+up, sends, listens, pings and retries); the page's Connect starts a
+session, "retry now" and the browser's `online` try at once, and the
+strip's countdown moves each second (207); the stand-in's `live` and
+`waits`.  Referees 1 to 6 pass, 2 and 3 catching their broken versions
+(`src/web/tests/224-test-live-in-the-page.lua`).  Referee 3 also stops
+the home a second time after the page came back, and sees the wait start
+again at 5 seconds.
+
 ## Referees
 
 1. **Pushed at once.**  A message filed on the home while the stand-in is
@@ -83,6 +95,23 @@ the owner can overturn each.
 3. **A hidden tab is not treated as a locked phone**: section 6's
    check-in deck is the phone's battery rule, and a computer's browser
    keeps its WebSocket open in a hidden tab.
+
+### While building, 2026-11-06
+
+4. **The page's live connection has one reader** (the session's), which
+   takes pushed files, the outbox's answers and pongs; a typed file is
+   sent as soon as it is added, without waiting for the last one's
+   answer.  A record not due ends the connection, said, and is retried
+   like any drop.  (406's one-at-a-time sending stays for the stand-in's
+   `write`.)
+5. **A connection the home closes is said as "<address> closed the
+   connection"**, not with 403's words about the token: a close after a
+   catch-up is a drop, not a refusal.
+6. **The strip lists the drop first, then the home's problem lines**, so
+   what the person can act on ("retry now") is at the top.
+7. **Referee 6 plays the gatherer's filer** (no gatherer runs in the
+   referees' home): it files what reaches typed/ as 306's referees do;
+   the demo (409) runs real gatherers.
 
 ## Related documents
 
