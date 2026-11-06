@@ -52,3 +52,6 @@ home does not have yet.
   referees in `src/web/tests/217-test-catching-up-in-the-page.lua`).
 - 405 — how a room looks: built 2026-11-06 (`src/web/218-room-view.js`,
   drawing in `207`; referees in `src/web/tests/219-test-how-a-room-looks.lua`).
+- 406 — writing from the page: built 2026-11-06 (`src/web/220-signature.js`,
+  `221-writing.js`, the compose line in `207`; referees in
+  `src/web/tests/222-test-writing-from-the-page.lua`).

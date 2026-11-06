@@ -8,5 +8,6 @@ the referees and the demo, as 190 does for a phone.
 Commands: `load` (401); `key`, `seal`, `open`, `records` (402); `settings`, `remember`, `test`,
 `reach` (403); `catch-up`, `positions` (404); `tree`, `room`, `draw`
 (405, `draw` on a paper document: the least of a browser's document that
-the page's script uses, so the referees read what it placed); each later
-issue adds its own.
+the page's script uses, so the referees read what it placed);
+`signature`, `typed`, `write`, and typing into the compose line in
+`draw` (406); each later issue adds its own.

@@ -74,6 +74,16 @@
             return "This browser keeps nothing for this page (" + problem.message + "); paste the lines each time.";
         }
     }
+    // the signature is kept with the remembered lines (406), under its own name
+    var SIGNATURE = "rao-chat signature";
+    function storedSignature() {
+        try { return globalThis.localStorage.getItem(SIGNATURE); } catch (problem) { return null; }
+    }
+    function storeSignature(text) {
+        try {
+            if (text === null) { globalThis.localStorage.removeItem(SIGNATURE); } else { globalThis.localStorage.setItem(SIGNATURE, text); }
+        } catch (problem) { /* said by store() when the lines are kept */ }
+    }
     function say(words, problem) {
         var place = byId("settings-words");
         place.textContent = words;
@@ -140,6 +150,7 @@
             page.setState("caught up with " + link.where, true);
             page.showErrors(summary.refused.map(function (why) { return "refused from the home: " + why; }), false);
             if (page.draw) { page.draw(); }
+            page.flush();
             return summary;
         });
     };
@@ -164,6 +175,7 @@
         });
         drawTree(rao.view.tree(page.files, unread));
         drawRoom();
+        composeNote();
     };
     page.open = function (tag) {
         page.openRoom = tag;
@@ -235,7 +247,76 @@
             item.appendChild(foot);
             list.appendChild(item);
         });
+        var marker = page.outbox.marker(page.files, shown.tag);
+        if (marker) { list.appendChild(element("li", "line mine marker", marker)); }
         if (atBottom) { list.scrollTop = list.scrollHeight; }
+    }
+    // }}}
+
+    // {{{ writing (issue 406)
+    // What the person types goes into the outbox (221) and is sent once
+    // the page holds a connection; it stays there, in this page only,
+    // until the home answers (406 decision 2).
+    page.outbox = new rao.writing.Outbox();
+    page.sending = false;
+    function composeNote() {
+        var note = byId("compose-note");
+        note.textContent = "";
+        page.outbox.refused().filter(function (item) { return item.room === page.openRoom; }).forEach(function (item) {
+            var text = rao.bytes.toText(item.text);
+            var line = element("span", "refused", "not sent (" + item.why + "): " + text.split("\n")[0].slice(0, 60) + " ");
+            // back into the compose line as typed, to change and send again
+            var back = element("button", null, "put it back");
+            back.type = "button";
+            back.addEventListener("click", function () {
+                byId("compose-text").value = text;
+                grow();
+                page.outbox.forget(item.name);
+                page.draw();
+            });
+            var forget = element("button", null, "forget it");
+            forget.type = "button";
+            forget.addEventListener("click", function () { page.outbox.forget(item.name); page.draw(); });
+            line.appendChild(back);
+            line.appendChild(forget);
+            note.appendChild(line);
+        });
+        var compose = byId("compose-text");
+        compose.disabled = page.openRoom === null;
+        byId("compose-send").disabled = page.openRoom === null;
+    }
+    page.composeNote = composeNote;
+    // sends what waits, one sending at a time, then draws
+    page.flush = function () {
+        if (!page.link || page.sending || page.outbox.waiting().length === 0) { return; }
+        page.sending = true;
+        page.outbox.send(page.link, page.files, page.settings).then(function (result) {
+            page.sending = false;
+            if (result.why) {
+                page.setState("not connected", false);
+                page.showErrors([result.why], false);
+                page.link = null;
+            }
+            page.draw();
+            if (!result.why) { page.flush(); }
+        });
+    };
+    page.send = function () {
+        if (page.openRoom === null) { return; }
+        var compose = byId("compose-text");
+        var signature = byId("signature").value;
+        var added = page.outbox.add(page.openRoom, rao.bytes.fromText(compose.value), rao.bytes.fromText(signature),
+            Date.now() / 1000);
+        if (added.why) { byId("compose-note").textContent = added.why; return; }
+        compose.value = "";
+        grow();
+        page.draw();
+        page.flush();
+    };
+    // the compose line grows with its text, to eight lines
+    function grow() {
+        var compose = byId("compose-text");
+        compose.rows = Math.max(1, Math.min(8, compose.value.split("\n").length));
     }
     // }}}
 
@@ -273,11 +354,41 @@
         byId("test-connection").addEventListener("click", testConnection);
         byId("forget-home").addEventListener("click", function () {
             store(null);
+            storeSignature(null);
             byId("settings-lines").value = "";
             byId("settings-token").value = "";
             byId("remember").checked = false;
             say("forgotten: this page keeps nothing of that home now", false);
         });
+        byId("compose").addEventListener("submit", function (event) {
+            event.preventDefault();
+            page.send();
+        });
+        // Enter sends, Shift+Enter starts a new line (406 decision 1)
+        byId("compose-text").addEventListener("keydown", function (event) {
+            if (event.key === "Enter" && !event.shiftKey) {
+                event.preventDefault();
+                page.send();
+            }
+        });
+        byId("compose-text").addEventListener("input", grow);
+        var signature = storedSignature();
+        if (signature !== null) { byId("signature").value = signature; }
+        byId("signature").addEventListener("change", function () {
+            var value = byId("signature").value;
+            var why = rao.writing.checkSignature(rao.bytes.fromText(value));
+            say(why || "signature kept" + (byId("remember").checked ? " on this computer" : " while this page is open"), !!why);
+            if (!why && byId("remember").checked) { storeSignature(value); }
+        });
+        // something still sending when the page closes: the browser asks
+        if (typeof globalThis.addEventListener === "function") {
+            globalThis.addEventListener("beforeunload", function (event) {
+                if (page.outbox.waiting().length > 0) {
+                    event.preventDefault();
+                    event.returnValue = "";
+                }
+            });
+        }
         // the token is pasted each time the page is opened (403 decision 2)
         if (!missing) { openPanel("settings"); }
     };

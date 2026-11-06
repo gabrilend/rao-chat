@@ -68,14 +68,38 @@
 //                        the open room's lines as text (rao.view.roomText);
 //                        exit 1 when the mirror holds no such room (405)
 //   draw --mirror-in <folder> [--then <folder>] [--open <tag>]
+//        [--type <file> [--shift] [--signature <file>]]
 //                        the page's own script (207) started on a paper
 //                        document (below), the mirror drawn, then (with
 //                        --then) the second mirror drawn as a later
 //                        catch-up would, then (with --open) that room
-//                        opened as a click opens it; prints what the
+//                        opened as a click opens it, then (with --type)
+//                        the file's text typed into the compose line and
+//                        Enter pressed ("enter taken|left to the text
+//                        box, compose <its text>, rows <n>, waiting <n>",
+//                        406); prints what the
 //                        room tree and the room hold, one element a line:
 //                        "<indent><name>[.<classes>][#<id>][ hidden] |
 //                        <its own text>" (405)
+//   signature --examples <file>
+//                        each example of 170's table read by the page's
+//                        rule (220): "ok <line>" or "wrong <line>: body
+//                        <hex>, signature <hex>"; exit 1 if any is wrong
+//                        (406)
+//   typed --room <tag> --text <file> [--signature <file>] --at <seconds>
+//         --out <file>   the typed file the page makes, written to --out
+//                        and "made"; or "refused: <why>", exit 1 (406)
+//   write --settings <file> [--token <file>] --room <tag> --text <file>
+//         [--signature <file>] [--at <seconds>] [--cut]
+//                        reach the home, catch up, and send what was
+//                        typed; prints "typed <name>", the sending's
+//                        lines ("sent <name>" or "kept <name>: <why>"),
+//                        "pending <n>" and "marker <words>".  With --cut
+//                        the connection is closed straight after the
+//                        typed record goes, before any answer ("cut
+//                        after <name>", "marker <words>"), and what is
+//                        still unanswered is sent again on a new
+//                        connection (406)
 //
 // The paper document is the least of a browser's document that 207
 // uses: elements made by the HTML's ids, made anew by createElement,
@@ -326,6 +350,80 @@ COMMANDS.room = function () {
 };
 // }}}
 
+// {{{ signature / typed / write (406)
+// 083's tsv escapes, as 169's examples reads them
+function unescapeField(field) {
+    return field.replace(/\\(.)/g, (all, c) => ({ n: "\n", r: "\r", t: "\t", "\\": "\\" })[c] || all);
+}
+COMMANDS.signature = function () {
+    load(PROJECT);
+    let wrong = 0;
+    readBytes(option("--examples")).split("\n").forEach((line, i) => {
+        if (line === "" || line[0] === "#") { return; }
+        const fields = line.split("\t");
+        if (fields.length !== 3) { say("wrong " + (i + 1) + ": not three fields"); wrong += 1; return; }
+        const [text, body, signature] = fields.map(unescapeField);
+        const read = globalThis.rao.signature.read(text);
+        if (read.body === body && read.signature === signature) { say("ok " + (i + 1)); return; }
+        say("wrong " + (i + 1) + ": body " + hexOf(read.body) + ", signature " + hexOf(read.signature));
+        wrong += 1;
+    });
+    return wrong > 0 ? 1 : 0;
+};
+COMMANDS.typed = function () {
+    load(PROJECT);
+    const made = globalThis.rao.writing.typedText(option("--room"), readBytes(option("--text")),
+        option("--signature") ? readBytes(option("--signature")) : "", Number(option("--at")));
+    if (made.why) { say("refused: " + made.why); return 1; }
+    writeBytes(option("--out"), made.bytes);
+    say("made");
+    return 0;
+};
+COMMANDS.write = function () {
+    load(PROJECT);
+    const rao = globalThis.rao;
+    const settings = settingsOf();
+    const files = new Map();
+    const outbox = new rao.writing.Outbox();
+    const at = option("--at") ? Number(option("--at")) : Date.now() / 1000;
+    // reach and catch up, as the page does on connecting -> the link, or null (said)
+    function connect() {
+        return rao.link.reach(settings).then((reached) => {
+            if (!reached.link) { say(reached.why); return null; }
+            return rao.mirror.catchUp(reached.link, files, settings).then((summary) => {
+                if (summary.why) { say(summary.why); reached.link.close(); return null; }
+                return reached.link;
+            });
+        });
+    }
+    const added = outbox.add(option("--room"), readBytes(option("--text")),
+        option("--signature") ? readBytes(option("--signature")) : "", at);
+    if (added.why) { say("refused: " + added.why); return 1; }
+    say("typed " + added.item.name);
+    return connect().then((link) => {
+        if (!link) { return null; }
+        if (!flag("--cut")) { return link; }
+        return link.send({ kind: "typed", id: added.item.name, content: added.item.content }).then(() => {
+            link.close();
+            say("cut after " + added.item.name);
+            say("marker " + outbox.marker(files, option("--room")));
+            return connect();
+        });
+    }).then((link) => {
+        if (!link) { return 1; }
+        return outbox.send(link, files, settings).then((result) => {
+            link.close();
+            if (result.why) { say(result.why); return 1; }
+            result.lines.forEach(say);
+            say("pending " + outbox.waiting().length + ", refused " + outbox.refused().length);
+            outbox.refused().forEach((item) => say("kept " + item.name + ": " + item.why));
+            say("marker " + outbox.marker(files, option("--room")));
+            return 0;
+        });
+    });
+};
+// }}}
+
 // {{{ the paper document, and draw (405)
 function paperElement(name) {
     const made = {
@@ -335,7 +433,12 @@ function paperElement(name) {
         appendChild(child) { made.children.push(child); return child; },
         addEventListener(kind, run) { (made.listeners[kind] = made.listeners[kind] || []).push(run); },
         getAttribute(attribute) { return made.attributes[attribute] === undefined ? null : made.attributes[attribute]; },
-        click() { (made.listeners.click || []).forEach((run) => run({ preventDefault() {} })); },
+        click() { made.fire("click", {}); },
+        fire(kind, event) {
+            event.preventDefault = () => { event.prevented = true; };
+            (made.listeners[kind] || []).forEach((run) => run(event));
+            return event;
+        },
     };
     Object.defineProperty(made, "textContent", {
         get() { return made.ownText + made.children.map((child) => child.textContent).join(""); },
@@ -413,9 +516,20 @@ COMMANDS.draw = function () {
         })(tree, label);
         button.click();
     }
+    if (option("--type")) {
+        // typed into the compose line, then Enter (Shift+Enter with --shift)
+        if (option("--signature")) { doc.getElementById("signature").value = readToken(option("--signature")); }
+        const compose = doc.getElementById("compose-text");
+        compose.value = readToken(option("--type"));
+        compose.fire("input", {});
+        const pressed = compose.fire("keydown", { key: "Enter", shiftKey: flag("--shift") });
+        say("enter " + (pressed.prevented ? "taken" : "left to the text box") + ", compose " + JSON.stringify(compose.value)
+            + ", rows " + compose.rows + ", waiting " + rao.page.outbox.waiting().length);
+    }
     paperText(doc.getElementById("tree-rows"), 0, []).forEach(say);
     say(doc.getElementById("room-title").textContent);
     paperText(doc.getElementById("room-lines"), 0, []).forEach(say);
+    say("note " + doc.getElementById("compose-note").textContent);
     return 0;
 };
 // }}}
