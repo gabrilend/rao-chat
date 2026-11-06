@@ -11,7 +11,8 @@ folder is the one the script is in (`--project=<folder>` for another).
 | 3 | the home, through `src/install/232-make-home.lua`: the answers set, every other setting stated with its question, the direct-message mailbox on its port |
 | 4 | `<home>/environment`: the `PATH` (and `LUA_PATH`, `LUA_CPATH` when set) the home's programs run with |
 | 5 | the service (604), when asked for: its file filled from `src/install/templates/` by `src/install/236-service-files.lua`; a systemd user service enabled and started, a system service's install commands printed |
-| 6 | the home's ports, a firewall primer, how to pair a phone or a browser, where the page's folder is, the service, how to run the home by hand |
+| 6 | the home's ports, a firewall primer, how to pair a phone or a browser, where the page's folder is, the service, how to run the home by hand, `scripts/view-logs` |
+| 7 | the last question (605), `--restart-homes`: when every home listed in `installed-homes` has its service installed, restart them all with `scripts/restart-homes`, so each runs this version (under `--silent`, only when the flag is given) |
 
 - `--silent` never asks: a value it cannot know (the home, its name, both
   ports, the address) must be given, or it stops naming the flag, before
@@ -40,6 +41,8 @@ folder is the one the script is in (`--project=<folder>` for another).
   `--system-root`'s `etc/systemd/system/`, `etc/sv/`, `etc/init.d/`)
   whose `# rao-chat home:` line names another home stops the installer,
   exit 1, nothing written; one naming this home is written again.
+- A home set up as a service is listed in `<project>/installed-homes`
+  (`--homes-list=FILE` for another list) by `scripts/restart-homes --add`.
 - It writes nothing outside the home folder but a systemd user service's
   file (and the log folder, when `--log-dir` names one that is missing),
   and never raises its own privileges.
