@@ -43,3 +43,6 @@ portable home on a drive (rmail #616).
 - 601 — what a home needs: built 2026-11-06
   (`src/install/230-what-a-home-needs.lua`; referees in
   `src/install/tests/231-test-what-a-home-needs.lua`).
+- 602 — making a home: built 2026-11-06 (`scripts/install-home`,
+  `src/install/232-make-home.lua`; referees in
+  `src/install/tests/233-test-install-home.lua`).
