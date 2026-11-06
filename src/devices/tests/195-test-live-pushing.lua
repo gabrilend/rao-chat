@@ -192,7 +192,7 @@ local function new_device(address)
     local folder = ROOT .. "/device-" .. devices
     os.execute("mkdir -p " .. q(folder))
     write_file(folder .. "/config", "port = " .. PORT .. "\nhome-network = " .. (address or ADDRESS)
-        .. "\npublic = unknown\ntoken = " .. PHONE .. "\nwait = 2\n", "600")
+        .. "\npublic = unknown\ntoken = " .. PHONE .. "\nwait = 2\nquick-wait = 0.5\n", "600")
     return folder
 end
 -- folder → exit status, what it printed, {files, messages, changed, dropped}

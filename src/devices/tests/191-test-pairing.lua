@@ -137,6 +137,7 @@ local function device_from(printed, name, changes)
     end
     for key, value in pairs(changes or {}) do lines[#lines + 1] = key .. " = " .. value end
     lines[#lines + 1] = "wait = 1"
+    lines[#lines + 1] = "quick-wait = 0.5"
     write_file(folder .. "/config", table.concat(lines, "\n") .. "\n")
     return folder
 end

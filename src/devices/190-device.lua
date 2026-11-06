@@ -16,6 +16,8 @@
 --   token         the device's own token, exactly as the home holds it
 --   wait          whole or part seconds to wait for a connection, and
 --                 again for an answer
+--   quick-wait    whole or part seconds to wait for a connection to the
+--                 home-network address (307), before the public one
 --
 -- `test` connects to the home-network address (`--public`: the public
 -- one), sends a sealed `ping`, and says exactly what happened (rmail's
@@ -31,6 +33,12 @@
 --                                               home that is stuck
 --   A P answered with something that is not a frame, or under another
 --     key
+--
+-- `catch-up`, `send` and `live` reach the home as rmail's phone does
+-- (issue 307): the home-network address with quick-wait, then the
+-- public one with wait; each must answer a sealed ping before it is
+-- used, and one that connects but does not answer stops the attempt,
+-- said, rather than being passed over.  They print which address it was.
 --
 -- `catch-up` (issue 304) keeps a mirror of the home's RAM folder in
 -- 301's exact layout under `<device folder>/mirror`, so the reference
@@ -85,7 +93,8 @@ local ram = require("161-ram-folders")
 local M = {}
 
 -- For referees only (191): RAO_DEVICE_BROKEN=one-message (every failure
--- is told the same way).  (193): no-path-check (a path from the home is
+-- is told the same way).  (196): fall-through (an address that answered
+-- but not to the ping is passed over for the next).  (193): no-path-check (a path from the home is
 -- written into the mirror unchecked).  (194): drop-refused (a typed file
 -- the home refused is removed anyway).
 M.broken = os.getenv("RAO_DEVICE_BROKEN") or ""
@@ -109,7 +118,7 @@ function M.read_config(folder)
     local ok, values = pcall(formats.parse_config, text, folder .. "/config")
     if not ok then return nil, tostring(values) end
     local config = {}
-    for _, name in ipairs({ "port", "home-network", "public", "token", "wait" }) do
+    for _, name in ipairs({ "port", "home-network", "public", "token", "wait", "quick-wait" }) do
         if values[name] == nil then return nil, folder .. "/config has no " .. name .. " line" end
         config[name] = values[name]
     end
@@ -117,6 +126,10 @@ function M.read_config(folder)
     if not config.port then return nil, "port must be a whole number 1 to 65535" end
     config.wait = tonumber(config.wait)
     if not config.wait or config.wait <= 0 then return nil, "wait must be a number of seconds above 0" end
+    config["quick-wait"] = tonumber(config["quick-wait"])
+    if not config["quick-wait"] or config["quick-wait"] <= 0 then
+        return nil, "quick-wait must be a number of seconds above 0"
+    end
     local good, why = pcall(tokens.check_token, config.token)
     if not good then return nil, "token: " .. tostring(why) end
     return config
@@ -133,19 +146,21 @@ end
 -- }}}
 
 -- {{{ function M.connect
--- config, address → a connected socket, or nil and the words that say
--- what failed (nothing listens, cannot be reached).
-function M.connect(config, address)
+-- config, address, seconds to connect (nil: wait) → a connected socket,
+-- or nil and the words that say what failed (nothing listens, cannot be
+-- reached).
+function M.connect(config, address, seconds)
     local where = address .. " " .. config.port
     if address == "unknown" then return nil, "no address to try: the setting is \"unknown\"" end
     local sock = (address:find(":", 1, true) and socket.tcp6 or socket.tcp4)()
-    sock:settimeout(config.wait)
+    seconds = seconds or config.wait
+    sock:settimeout(seconds)
     local connected, why = sock:connect(address, config.port)
     if not connected then
         sock:close()
         if why == "connection refused" then return nil, "nothing listens at " .. where .. " (refused)" end
         if why == "timeout" then
-            return nil, address .. " cannot be reached: no answer to connect within " .. config.wait .. " s"
+            return nil, address .. " cannot be reached: no answer to connect within " .. seconds .. " s"
         end
         return nil, address .. " cannot be reached: " .. tostring(why)
     end
@@ -187,6 +202,47 @@ function M.read_record(sock, pair)
     local record = records.decode(line)
     if not record then return nil, "record" end
     return record
+end
+-- }}}
+
+-- {{{ function M.reach
+-- config → a socket whose home has answered a sealed ping, where (the
+-- address and port), and which setting it was ("home-network" or
+-- "public"); or nil and the words that say what failed (issue 307).
+-- The home-network address is tried first with quick-wait to connect,
+-- then the public one with wait, as rmail's phone does.  An address that
+-- connects but does not answer the ping is the home itself refusing (or
+-- stuck), so the next address is not tried: the device says so (307
+-- decision 2), rather than hide a wrong token behind "cannot be reached".
+function M.reach(config)
+    local tried = {}
+    for _, choice in ipairs({ { "home-network", config["quick-wait"] }, { "public", config.wait } }) do
+        local setting, seconds = choice[1], choice[2]
+        local address = config[setting]
+        local where = address .. " " .. config.port
+        local sock, failed = M.connect(config, address, seconds)
+        if sock then
+            local pair, id = room_key.key_pair(config.token), new_id()
+            local reply, lost
+            if M.send_record(sock, pair, { kind = "ping", id = id }) then
+                reply, lost = M.read_record(sock, pair)
+            else
+                lost = "closed"
+            end
+            if reply and reply.kind == "pong" and reply.id == id then return sock, where, setting end
+            sock:close()
+            local words = reply and (where .. " answered under another key, or not this ping's pong")
+                or (lost == "sealed" or lost == "record") and (where .. " answered with something that is not one of its records")
+                or M.silence(config, where, lost)
+            -- Path: the home answered at the TCP level — said, not passed
+            -- over (or, in the broken version fall-through, passed over).
+            if M.broken ~= "fall-through" then return nil, words end
+            tried[#tried + 1] = setting .. ": " .. words
+        else
+            tried[#tried + 1] = setting .. ": " .. failed
+        end
+    end
+    return nil, "the home could not be reached (" .. table.concat(tried, "; ") .. ")"
 end
 -- }}}
 
@@ -524,10 +580,9 @@ local function main(args)
         io.write(words, "\n")
         return ok and 0 or 1
     end
-    local address = config["home-network"]
-    local where = address .. " " .. config.port
-    local sock, failed = M.connect(config, address)
-    if not sock then io.write(failed, "\n") return 1 end
+    local sock, where, setting = M.reach(config)
+    if not sock then io.write(where, "\n") return 1 end
+    io.write("reached the home by its " .. setting .. " address, " .. where .. "\n")
     if command == "send" then
         local sent, lost = M.send_typed(sock, room_key.key_pair(config.token), folder, where, config)
         sock:close()

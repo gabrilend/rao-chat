@@ -192,7 +192,7 @@ local function new_device(address)
     local folder = ROOT .. "/device-" .. devices
     os.execute("mkdir -p " .. q(folder))
     write_file(folder .. "/config", "port = " .. PORT .. "\nhome-network = " .. (address or ADDRESS)
-        .. "\npublic = unknown\ntoken = " .. PHONE .. "\nwait = 2\n", "600")
+        .. "\npublic = unknown\ntoken = " .. PHONE .. "\nwait = 2\nquick-wait = 0.5\n", "600")
     return folder
 end
 -- folder → exit status, what it printed, {files, messages, changed, dropped}
@@ -362,7 +362,10 @@ with_broken("4. a home answering with ../../escape or a non-hex room: nothing wr
         "assert(listener:listen(1)); listener:settimeout(10)",
         "io.open(" .. string.format("%q", ready) .. ", 'w'):close()",
         "local conn = listener:accept(); if not conn then os.exit(1) end",
-        "conn:settimeout(3); frames.read_frame(conn)",
+        "conn:settimeout(3)",
+        "local ping = records.decode(seal.open(pair, frames.read_frame(conn)))",
+        "frames.write_frame(conn, seal.seal(pair, records.encode({ kind = 'pong', id = ping.id, at = 1 })))",
+        "frames.read_frame(conn)",
         "local function say(r) frames.write_frame(conn, seal.seal(pair, records.encode(r))) end",
         "say({ kind = 'file', path = '../../escape', content = 'out' })",
         "say({ kind = 'file', path = '" .. tag .. "/inbox/nothex/1000000000-x', content = 'out' })",
