@@ -25,6 +25,19 @@ talking to each other".
 - **Said plainly in the output**: Node stands in for the browser; the
   page's own drawing is not run here.
 
+## Status
+
+Built 2026-11-06: `issues/completed/demos/phase-4-demo` (also
+`./run-phase-demo 4`) runs `src/phase-4-demo/227-phase-4-demo.lua`,
+whose seven scenes are in `228-phase-4-scenes.lua`: the page's folder,
+the homes (310's), a page paired with each home, each page catching up,
+page A writing and page B pushed it and answering, each room as the page
+lays it out, and home A's device port stopped and started again with
+page A coming back by itself.  The referee,
+`src/phase-4-demo/tests/229-test-phase-4-demo.lua`, runs it through
+`run-phase-demo 4` and checks every scene's figures, with its two broken
+versions.
+
 ## Referees
 
 1. **The demo runs whole** through `run-phase-demo 4` from `/`: every
@@ -54,6 +67,21 @@ the owner can overturn each.
 3. **310's world is borrowed, not copied**: the homes, gatherers and
    device servers are built by the phase 3 demo's own scene code where it
    allows, so the two demos cannot drift on how a home is made.
+
+### While building, 2026-11-06
+
+4. **Page B answers from inside its live run**: the stand-in's `live`
+   takes `--write-when <words>` and writes once a message not its own
+   holds them, so the answer is the page's own work on a message pushed
+   to it, not a second run timed to follow.
+5. **A live page ends when the scene says so** (`--until <file>`, the
+   stand-in looking for the file five times a second), not after a run
+   time guessed in advance.
+6. **201 gives out its helpers** (`M.helpers`) for 228, rather than 228
+   copying them: the same reason as decision 3.
+7. **The drop stops only A's device server** (through its stop file),
+   not the home: the drop 407 deals with is the page's connection, and
+   B's message typed meanwhile still reaches A's inbox to be caught up.
 
 ## Related documents
 

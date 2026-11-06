@@ -103,13 +103,19 @@
 //   live --settings <file> [--token <file>] --for <seconds>
 //        [--mirror-in <folder>] [--mirror-out <folder>]
 //        [--write <seconds> --room <tag> --text <file> [--signature <file>]]
+//        [--write-when <words> --room <tag> --text <file> [--signature <file>]]
+//        [--until <file>]
 //                        the page live for that long (223): reach, catch
 //                        up, listen, retry after a drop; prints, each with
 //                        the seconds since it started, "state <words>",
 //                        "errors[ retrying]: <line> | <line>..." (or
 //                        "errors none"), "caught up: <summary>", "got
 //                        <path>" for each file the mirror took or changed,
-//                        "typed <name>" (with --write, at that second),
+//                        "typed <name>" (with --write, at that second;
+//                        with --write-when, once the mirror holds a
+//                        message not the page's own whose text holds
+//                        those words: an answer), ending early once the
+//                        file --until names exists (409),
 //                        and at the end "end <state>, tries <n>, pending
 //                        <n>" (407)
 //   waits                the retry waits from the first, and countdowns:
@@ -474,26 +480,46 @@ COMMANDS.live = function () {
         changed() {
             for (const [inside, content] of files) { if (seen.get(inside) !== content) { say(stamp() + " got " + inside); } }
             seen = new Map(files);
+            if (option("--write-when") && !answered) { answer(); }
         },
         caughtUp(summary) { say(stamp() + " caught up: " + summaryLine(summary)); },
     });
-    if (option("--write")) {
-        setTimeout(() => {
-            const added = outbox.add(option("--room"), readBytes(option("--text")),
-                option("--signature") ? readBytes(option("--signature")) : "", Date.now() / 1000);
-            if (added.why) { say(stamp() + " refused: " + added.why); return; }
-            say(stamp() + " typed " + added.item.name);
-            session.sendWaiting();
-        }, Number(option("--write")) * 1000);
+    function write() {
+        const added = outbox.add(option("--room"), readBytes(option("--text")),
+            option("--signature") ? readBytes(option("--signature")) : "", Date.now() / 1000);
+        if (added.why) { say(stamp() + " refused: " + added.why); return; }
+        say(stamp() + " typed " + added.item.name);
+        session.sendWaiting();
+    }
+    if (option("--write")) { setTimeout(write, Number(option("--write")) * 1000); }
+    // --write-when: an answer, once a message from someone else holds the words
+    let answered = false;
+    function answer() {
+        const words = option("--write-when");
+        for (const [inside, content] of files) {
+            const where = rao.mirror.checkPath(inside);
+            if (where.kind !== "message") { continue; }
+            const read = rao.view.readFields(content);
+            if (read.fields.from !== "me" && (read.body || "").indexOf(words) >= 0) {
+                answered = true;
+                say(stamp() + " heard \"" + words + "\" in " + inside);
+                write();
+                return;
+            }
+        }
     }
     session.start();
     return new Promise((resolve) => {
-        setTimeout(() => {
+        function end() {
+            clearTimeout(limit);
+            clearInterval(watch);
             say(stamp() + " end " + session.state + ", tries " + session.tries + ", pending " + outbox.waiting().length);
             session.stop();
             if (option("--mirror-out")) { writeMirror(option("--mirror-out"), files); }
             resolve(0);
-        }, Number(option("--for")) * 1000);
+        }
+        const limit = setTimeout(end, Number(option("--for")) * 1000);
+        const watch = setInterval(() => { if (option("--until") && fs.existsSync(option("--until"))) { end(); } }, 200);
     });
 };
 COMMANDS.waits = function () {

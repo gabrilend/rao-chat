@@ -11,4 +11,6 @@ Commands: `load` (401); `key`, `seal`, `open`, `records` (402); `settings`, `rem
 the page's script uses, so the referees read what it placed);
 `signature`, `typed`, `write`, and typing into the compose line in
 `draw` (406); `live`, `waits` (407); `homes`, `people`, `topbar`, and a storage
-for `draw` (408).
+for `draw` (408); in `live`, `--write-when <words>` (write once a message
+not its own holds the words, printing "heard") and `--until <file>` (end
+once the file is there), for the phase 4 demo (409).
