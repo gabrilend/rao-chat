@@ -48,3 +48,8 @@ portable home on a drive (rmail #616).
   `src/install/tests/233-test-install-home.lua`).
 - 603 — running a home: built 2026-11-06 (`scripts/run-home`; referees in
   `src/install/tests/234-test-run-home.lua`).
+- 604 — running as a service: built 2026-11-06
+  (`src/install/235-service-manager`, `236-service-files.lua`, the
+  templates 237–241, the stand-ins `242-stand-in-service-managers.lua`,
+  and the installer's service section; referees in
+  `src/install/tests/243-test-running-as-a-service.lua`).

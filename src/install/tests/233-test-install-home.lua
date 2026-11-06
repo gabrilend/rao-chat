@@ -75,7 +75,7 @@ local ROOT = (os.getenv("RAO_TEST_ROOT") or "/tmp") .. "/233-install-home"
 assert(ROOT:match("/233%-install%-home$"))
 os.execute("rm -rf " .. quote(ROOT) .. " && mkdir -p " .. quote(ROOT .. "/home-of-user") .. " "
     .. quote(ROOT .. "/homes") .. " " .. quote(ROOT .. "/bin"))
-local INSTALLER = quote(DIR .. "/scripts/install-home")
+local INSTALLER = quote(DIR .. "/scripts/install-home") .. " --no-setup-service"
 local ENV = "HOME=" .. quote(ROOT .. "/home-of-user") .. " "
 
 -- {{{ local function snapshot

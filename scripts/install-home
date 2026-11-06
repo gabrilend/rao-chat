@@ -16,11 +16,15 @@
 #   4. The home's environment file, <home>/environment: the paths its
 #      programs run with (scripts/run-home reads it; a service does not see
 #      this shell's PATH).
-#   5. What to do next: the ports to open, pairing a phone or a browser,
+#   5. The service (604), when asked for: the service file filled for
+#      this machine's service manager, and a systemd user service started.
+#   6. What to do next: the ports to open, pairing a phone or a browser,
 #      the page's folder, running the home.
 #
-# It never raises its own privileges and writes nothing outside the home
-# folder.
+# It never raises its own privileges.  It writes nothing outside the home
+# folder but a systemd user service's file (~/.config/systemd/user/); a
+# system service's file is written into <home>/service/ and the commands
+# that install it are printed for a person to run.
 #
 # Usage (from any folder):
 #   scripts/install-home [options]           see --help
@@ -56,8 +60,8 @@ ALL_YES=false
 
 # The keys this installer knows.  Value keys take a string; yes/no keys a
 # yes or a no.
-VALUE_KEYS="home home_name device_port direct_port address ram_root project"
-YN_KEYS=""
+VALUE_KEYS="home home_name device_port direct_port address ram_root project service_manager service_name log_dir system_root"
+YN_KEYS="setup_service user_service start_service"
 
 # {{{ show_help
 show_help() {
@@ -81,16 +85,31 @@ The questions (giving the flag skips the question):
   --address=ADDRESS     the address the home listens on: "any", or one of
                         this machine's (gatherer.address and devices.address)
 
+  --setup-service       set the home up to run as a service of this machine's
+                        service manager (--no-setup-service: not)
+  --user-service        with systemd: as your own user service, written to
+                        ~/.config/systemd/user/ and started; --no-user-service
+                        writes a system service into <home>/service/ instead
+
 Flags with no question:
   --ram-root=FOLDER     where the home's RAM folders go (gatherer.ram-root;
                         stated as /dev/shm/rao-chat when not given)
   --project=FOLDER      the program folder (the one this script is in)
+  --service-manager=M   systemd, runit, openrc, nixos or unknown, instead of
+                        the one found (src/install/235-service-manager)
+  --service-name=NAME   the service's name (rao-chat-<home path, slashes as
+                        dashes> when not given)
+  --log-dir=FOLDER      where the service's log goes (/tmp: RAM, gone on a
+                        restart); the log is <folder>/<service>.log
+  --system-root=FOLDER  where installed system services are looked for, to
+                        refuse a name already serving another home (/)
+  --no-start-service    write a user service but do not start it
 
 There are no default ports.  Asked, a free port is suggested; with
 --silent both ports must be given.
 
 Unattended example:
-  scripts/install-home --silent --home=/srv/rao/alice --home-name=alice \
+  scripts/install-home --silent --no-setup-service --home=/srv/rao/alice --home-name=alice \
       --device-port=51234 --direct-port=52345 --address=any
 
 Values are read from the command line only, never from the environment.
@@ -362,6 +381,78 @@ DIRECT_PORT="$(ask_port direct_port "The port other homes send your direct messa
 ADDRESS="$(ask_value address "The address this home listens on (any, or one of this machine's)" \
     "${WAS_ADDRESS:-any}")" || exit 1
 
+# {{{ the service: what to write, where, and whether that name is free
+# Asked and checked before anything is written (604): a service name that
+# already serves another home stops the installer here.
+SERVICE_KIND=""          # systemd-user systemd-system runit openrc nixos, or none
+SERVICE_FILE=""
+SERVICE=""
+SERVICE_UPDATED=false
+FILLER="$DIR/src/install/236-service-files.lua"
+TEMPLATES="$DIR/src/install/templates"
+if ask_yn setup_service "Set this home up to run as a service?"; then
+    if has_opt service_manager; then
+        MANAGER="${OPT[service_manager]}"
+    else
+        MANAGER="$("$DIR/src/install/235-service-manager")"
+    fi
+    case "$MANAGER" in
+        systemd|runit|openrc|nixos|unknown) ;;
+        *) err "--service-manager: one of systemd, runit, openrc, nixos, unknown; not '$MANAGER'"; exit 2 ;;
+    esac
+    if has_opt service_name; then
+        SERVICE="${OPT[service_name]}"
+        if ! printf '%s' "$SERVICE" | grep -qE '^[A-Za-z0-9_-]+$'; then
+            err "--service-name: letters, digits, '-' and '_', not '$SERVICE'"; exit 2
+        fi
+    else
+        SERVICE="$("$LUAJIT" "$FILLER" "$DIR" name "$HOME_DIR")" || exit 1
+    fi
+    LOG_DIR="${OPT[log_dir]:-/tmp}"
+    SYSTEM_ROOT="${OPT[system_root]:-}"
+    SYSTEM_ROOT="${SYSTEM_ROOT%/}"
+    SERVICE_USER="$(login_name)"
+    case "$MANAGER" in
+        systemd)
+            if ask_yn user_service "Run it as your own user service (started now, no root needed)?"; then
+                SERVICE_KIND=systemd-user
+                SERVICE_FILE="$HOME/.config/systemd/user/$SERVICE.service"
+                TEMPLATE="$TEMPLATES/237-systemd-user.service"
+            else
+                SERVICE_KIND=systemd-system
+                SERVICE_FILE="$HOME_DIR/service/$SERVICE.service"
+                TEMPLATE="$TEMPLATES/238-systemd-system.service"
+            fi ;;
+        runit)  SERVICE_KIND=runit;  SERVICE_FILE="$HOME_DIR/service/$SERVICE/run"; TEMPLATE="$TEMPLATES/239-runit-run" ;;
+        openrc) SERVICE_KIND=openrc; SERVICE_FILE="$HOME_DIR/service/$SERVICE.init"; TEMPLATE="$TEMPLATES/240-openrc-init" ;;
+        nixos)  SERVICE_KIND=nixos;  SERVICE_FILE="$HOME_DIR/service/$SERVICE.nix"; TEMPLATE="$TEMPLATES/241-nixos.nix" ;;
+        unknown) SERVICE_KIND=none ;;
+    esac
+    if [ "$SERVICE_KIND" != none ]; then
+        SERVICE_VALUES=( "service=$SERVICE" "user=$SERVICE_USER" "log_dir=$LOG_DIR" "home=$HOME_DIR" "project=$DIR" )
+        if ! WHY="$("$LUAJIT" "$FILLER" "$DIR" check "$TEMPLATE" "${SERVICE_VALUES[@]}" 2>&1)"; then
+            err "the $SERVICE_KIND service cannot be written: $WHY"
+            err "  give --no-setup-service to make the home without one.  Nothing was written."
+            exit 1
+        fi
+        # one service per home (rubric I1): a file of this name, installed or
+        # about to be overwritten, that does not name this home is a clash
+        for installed in "$SERVICE_FILE" "$HOME/.config/systemd/user/$SERVICE.service" \
+            "$SYSTEM_ROOT/etc/systemd/system/$SERVICE.service" "$SYSTEM_ROOT/etc/sv/$SERVICE/run" \
+            "$SYSTEM_ROOT/etc/init.d/$SERVICE"; do
+            [ -f "$installed" ] || continue
+            if "$LUAJIT" "$FILLER" "$DIR" names-home "$installed" "$HOME_DIR"; then
+                SERVICE_UPDATED=true
+            else
+                err "a service named $SERVICE is already installed for another home: $installed"
+                err "  give this home its own name with --service-name=NAME.  Nothing was written."
+                exit 1
+            fi
+        done
+    fi
+fi
+# }}}
+
 # ---------------------------------------------------------------------------
 # 3. The home, written now (rubric I2)
 # ---------------------------------------------------------------------------
@@ -424,7 +515,89 @@ fi
 # }}}
 
 # ---------------------------------------------------------------------------
-# 5. What to do next
+# 5. The service (604)
+# ---------------------------------------------------------------------------
+
+SERVICE_NEXT=""          # the commands a person runs, for the summary
+if [ -n "$SERVICE_KIND" ]; then
+    echo ""
+fi
+if [ "$SERVICE_KIND" = none ]; then
+    info "no service manager was found (systemd, runit, OpenRC or NixOS), so no service was written:"
+    info "run the home by hand (below), or name one with --service-manager"
+elif [ -n "$SERVICE_KIND" ]; then
+    mkdir -p "$(dirname "$SERVICE_FILE")" || { err "could not make the folder for $SERVICE_FILE"; exit 1; }
+    if [ ! -d "$LOG_DIR" ]; then
+        mkdir -p "$LOG_DIR" || { err "could not make the log folder $LOG_DIR"; exit 1; }
+        info "made     $LOG_DIR (the service's log folder)"
+    fi
+    if ! WHY="$("$LUAJIT" "$FILLER" "$DIR" fill "$TEMPLATE" "$SERVICE_FILE" "${SERVICE_VALUES[@]}" 2>&1)"; then
+        err "the service file was not written: $WHY"
+        exit 1
+    fi
+    case "$SERVICE_KIND" in runit|openrc) chmod +x "$SERVICE_FILE" ;; esac
+    if $SERVICE_UPDATED; then
+        info "wrote    $SERVICE_FILE (the $SERVICE service already served this home: written again)"
+    else
+        info "wrote    $SERVICE_FILE"
+    fi
+    LOG_FILE="${LOG_DIR%/}/$SERVICE.log"
+    q() { printf '%q' "$1"; }
+    case "$SERVICE_KIND" in
+        systemd-user)
+            START=yes
+            if has_opt start_service && ! parse_bool "${OPT[start_service]}"; then START=no; fi
+            if [ "$START" = yes ]; then
+                if systemctl --user daemon-reload && systemctl --user enable "$SERVICE"; then
+                    if systemctl --user is-active "$SERVICE" >/dev/null 2>&1; then
+                        info "$SERVICE is already running: restart it to run the new service file"
+                        SERVICE_NEXT="      systemctl --user restart $SERVICE"
+                    elif systemctl --user start "$SERVICE"; then
+                        ok "the $SERVICE user service is enabled and started"
+                    else
+                        warn "systemctl --user start $SERVICE failed (above)"
+                        SERVICE_NEXT="      systemctl --user start $SERVICE"
+                    fi
+                else
+                    warn "systemctl --user could not enable $SERVICE (above); the commands are below"
+                    SERVICE_NEXT="      systemctl --user daemon-reload
+      systemctl --user enable --now $SERVICE"
+                fi
+            else
+                info "not started (--no-start-service)"
+                SERVICE_NEXT="      systemctl --user daemon-reload
+      systemctl --user enable --now $SERVICE"
+            fi
+            SERVICE_NEXT="${SERVICE_NEXT:+$SERVICE_NEXT
+}    To keep it running while you are not logged in:
+      loginctl enable-linger $SERVICE_USER" ;;
+        systemd-system)
+            SERVICE_NEXT="    As root (this installer never raises its own privileges):
+      sudo cp $(q "$SERVICE_FILE") /etc/systemd/system/$SERVICE.service
+      sudo systemctl daemon-reload
+      sudo systemctl enable --now $SERVICE" ;;
+        runit)
+            SERVICE_NEXT="    As root (this installer never raises its own privileges):
+      sudo cp -r $(q "$(dirname "$SERVICE_FILE")") /etc/sv/
+      sudo ln -s /etc/sv/$SERVICE /var/service/
+    and to stop it, giving it the time to stop its programs:
+      sudo sv -w 60 stop $SERVICE" ;;
+        openrc)
+            SERVICE_NEXT="    As root (this installer never raises its own privileges):
+      sudo cp $(q "$SERVICE_FILE") /etc/init.d/$SERVICE
+      sudo rc-update add $SERVICE default
+      sudo rc-service $SERVICE start" ;;
+        nixos)
+            NIX_PATH_TEXT="$(printf '%s' "$SERVICE_FILE" | sed 's/\\/\\\\/g; s/"/\\"/g; s/\$/\\$/g')"
+            SERVICE_NEXT="    In /etc/nixos/configuration.nix, then as root:
+      imports = [ \"$NIX_PATH_TEXT\" ];
+      sudo nixos-rebuild switch
+    and open the home's ports (below) in networking.firewall.allowedTCPPorts" ;;
+    esac
+fi
+
+# ---------------------------------------------------------------------------
+# 6. What to do next
 # ---------------------------------------------------------------------------
 
 ALL_PORTS="$("$LUAJIT" "$DIR/src/install/232-make-home.lua" "$DIR" "$HOME_DIR" --show \
@@ -457,9 +630,16 @@ NEXT
 printf '    luajit %q %q %q add <label> [--browser]\n' "$DIR/src/devices/189-pair.lua" "$DIR" "$HOME_DIR"
 printf '  The web page is the folder %q: copy it to the computer\n' "$DIR/src/web"
 printf '  you will use and open 203-rao-chat.html there (issue 401).\n'
+if [ -n "$SERVICE_KIND" ] && [ "$SERVICE_KIND" != none ]; then
+    echo ""
+    echo "  The service (issue 604): $SERVICE ($SERVICE_KIND)"
+    echo "    file: $SERVICE_FILE"
+    echo "    log:  $LOG_FILE"
+    if [ -n "$SERVICE_NEXT" ]; then printf '%s\n' "$SERVICE_NEXT"; fi
+fi
 if [ -x "$DIR/scripts/run-home" ]; then
     echo ""
-    echo "  Running the home, in the foreground (issue 603):"
+    echo "  Running the home by hand, in the foreground (issue 603):"
     printf '    %q %q %q\n' "$DIR/scripts/run-home" "$DIR" "$HOME_DIR"
 fi
 exit 0

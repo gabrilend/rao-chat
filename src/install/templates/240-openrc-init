@@ -1,0 +1,22 @@
+#!/sbin/openrc-run
+# rao-chat home: @HOME_COMMENT@
+# An OpenRC service for this home (issue 604), written by
+# scripts/install-home; re-running the installer writes it again.
+# supervise-daemon starts it again 5 s after it fails.  The launcher
+# (scripts/run-home) reads the home's environment file and stops the
+# home's programs itself when sent SIGTERM.
+
+description="rao-chat home @SERVICE@"
+supervisor=supervise-daemon
+command="@OPENRC_COMMAND@"
+command_args="@OPENRC_ARGS@"
+command_user="@USER@"
+respawn_delay=5
+respawn_max=0
+output_log="@LOG@"
+error_log="@LOG@"
+retry="TERM/60/KILL/5"
+
+depend() {
+    need net
+}
