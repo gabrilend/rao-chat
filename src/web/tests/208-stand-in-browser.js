@@ -115,6 +115,23 @@
 //   waits                the retry waits from the first, and countdowns:
 //                        "waits 5 10 ...", "countdown <seconds> <words>"
 //                        (407)
+//   homes --steps <file> each line of <file> one step on a fresh storage
+//                        of the page's remembered homes (225): "remember
+//                        <label> <lines file> [<signature>]", "read
+//                        <label>", "forget <label>", "list", "last",
+//                        "dump" (every key and value held); prints what
+//                        each gives (408)
+//   people --mirror-in <folder>
+//                        "person <tag> <label> | <last line>" for each
+//                        direct-message room (408)
+//   topbar --state <state> [--label <name>] [--where <address port>]
+//                        "name <the home's name>, state <words>" (408)
+//   draw ... [--storage <file>]
+//                        (408) the browser's storage starts as the JSON
+//                        object in <file>; draw also prints the People
+//                        and Homes panels' lists, the top bar's name and
+//                        state, and the Settings form's label, lines and
+//                        signature
 //
 // The paper document is the least of a browser's document that 207
 // uses: elements made by the HTML's ids, made anew by createElement,
@@ -491,6 +508,59 @@ COMMANDS.waits = function () {
 };
 // }}}
 
+// {{{ homes / people / topbar (408)
+// a storage like the browser's localStorage, held in this process
+function memoryStorage(from) {
+    const held = new Map(Object.entries(from || {}));
+    return {
+        getItem(key) { return held.has(key) ? held.get(key) : null; },
+        setItem(key, value) { held.set(key, String(value)); },
+        removeItem(key) { held.delete(key); },
+        dump() { return Array.from(held.keys()).sort().map((key) => [key, held.get(key)]); },
+    };
+}
+COMMANDS.homes = function () {
+    load(PROJECT);
+    const homes = globalThis.rao.panels.homes;
+    const storage = memoryStorage();
+    fs.readFileSync(option("--steps"), "utf8").split("\n").forEach((line) => {
+        const words = line.split(" ");
+        if (words[0] === "remember") {
+            const why = homes.remember(storage, words[1], fs.readFileSync(words[2], "utf8"), words.slice(3).join(" "));
+            say("remember " + words[1] + ": " + (why || "kept"));
+        } else if (words[0] === "read") {
+            const found = homes.read(storage, words[1]);
+            say("read " + words[1] + ": " + (found.why || "lines " + JSON.stringify(found.lines) + ", signature "
+                + JSON.stringify(found.signature)));
+        } else if (words[0] === "forget") {
+            say("forget " + words[1] + ": " + (homes.forget(storage, words[1]) || "forgotten"));
+        } else if (words[0] === "list") {
+            const found = homes.list(storage);
+            say("list: " + (found.why || found.labels.join(", ")));
+        } else if (words[0] === "last") {
+            say("last: " + homes.last(storage));
+        } else if (words[0] === "dump") {
+            storage.dump().forEach(([key, value]) => say("held " + JSON.stringify(key) + " = " + JSON.stringify(value)));
+            say("held " + storage.dump().length + " key(s)");
+        }
+    });
+    return 0;
+};
+COMMANDS.people = function () {
+    load(PROJECT);
+    globalThis.rao.panels.people(readMirror(option("--mirror-in"))).forEach((person) => {
+        say("person " + person.tag + " " + person.label + " | " + person.last);
+    });
+    return 0;
+};
+COMMANDS.topbar = function () {
+    load(PROJECT);
+    const panels = globalThis.rao.panels;
+    say("name " + panels.homeName(option("--label") || "", option("--where")) + ", state " + panels.stateWords(option("--state")));
+    return 0;
+};
+// }}}
+
 // {{{ the paper document, and draw (405)
 function paperElement(name) {
     const made = {
@@ -560,6 +630,7 @@ COMMANDS.draw = function () {
     load(PROJECT);
     const rao = globalThis.rao;
     const doc = paperDocument(fs.readFileSync(pageFile(PROJECT), "utf8"));
+    if (option("--storage")) { globalThis.localStorage = memoryStorage(JSON.parse(fs.readFileSync(option("--storage"), "utf8"))); }
     rao.page.start(doc);
     rao.page.files = readMirror(option("--mirror-in"));
     rao.page.draw();
@@ -597,6 +668,11 @@ COMMANDS.draw = function () {
     say(doc.getElementById("room-title").textContent);
     paperText(doc.getElementById("room-lines"), 0, []).forEach(say);
     say("note " + doc.getElementById("compose-note").textContent);
+    paperText(doc.getElementById("people-list"), 0, []).forEach(say);
+    paperText(doc.getElementById("homes-list"), 0, []).forEach(say);
+    say("top " + doc.getElementById("home-name").textContent + " | " + doc.getElementById("connection-state").textContent);
+    say("form " + JSON.stringify(doc.getElementById("home-label").value) + " " + JSON.stringify(doc.getElementById("settings-lines").value)
+        + " " + JSON.stringify(doc.getElementById("signature").value) + " remember " + doc.getElementById("remember").checked);
     return 0;
 };
 // }}}
