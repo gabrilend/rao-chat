@@ -1,0 +1,22 @@
+# rao-chat home: @HOME_COMMENT@
+# A systemd user service for this home (issue 604), written by
+# scripts/install-home; re-running the installer writes it again.  The
+# launcher (scripts/run-home) reads the home's environment file, and it
+# stops the home's programs itself: KillMode=mixed sends the stop signal to
+# it alone, and only what is left after TimeoutStopSec is killed.
+[Unit]
+Description=rao-chat home @SERVICE@
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=@EXEC_SYSTEMD@
+Restart=on-failure
+RestartSec=5
+KillMode=mixed
+TimeoutStopSec=60
+StandardOutput=append:@LOG@
+StandardError=append:@LOG@
+
+[Install]
+WantedBy=default.target

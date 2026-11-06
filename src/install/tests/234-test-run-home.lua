@@ -117,7 +117,7 @@ local RUN_HOME = quote(DIR .. "/scripts/run-home")
 -- {{{ the home, made by the installer
 do
     local output, status = shell("HOME=" .. quote(ROOT .. "/user") .. " " .. quote(DIR .. "/scripts/install-home")
-        .. " --silent --home=" .. quote(HOME_A) .. " --home-name=alice --device-port=" .. DEVICE_PORT
+        .. " --silent --no-setup-service --home=" .. quote(HOME_A) .. " --home-name=alice --device-port=" .. DEVICE_PORT
         .. " --direct-port=" .. DIRECT_PORT .. " --address=127.0.0.2 --ram-root=" .. quote(RAM))
     if status ~= 0 then
         check("the home is made by the installer", false, output)

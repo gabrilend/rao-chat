@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+#
+# 235-service-manager — prints the one word naming this machine's service
+# manager (issue 604), by rmail's rules (detect-service-manager.sh), first
+# match wins:
+#
+#   nixos     /etc/NIXOS exists
+#   systemd   process 1 is systemd
+#   runit     process 1 is runit (or runit-init)
+#   openrc    process 1 is openrc-init
+#   systemd   systemctl is on the path
+#   runit     sv is on the path
+#   openrc    rc-service is on the path
+#   unknown   none of these
+#
+# Usage: src/install/235-service-manager [--root=FOLDER]
+#
+# --root names the folder /etc/NIXOS and /proc/1/comm are read under (the
+# referees' scratch root; / by default).  It uses only the shell's own
+# commands, so it answers the same under any PATH.
+
+set -u
+ROOT=""
+for argument in "$@"; do
+    case "$argument" in
+        --root=*) ROOT="${argument#--root=}"; ROOT="${ROOT%/}" ;;
+        -h|--help) sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        *) printf 'unknown argument: %s\n' "$argument" >&2; exit 2 ;;
+    esac
+done
+
+if [ -e "$ROOT/etc/NIXOS" ]; then echo nixos; exit 0; fi
+
+FIRST=""
+if [ -r "$ROOT/proc/1/comm" ]; then
+    IFS= read -r FIRST < "$ROOT/proc/1/comm" || true
+fi
+case "$FIRST" in
+    systemd) echo systemd; exit 0 ;;
+    runit|runit-init) echo runit; exit 0 ;;
+    openrc-init) echo openrc; exit 0 ;;
+esac
+
+if command -v systemctl >/dev/null 2>&1; then echo systemd; exit 0; fi
+if command -v sv >/dev/null 2>&1; then echo runit; exit 0; fi
+if command -v rc-service >/dev/null 2>&1; then echo openrc; exit 0; fi
+echo unknown

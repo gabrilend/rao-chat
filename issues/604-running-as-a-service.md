@@ -14,7 +14,7 @@ runs (rubric note, section 1, "The service manager").
 
 ## Intended Behavior
 
-- **Which service manager**: `src/install/236-service-manager` (Bash)
+- **Which service manager**: `src/install/235-service-manager` (Bash)
   prints one word by rmail's rules, first match wins: `nixos`
   (`/etc/NIXOS`), process 1's name (`systemd`, `runit`, `openrc-init`),
   the first of `systemctl`, `sv`, `rc-service` on the path, else
@@ -30,7 +30,7 @@ runs (rubric note, section 1, "The service manager").
   NixOS.  Each runs `<project>/scripts/run-home <project> <home>` (603),
   restarts it on failure after 5 s, appends its output to
   `<log folder>/<service>.log` (`/tmp` by default: RAM, rubric I8), and
-  gives it 30 s to stop.  systemd's are `KillMode=mixed`, so the stop
+  gives it 60 s to stop.  systemd's are `KillMode=mixed`, so the stop
   signal goes to the launcher alone and it stops the rest (603).
 - **Filled by one function** that escapes every value for `sed` (I6) and
   refuses, removing the file, when a placeholder is left.
@@ -53,7 +53,26 @@ runs (rubric note, section 1, "The service manager").
 
 ## Status
 
-Not built yet.
+Built 2026-11-06 on branch `claude/604-running-as-a-service`:
+
+- `src/install/235-service-manager` (Bash): the word, by rmail's rules;
+  `--root` for the referees.
+- `src/install/236-service-files.lua`: the name, the filler (`fill`,
+  `check`) with a quoting per syntax, and `names-home`.
+- `src/install/templates/237-systemd-user.service`,
+  `238-systemd-system.service`, `239-runit-run`, `240-openrc-init`,
+  `241-nixos.nix`.
+- `src/install/242-stand-in-service-managers.lua`: the stand-ins.
+- `scripts/install-home`: the service questions (`--setup-service`,
+  `--user-service`), the flags `--service-manager`, `--service-name`,
+  `--log-dir`, `--system-root`, `--no-start-service`, the clash check
+  before anything is written, and step 5, the service.
+- Referees: `src/install/tests/243-test-running-as-a-service.lua`, 45
+  checks, all passing.  Five mutations were each caught (systemd's `\`
+  left unescaped; the clash check skipped; `enable` not asked for;
+  OpenRC filled with any path; `/etc/NIXOS` not looked at).
+- 233 and 234 now pass `--no-setup-service` (under `--silent` the new
+  question must be answered, as every other).
 
 ## Rubric
 
@@ -85,10 +104,11 @@ service), **I9** (the service's environment); referees 3, 4 and 5.
 
 1. **Templates**: each of the five fills with no placeholder left; a
    home path and project path holding a space, `&`, `|` and `\` come
-   through unchanged; each names `run-home`, the project, the home and
+   through unchanged where the syntax can carry them, and OpenRC refuses
+   them (decision 7); each names `run-home`, the project, the home and
    the log; a template asking for an unknown value writes no file.
-2. **Detection**: the word is one of the six; `--service-manager`
-   overrides it.
+2. **Detection**: the word is one of the five (`nixos`, `systemd`,
+   `runit`, `openrc`, `unknown`); `--service-manager` overrides it.
 3. **systemd user service, through a stand-in `systemctl`** (a script on
    a scratch `PATH`, scratch `HOME`): the unit is written under the
    scratch `HOME`, and `daemon-reload`, `enable` and `start` are asked
@@ -116,6 +136,12 @@ service), **I9** (the service's environment); referees 3, 4 and 5.
 - No real service is installed here: every referee uses the stand-in,
   a scratch `HOME`, and a scratch `--log-dir`.  A real install on the
   owner's machine is the check left for a person.
+- This machine has no real systemd, runit, OpenRC or Nix (its
+  `systemctl`, `sv` and `rc-service` are stub scripts), so no template
+  was read by its real manager: systemd's and nix's quoting were read
+  back by the referee's own reading of their rules, runit's by `sh`, and
+  OpenRC's `eval` by `sh`.  `systemd-analyze verify` on the owner's
+  machine is the first check to make.
 
 ## Open questions
 
@@ -142,6 +168,44 @@ the owner can overturn each.
 5. **NixOS opens the firewall for nothing**: rmail's module opens its
    one port; a home's ports are several and change as rooms are made, so
    the printed commands name the ports to open instead.
+
+### While building, 2026-11-06
+
+6. **60 s to stop, not 30** (`TimeoutStopSec=60`, OpenRC's
+   `retry=TERM/60/KILL/5`, `sv -w 60 stop`): the launcher waits up to
+   20 s for its programs, then up to 10 s for each gatherer it has to
+   stop itself; 30 s could kill it while it is still stopping a home
+   cleanly.
+7. **Each value is quoted the way its syntax reads it** (`236`), not by
+   one `sed` escape: systemd's `ExecStart=` words double-quoted (`\`,
+   `"`, `%`, `$` escaped), nix's string escapes on top of that, sh's
+   single quotes for runit.  **OpenRC refuses** a program folder or home
+   whose path holds anything but letters, digits, `.`, `_`, `+`, `-` and
+   `/`: OpenRC reads `command` and `command_args` through `eval`, which
+   splits a path at its spaces, and this cannot be checked here without
+   OpenRC.  The installer checks this before writing anything and says
+   so.  The log folder and the service name are held to plain characters
+   for every kind (`StandardOutput=append:` takes the rest of the line
+   bare).
+8. **A home path's other characters become `_` in the derived name**
+   (`/srv/a b` → `rao-chat-srv-a_b`), so the installer can suggest a name
+   for any home; a `--service-name` given is checked and refused as
+   rmail's is.
+9. **The clash check looks where each kind is installed** (the user
+   unit's place, and under `--system-root`: `etc/systemd/system/`,
+   `etc/sv/<name>/run`, `etc/init.d/`), reading the `# rao-chat home:`
+   line every template starts with.  A NixOS module imported from
+   elsewhere is not found by it (there is no one place to look).
+10. **A user service already running is not restarted** by the
+   installer: it says so and prints `systemctl --user restart`, so
+   re-running the installer never stops a running home by surprise
+   (restarting every home after an update is 605's).
+11. **Under `--silent` the service question must be answered**
+   (`--setup-service` or `--no-setup-service`), as rmail's: an unattended
+   install never sets up, or skips, a service silently.  `--yes` answers
+   both questions yes.
+12. **A missing `--log-dir` folder is made** by the installer and said:
+   the service manager appends to a file but makes no folder.
 
 ## Related documents
 

@@ -1,0 +1,10 @@
+#!/bin/sh
+# rao-chat home: @HOME_COMMENT@
+# A runit service for this home (issue 604), written by
+# scripts/install-home; re-running the installer writes it again.  runit
+# starts it again about a second after it ends.  The launcher
+# (scripts/run-home) reads the home's environment file and stops the
+# home's programs itself when sent SIGTERM; give it the time to:
+#   sv -w 60 stop @SERVICE@
+exec >>@LOG_SH@ 2>&1
+exec chpst -u @USER@ @RUN_HOME_SH@ @PROJECT_SH@ @HOME_SH@
