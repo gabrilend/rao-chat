@@ -14,6 +14,7 @@ nothing.
 | libcrypto | `ffi.load("crypto")`, `OpenSSL_version`, SHA-256 of `abc` against its known digest, `EVP_aes_256_gcm` | yes |
 | git | `git --version` | yes |
 | flock | on the path (603's lock) | yes |
+| setsid | on the path (603 starts the home's programs with it) | yes |
 | tools | `find sort ls mkdir rm mv cp touch chmod stat kill sleep` runnable by the shell | yes |
 | RAM folder | `/dev/shm` written to | no |
 | ss/netstat | on the path (602's port check) | no |

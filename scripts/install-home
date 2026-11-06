@@ -394,7 +394,7 @@ add_path() {
         *) ENV_PATH="${ENV_PATH:+$ENV_PATH:}$1" ;;
     esac
 }
-for tool in luajit git flock; do
+for tool in luajit git flock setsid; do
     found="$(command -v "$tool" 2>/dev/null || true)"
     if [ -n "$found" ]; then add_path "$(dirname "$found")"; fi
 done

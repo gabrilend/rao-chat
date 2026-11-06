@@ -29,7 +29,8 @@ own code.
      second launcher for a home already running says so and exits 1,
      before starting anything;
   4. starts the starter (164) and the device server (187), each a child
-     it waits on, their output to its own (the service manager's log);
+     it waits on in a session of its own (`setsid`, decision 6), their
+     output to its own (the service manager's log);
   5. on SIGTERM, SIGINT or SIGHUP: touches the starter's `stop` and the
      device server's `stop` (their own ways to stop), waits up to
      `stop-wait` seconds (20) for both, then kills what is left and says
@@ -45,7 +46,10 @@ own code.
 
 ## Status
 
-Not built yet.
+Built 2026-11-06: `scripts/run-home`; referees 1 to 5 pass in
+`src/install/tests/234-test-run-home.lua`, which also tries SIGHUP and a
+stale `stop` file.  Four broken versions were each caught (no SIGTERM
+trap, half a home left running, no lock, a stale `stop` file kept).
 
 ## Rubric
 
@@ -124,6 +128,22 @@ the owner can overturn each.
 5. **The environment file belongs to the home**, `<home>/environment`:
    a person running a home by hand and a service manager running it get
    the same paths.
+
+### While building, 2026-11-06
+
+6. **The two programs run in sessions of their own (`setsid`)**: LuaJIT
+   sets its own SIGINT handler while a script runs, so a Ctrl-C at the
+   terminal would otherwise end the starter at once, with its gatherers
+   still running.  `setsid` joins `flock` in 601's check.
+7. **A stale `stop` file is removed before starting**: the starter reads
+   it in its loop and would stop as soon as it began, after a run that
+   ended without being asked (a power cut, a SIGKILL).
+8. **Gatherers that outlive the stop are sent SIGTERM**, their own clean
+   stop (163), before SIGKILL: they are found from their `state` files and
+   checked by their command line, so no other process is touched.
+9. **SIGINT is not tried by the referees**: a command a shell starts in
+   the background ignores SIGINT, and an ignored signal cannot be
+   trapped; SIGHUP is tried instead, through the same trap.
 
 ## Related documents
 

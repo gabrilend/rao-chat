@@ -46,3 +46,5 @@ portable home on a drive (rmail #616).
 - 602 — making a home: built 2026-11-06 (`scripts/install-home`,
   `src/install/232-make-home.lua`; referees in
   `src/install/tests/233-test-install-home.lua`).
+- 603 — running a home: built 2026-11-06 (`scripts/run-home`; referees in
+  `src/install/tests/234-test-run-home.lua`).
