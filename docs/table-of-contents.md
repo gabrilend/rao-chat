@@ -25,7 +25,9 @@ and issue files do not; they have their own indexes.
   the server's shape and its defences): what rmail does, the rules any
   correct answer must satisfy, the choices rmail made that rao-chat need
   not, the bugs it already hit, referee tests written from the rules, and
-  different formations rao-chat could try.
+  different formations rao-chat could try.  `installing-and-services.md`
+  does the same for phase 6: rmail's installer, its service files, its
+  restart and log scripts, and the rules (I1 to I12) phase 6 is graded by.
 
 ## Strategems
 - strategems/other-peoples-software-as-a-rubric.md - read a working
