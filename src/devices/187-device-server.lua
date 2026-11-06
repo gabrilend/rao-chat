@@ -58,13 +58,16 @@ local frames = require("125-frames")
 local keyring = require("127-keyring")
 local wait = require("162-wait-loop")
 local records = require("186-device-records")
+local mirror = require("192-mirror")
 
 local M = {}
 
 -- For referees only (188): RAO_DEVICES_BROKEN=wrong-key (replies sealed
 -- under another key), answer-unknown (an unknown key is answered in the
 -- clear), any-key (every frame tried under every key, so a connection
--- does not keep its device).
+-- does not keep its device).  (193): from-start (a catch-up is sent every
+-- message file, whatever the device holds), no-digest (positions only:
+-- no index however the digests disagree).
 M.broken = os.getenv("RAO_DEVICES_BROKEN") or ""
 
 local function now() return socket.gettime() end
@@ -137,6 +140,74 @@ function M.ring_of(list)
 end
 -- }}}
 
+-- {{{ function M.catch_up_replies
+-- the home's RAM folder, the device's positions (192's read_positions)
+-- → the answer to a catch-up (issue 304): a `file` for every `state`,
+-- `.tree` and `.room`, and for every message file after the device's
+-- position in its room (all of a room it did not list); an `index` for
+-- each listed room whose digest over the home's files up to that
+-- position is not the device's; then `caught-up`.
+M.INDEX_LINES = 4000   -- index lines per record, well under 124's cap
+function M.catch_up_replies(home_ram, positions)
+    local _, paths = mirror.listing(home_ram)
+    local replies = {}
+    for _, path in ipairs(paths) do
+        local kind, where = mirror.check_path(path)
+        local send = true
+        if kind == "message" then
+            local held = positions[where.room]
+            send = not held or M.broken == "from-start" or where.name > held.last
+        end
+        local content = send and mirror.read_file(home_ram .. "/" .. path)
+        if content then replies[#replies + 1] = { kind = "file", path = path, content = content } end
+    end
+    local rooms = mirror.rooms(home_ram, paths)
+    local tags = {}
+    for tag in pairs(positions) do tags[#tags + 1] = tag end
+    table.sort(tags)
+    for _, tag in ipairs(tags) do
+        local held, room = positions[tag], rooms[tag]
+        local entries = room and mirror.entries(home_ram, room.mailbox, tag, room.names, held.last) or {}
+        -- Path: the digests disagree (an edit, a loss, a late message, a
+        -- room the home no longer has) — the index; else positions alone.
+        if M.broken ~= "no-digest" and mirror.digest(entries) ~= held.digest then
+            local first = 1
+            repeat
+                local lines = {}
+                for i = first, math.min(#entries, first + M.INDEX_LINES - 1) do
+                    lines[#lines + 1] = entries[i].name .. " " .. entries[i].hash
+                end
+                replies[#replies + 1] = { kind = "index", room = tag, entries = table.concat(lines, "\n") }
+                first = first + M.INDEX_LINES
+            until first > #entries
+        end
+    end
+    replies[#replies + 1] = { kind = "caught-up", at = math.floor(now()) }
+    return replies
+end
+-- }}}
+
+-- {{{ function M.want_replies
+-- the home's RAM folder, a want record → a `file` for each named message
+-- file the home holds in that room, then `sent`; or nil and why.
+function M.want_replies(home_ram, record)
+    local room = mirror.rooms(home_ram)[record.room]
+    local replies = {}
+    for name in (record.names .. "\n"):gmatch("([^\n]*)\n") do
+        if name ~= "" then
+            if not mirror.is_message_name(name) then
+                return nil, "a want names '" .. name:sub(1, 40) .. "', which is not a message file"
+            end
+            local path = room and (room.mailbox .. "/inbox/" .. record.room .. "/" .. name)
+            local content = path and mirror.read_file(home_ram .. "/" .. path)
+            if content then replies[#replies + 1] = { kind = "file", path = path, content = content } end
+        end
+    end
+    replies[#replies + 1] = { kind = "sent", id = record.id }
+    return replies
+end
+-- }}}
+
 -- {{{ M.handlers
 -- kind → function(session, record) → a list of reply records, or nil and
 -- why to close the connection.  Later issues add their kinds.
@@ -144,12 +215,21 @@ M.handlers = {
     ping = function(_, record)
         return { { kind = "pong", id = record.id, at = math.floor(now()) } }
     end,
+    ["catch-up"] = function(session, record)
+        local positions, why = mirror.read_positions(record.rooms)
+        if not positions then return nil, why end
+        return M.catch_up_replies(session.server.home_ram, positions)
+    end,
+    want = function(session, record)
+        return M.want_replies(session.server.home_ram, record)
+    end,
 }
 -- }}}
 
 -- {{{ function M.serve_connection
 -- conn (162's), server ({deadline, keys = function() → ring, by_label},
--- on_refused, on_problem}) → nothing; the connection is closed at the end.
+-- home_ram, on_refused, on_problem}) → nothing; the connection is closed
+-- at the end.
 function M.serve_connection(conn, server)
     local session = { conn = conn, server = server }
     local pinned
@@ -281,6 +361,7 @@ local function main(args)
     local server = {
         deadline = settings.deadline,
         keys = keys,
+        home_ram = ram.home_ram(root, home_dir),
         on_refused = function()
             state.refused = state.refused + 1
             save()
