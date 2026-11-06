@@ -39,6 +39,8 @@ decision in its issue, and the owner may overturn it.
   referees 0 to 6).
 - 303 — pairing a device: built 2026-11-06 (`189-pair`, `190-device`'s
   `test`, referees in `191-test-pairing.lua`).
+- 304 — catching up: built 2026-11-06 (`192-mirror`, `catch-up` and
+  `want` in 187, 190's `catch-up`; referees in `193-test-catching-up.lua`).
 - 301 — the RAM inboxes as the viewer's interface: built 2026-11-05
   (`inbox/<room>/<written>-<id>`, `.room`, `.tree`, written by each
   gatherer; `typed/` in 301's shape, filed once under its own id; the

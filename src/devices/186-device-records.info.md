@@ -5,4 +5,6 @@ The records a home and its paired devices exchange inside device frames
 the log's escaping) with a table of its own, so device kinds and room
 kinds never mix.  `encode(record)` errors on a wrong record; `decode(line)`
 gives the record or nil and why.  302's kinds: `ping` (id), `pong` (id,
-at).
+at). 304's: `catch-up` (rooms), `file` (path,
+content), `index` (room, entries), `want` (id, room, names), `sent`
+(id), `caught-up` (at).

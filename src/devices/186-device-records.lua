@@ -13,16 +13,37 @@
 -- Kinds (each later issue adds its own here):
 --   ping   id                  "are you there?"  (302)
 --   pong   id, at              the ping's id, the home's clock  (302)
+--   catch-up  rooms            device → home: one line per room it holds,
+--                              "<room> <last name> <digest>" (304, 192)
+--   file   path, content       home → device: one file of 301's layout,
+--                              its path relative to the home's RAM folder
+--   index  room, entries       home → device: "<name> <hash>" lines of the
+--                              room's files up to the device's position,
+--                              when the digests disagree (several records
+--                              for one room when the lines are many)
+--   want   id, room, names     device → home: the message files to send
+--                              again, one name a line
+--   sent   id                  home → device: every file the want named
+--                              that the home holds has been sent
+--   caught-up  at              home → device: the end of the answer to a
+--                              catch-up, the home's clock  (304)
 
 local KINDS = {
     ping = { "id" },
     pong = { "id", "at" },
+    ["catch-up"] = { "rooms" },
+    file = { "path", "content" },
+    index = { "room", "entries" },
+    want = { "id", "room", "names" },
+    sent = { "id" },
+    ["caught-up"] = { "at" },
 }
 
 -- Field rules: a field not named here may hold any text.
 local RULES = {
     id = function(v) return #v >= 1 and #v <= 64 and v:match("^[%w%-]+$") ~= nil end,
     at = function(v) return v:match("^%d+$") ~= nil and #v <= 15 end,
+    room = function(v) return #v == 32 and v:match("^%x+$") ~= nil end,
 }
 
 local ESCAPE = { ["\\"] = "\\\\", ["\t"] = "\\t", ["\n"] = "\\n", ["\r"] = "\\r" }
