@@ -493,7 +493,8 @@ To be asked and answered one at a time before the roadmap is written.
    exactly 30 the cards must add up to zero.  Choices: −10 … +10 in
    one-second steps (21 cards); −10, −8 … +8, +10 in two-second steps (11
    cards); or −5 … +5 (11 cards, a ±5 second spread).
-5. **Trusting the web page.**  Serve the web client only on the home
+5. *(answered 2026-11-06 by the builder, issue 401 decision 1: a copy of
+   the page kept on the computer and opened from there)*  **Trusting the web page.**  Serve the web client only on the home
    network; over HTTPS with a certificate (hard for a home address); or
    have people keep a copy of the page on their computer and open it from
    there, so only the encrypted connection crosses the internet?

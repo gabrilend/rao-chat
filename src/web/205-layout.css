@@ -1,0 +1,151 @@
+/* 205-layout.css - where things go (issue 401; planning section 9: the
+ * room trees in a left column, the open room on the right with its
+ * compose line at the bottom, a top bar, and People and Settings opening
+ * over the room view).  Colours only by the palette's names (204). */
+
+* { box-sizing: border-box; }
+
+html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--background);
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-size: 15px;
+}
+
+body {
+    display: grid;
+    grid-template-rows: auto auto 1fr;
+    height: 100vh;
+}
+
+button, input, textarea {
+    font: inherit;
+    color: var(--text);
+    background: var(--background);
+    border: 1px solid var(--line);
+}
+button { cursor: pointer; padding: 0.15em 0.6em; }
+button:disabled, textarea:disabled { color: var(--text-dim); cursor: default; }
+
+.quiet { color: var(--text-dim); }
+
+/* {{{ the top bar */
+#top-bar {
+    display: flex;
+    align-items: center;
+    gap: 1em;
+    padding: 0.4em 0.8em;
+    border-bottom: 1px solid var(--line);
+}
+#home-name {
+    border: none;
+    text-decoration: underline;   /* section 8: the title is the home's name, underlined */
+    font-weight: bold;
+}
+#connection-state { color: var(--text-dim); }
+#connection-state.live { color: var(--accent); }
+#tabs { margin-left: auto; display: flex; gap: 0.3em; }
+.tab-rooms { color: var(--tab-rooms); border-color: var(--tab-rooms); }
+.tab-people { color: var(--tab-people); border-color: var(--tab-people); }
+.tab-settings { color: var(--tab-settings); border-color: var(--tab-settings); }
+.tab-rooms.selected { background: var(--tab-rooms); color: var(--background); }
+.tab-people.selected { background: var(--tab-people); color: var(--background); }
+.tab-settings.selected { background: var(--tab-settings); color: var(--background); }
+/* }}} */
+
+/* {{{ the error strip */
+#error-strip {
+    display: flex;
+    align-items: baseline;
+    gap: 1em;
+    padding: 0.3em 0.8em;
+    color: var(--error);
+    border-bottom: 1px solid var(--error);
+}
+#error-strip[hidden] { display: none; }
+#error-lines { margin: 0; padding: 0; list-style: none; }
+#retry-now { color: var(--error); border-color: var(--error); }
+/* }}} */
+
+/* {{{ the two columns */
+#main {
+    display: grid;
+    grid-template-columns: minmax(12em, 22em) 1fr;
+    min-height: 0;
+}
+#room-tree {
+    overflow: auto;
+    padding: 0.6em;
+    border-right: 1px solid var(--line);
+}
+#tree-rows, #tree-rows ul { list-style: none; margin: 0; padding-left: 1em; }
+#tree-rows { padding-left: 0; }
+.tree-row { display: block; width: 100%; text-align: left; border: none; padding: 0.2em 0.3em; }
+.tree-row.open { background: var(--line); }
+.tree-row .last-line { display: block; color: var(--text-dim); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.tree-row .unread { color: var(--accent); }
+.tree-fold { border: none; color: var(--text-dim); width: 1.5em; padding: 0; }
+
+#room {
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    min-height: 0;
+}
+#room-title { font-size: 1em; margin: 0; padding: 0.5em 0.8em; border-bottom: 1px solid var(--line); }
+#room-lines { list-style: none; margin: 0; padding: 0.6em 0.8em; overflow: auto; }
+/* }}} */
+
+/* {{{ a room's lines (section 7) */
+.line { margin: 0.1em 0; max-width: 75%; white-space: pre-wrap; overflow-wrap: anywhere; }
+.line.mine { margin-left: auto; text-align: left; color: var(--mine); }
+.line.theirs { margin-right: auto; color: var(--theirs); }
+.line .name { display: block; margin-top: 0.7em; font-weight: bold; }
+.line .from, .line .when, .line .marks { color: var(--text-dim); font-weight: normal; }
+.line .marked { color: var(--text-dim); font-style: italic; }
+.line.notice {
+    margin: 0.8em auto;
+    max-width: 60%;
+    text-align: center;
+    color: var(--notice);
+    border: 1px solid var(--notice);
+    padding: 0.3em 0.6em;
+}
+.line:target { outline: 1px solid var(--accent); }
+.marker { color: var(--accent); text-align: right; }
+/* }}} */
+
+/* {{{ the compose line */
+#compose {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0.4em;
+    padding: 0.5em 0.8em;
+    border-top: 1px solid var(--line);
+}
+#compose-text { resize: none; max-height: 40vh; overflow-y: auto; }
+#compose-note { grid-column: 1 / -1; margin: 0; }
+/* }}} */
+
+/* {{{ panels over the room view */
+.panel {
+    position: fixed;
+    top: 3em;
+    right: 1em;
+    bottom: 1em;
+    width: min(40em, calc(100% - 2em));
+    overflow: auto;
+    padding: 0.8em 1em;
+    background: var(--panel);
+    border: 1px solid var(--text-dim);
+}
+.panel[hidden] { display: none; }
+.panel-head { display: flex; align-items: baseline; justify-content: space-between; }
+.panel-head h2 { font-size: 1em; margin: 0; }
+.panel label { display: block; margin: 0.8em 0; }
+.panel label input[type="text"], .panel label input[type="password"], .panel textarea { display: block; width: 100%; margin-top: 0.2em; }
+.panel label.tick input { margin-right: 0.5em; }
+#settings-words { white-space: pre-wrap; color: var(--accent); }
+#settings-words.problem { color: var(--error); }
+/* }}} */

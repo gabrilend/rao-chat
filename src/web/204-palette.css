@@ -1,0 +1,24 @@
+/* 204-palette.css - the page's one palette (issue 401; planning section 7:
+ * "One palette, defined once, read by every page and screen rather than
+ * copied").  These are rmail's colours (planning section 8): a black
+ * background, goldenrod text, dim goldenrod for what is secondary, and a
+ * cyan accent.  Every other file of the page names these properties and
+ * writes no colour of its own (401's referee 4), so changing a colour
+ * here changes it everywhere. */
+
+:root {
+    --background: #000000;
+    --text: #FFD040;          /* goldenrod: the text of the page */
+    --text-dim: #B89020;      /* dim goldenrod: times, addresses, notes */
+    --accent: #00E5FF;        /* cyan: progress, the live state, links */
+    --mine: #00E5FF;          /* the person's own messages */
+    --theirs: #FFD040;        /* everyone else's */
+    --notice: #B89020;        /* what the home says (neither speaker) */
+    --error: #FF5050;         /* the error strip */
+    --line: #3A2E08;          /* rules and boxes, quieter than the text */
+    --panel: #0C0A02;         /* the panels that open over the room */
+    --tab-rooms: #40FF80;     /* each tab its own bright colour (section 8) */
+    --tab-people: #FF60C0;
+    --tab-settings: #60A0FF;
+    --font-mono: "DejaVu Sans Mono", "Menlo", "Consolas", monospace;
+}

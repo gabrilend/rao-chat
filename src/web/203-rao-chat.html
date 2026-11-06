@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<!--
+  203-rao-chat.html - the web client (phase 4, issue 401).
+
+  Open this file in a browser from a copy of this folder on your own
+  computer (planning question 5, decided in 401: the page is never fetched
+  from the home; only the sealed WebSocket crosses the network).  Every
+  file it uses is in this folder and named below; nothing comes from
+  anywhere else.  Read them in their numbered order.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>rao-chat</title>
+<link rel="stylesheet" href="204-palette.css">
+<link rel="stylesheet" href="205-layout.css">
+</head>
+<body>
+
+<header id="top-bar">
+  <button id="home-name" type="button" title="Your homes">rao-chat</button>
+  <span id="connection-state">not connected</span>
+  <nav id="tabs" aria-label="Panels">
+    <button type="button" class="tab tab-rooms" data-panel="rooms">Rooms</button>
+    <button type="button" class="tab tab-people" data-panel="people">People</button>
+    <button type="button" class="tab tab-settings" data-panel="settings">Settings</button>
+  </nav>
+</header>
+
+<div id="error-strip" role="status" hidden>
+  <ul id="error-lines"></ul>
+  <button type="button" id="retry-now" hidden>retry now</button>
+</div>
+
+<main id="main">
+  <nav id="room-tree" aria-label="Rooms">
+    <p class="quiet" id="tree-empty">No rooms yet: open Settings to reach your home.</p>
+    <ul id="tree-rows"></ul>
+  </nav>
+  <section id="room" aria-label="The open room">
+    <h1 id="room-title"></h1>
+    <ol id="room-lines"></ol>
+    <form id="compose" autocomplete="off">
+      <textarea id="compose-text" rows="1" placeholder="Enter sends, Shift+Enter starts a new line" disabled></textarea>
+      <button type="submit" id="compose-send" disabled>Send</button>
+      <p id="compose-note" class="quiet"></p>
+    </form>
+  </section>
+</main>
+
+<section id="homes-panel" class="panel" aria-label="Your homes" hidden>
+  <header class="panel-head"><h2>Your homes</h2><button type="button" class="panel-close">close</button></header>
+  <ul id="homes-list"></ul>
+</section>
+
+<section id="people-panel" class="panel" aria-label="People" hidden>
+  <header class="panel-head"><h2>People</h2><button type="button" class="panel-close">close</button></header>
+  <p class="quiet">Your direct-message rooms.  People are changed on the home, not from here yet.</p>
+  <ul id="people-list"></ul>
+</section>
+
+<section id="settings-panel" class="panel" aria-label="Settings" hidden>
+  <header class="panel-head"><h2>Settings</h2><button type="button" class="panel-close">close</button></header>
+  <form id="settings-form" autocomplete="on">
+    <label>Your name for this home
+      <input id="home-label" name="home-label" type="text" spellcheck="false">
+    </label>
+    <label>The lines pairing printed (<code>189-pair.lua ... add &lt;label&gt; --browser</code>), without the token
+      <textarea id="settings-lines" name="settings-lines" rows="8" spellcheck="false"></textarea>
+    </label>
+    <label>Token
+      <input id="settings-token" name="token" type="password" autocomplete="current-password" spellcheck="false">
+    </label>
+    <label class="tick"><input id="remember" type="checkbox"> remember these lines on this computer (never the token)</label>
+    <label>Signature (the last line of what you send; at most 80 characters)
+      <input id="signature" name="signature" type="text" spellcheck="false">
+    </label>
+    <p class="buttons">
+      <button type="submit" id="connect">Connect</button>
+      <button type="button" id="test-connection">Test the connection</button>
+      <button type="button" id="forget-home">Forget this home</button>
+    </p>
+    <p id="settings-words" role="status"></p>
+  </form>
+</section>
+
+<script src="206-rao.js"></script>
+<script src="207-page.js"></script>
+</body>
+</html>

@@ -52,6 +52,18 @@ runs can be read in full".
   page's work without the page (decision 4).  Later issues add its
   commands, as 190 grew a command per phase 3 issue.
 
+## Status
+
+Built 2026-11-06: `src/web/203-rao-chat.html` (the frame of section 9),
+`204-palette.css`, `205-layout.css`, `206-rao.js` (`rao` and its byte
+helpers), `207-page.js` (the tabs and panels, the "not connected" state,
+and the words when WebCrypto is missing); the stand-in browser,
+`src/web/tests/208-stand-in-browser.js` (`load`).  Referees 1 to 5 pass,
+1 to 4 also against copies of the folder made wrong on purpose
+(`src/web/tests/209-test-the-pages-folder.lua`), with 5b (no WebCrypto:
+the page says why) and 5c (a script touching the page as it loads is
+caught).
+
 ## Rubric
 
 - **What the browser runs can be read in full** (planning section 9).
@@ -146,6 +158,20 @@ the owner can overturn each.
 6. **The referees are Lua files**, as every other referee, which drive
    the stand-in as they drive 190, so the suite finds them as it finds
    the others.
+
+### While building, 2026-11-06
+
+7. **The page says why when the browser gives it no WebCrypto** (a page
+   opened from a network address is not a secure context): the error
+   strip names the cause and the cure, instead of every later step
+   failing without a word.
+8. **The stand-in loads the page's own script too**: it starts nothing
+   without a `document`, so loading it checks that it touches nothing as
+   it loads, like the others.
+9. **The checks of referees 2 to 4 are by pattern over the files**, and
+   are shown to work by running them on copies made wrong; they hold the
+   folder to its rules, not a browser.  An address in a comment counts
+   too, so the files name none.
 
 ## Related documents
 
