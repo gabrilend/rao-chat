@@ -35,6 +35,16 @@
 //                        "ok <kind> <the line again, hex> <field>=<hex>..."
 //                        or "refused <why>"; "table" lines give the kinds,
 //                        their fields, and the rule fields (402)
+//   settings --settings <file> [--token <file>]
+//                        "ok", or "refused: <why>" (403)
+//   remember --settings <file>
+//                        what the page would keep of the lines (403)
+//   test --settings <file> [--token <file>] [--public]
+//                        the connection test's words; exit 1 unless
+//                        answered (403)
+//   reach --settings <file> [--token <file>]
+//                        "reached <address> <port> by way of <setting>",
+//                        or why not; exit 1 unless reached (403)
 //
 // Exit status: 0 done, 1 the command failed (said on stderr), 2 usage.
 
@@ -156,6 +166,42 @@ COMMANDS.records = function () {
         if (decoded.why) { say("refused " + decoded.why); return; }
         const fields = records.KINDS[decoded.record.kind].map((name) => name + "=" + hexOf(decoded.record[name]));
         say("ok " + decoded.record.kind + " " + hexOf(records.encode(decoded.record)) + " " + fields.join(" "));
+    });
+};
+// }}}
+
+// {{{ settings / remember / test / reach (403)
+// the page's settings from the files given, or a thrown reason
+function settingsOf() {
+    const token = option("--token") ? readToken(option("--token")) : "";
+    const read = globalThis.rao.link.readSettings(fs.readFileSync(option("--settings"), "utf8"), token);
+    if (read.why) { throw new Error("the settings were refused: " + read.why); }
+    return read.settings;
+}
+COMMANDS.settings = function () {
+    load(PROJECT);
+    const token = option("--token") ? readToken(option("--token")) : "";
+    const read = globalThis.rao.link.readSettings(fs.readFileSync(option("--settings"), "utf8"), token);
+    say(read.why ? "refused: " + read.why : "ok");
+};
+COMMANDS.remember = function () {
+    load(PROJECT);
+    process.stdout.write(globalThis.rao.link.rememberText(fs.readFileSync(option("--settings"), "utf8")));
+};
+COMMANDS.test = function () {
+    load(PROJECT);
+    return globalThis.rao.link.test(settingsOf(), flag("--public") ? "public" : "home-network").then((result) => {
+        say(result.words);
+        return result.ok ? 0 : 1;
+    });
+};
+COMMANDS.reach = function () {
+    load(PROJECT);
+    return globalThis.rao.link.reach(settingsOf()).then((result) => {
+        if (!result.link) { say(result.why); return 1; }
+        say("reached " + result.where + " by way of " + result.setting);
+        result.link.close();
+        return 0;
     });
 };
 // }}}

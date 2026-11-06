@@ -45,3 +45,6 @@ home does not have yet.
   `src/web/tests/209-test-the-pages-folder.lua`).
 - 402 — sealing in the page: built 2026-11-06 (`src/web/210-sealing.js`,
   `211-records.js`; referees in `src/web/tests/212-test-sealing-in-the-page.lua`).
+- 403 — reaching the home from the page: built 2026-11-06 (`189 add
+  --browser`, `src/web/213-reaching-the-home.js`; referees in
+  `src/web/tests/215-test-reaching-the-home.lua`, with the kit `214`).
