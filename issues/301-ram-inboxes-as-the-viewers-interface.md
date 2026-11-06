@@ -173,6 +173,35 @@ Made by the builder; the owner can overturn each.
     `state`** (decision 7), printed by `problems` with the mailbox they
     came from.
 
+### Open questions 1 and 2, 2026-11-06
+
+Answered by the builder under the owner's standing instruction of
+2026-11-02 ("If there are open questions, answer them yourself"); the
+owner may overturn each.  The "held" marking on both was an agent's
+(the rubric list of 2026-09-27 and decision 8 above), not the owner's.
+
+22. **Question 1: a device port per home** (rubric question 24), set in
+    the home's `config` as `devices.port`, with no default, beside every
+    mailbox port and never one of them.  Issue 302.  The viewer is one per
+    home ("Many data gatherers, one viewer"), so the link to a phone or a
+    browser belongs to the home, not to a mailbox; and the one exchange a
+    browser must make in the clear (the WebSocket upgrade, issue 308) is
+    kept off the mailbox ports, which still answer nothing in the clear.
+    Cost: a second port to forward for reaching the home from outside.
+23. **Question 2: catching up by sealed records per room, not by
+    synchronising the folder.**  Issue 304.  A device keeps a mirror of
+    this folder in this issue's exact layout and tells the home, per
+    room, the name of the last message file it holds and a digest of
+    the files it holds; the home sends what comes after, and only when
+    the digests disagree (an edit or a deletion changed an earlier file)
+    an index of names and hashes, from which the device asks for what
+    differs.  The usual reconnect is the planning document's one
+    exchange; edits, which change earlier files in this shape, are still
+    caught (209's cross-check in small); and since the mirror has this
+    layout, the reference viewer (183) reads a device's mirror unchanged.
+    A synchronising tool would need its own keys or clear text on the
+    wire and would show the folder's layout to anyone watching.
+
 ## Rubric
 
 rmail's thin client and its inbox files are the neighbour (structure note,
@@ -234,12 +263,14 @@ folder changes to a phone or a browser.
 
 ## Open questions
 
-1. **Which port phones and browsers use** to reach the home: a mailbox port
-   answers nothing in the clear, and a WebSocket starts with plain text.
-   A separate device port per home?  (Rubric question 24.)
-2. **How a remote viewer mirrors the folder**: a sealed "what changed since
-   id X" per room (planning section 6's catching up), or the folder
-   itself synchronised?
+1. *(answered 2026-11-06, decision 22: a device port per home, issue
+   302)*  **Which port phones and browsers use** to reach the home: a
+   mailbox port answers nothing in the clear, and a WebSocket starts with
+   plain text.  A separate device port per home?  (Rubric question 24.)
+2. *(answered 2026-11-06, decision 23: sealed catching up per room, issue
+   304)*  **How a remote viewer mirrors the folder**: a sealed "what
+   changed since id X" per room (planning section 6's catching up), or the
+   folder itself synchronised?
 3. **The whole history in RAM**: every message of every room as a file is
    a lot of RAM for a long-lived home.  Keep only recent messages in
    `inbox/`, and fetch older ones from disk on request?

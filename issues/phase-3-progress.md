@@ -10,10 +10,33 @@ once, and the locked-screen check-in, as the planning document describes.
 Counts: `/home/ritz/programming/ai-stuff/scripts/progress-dashboard.lua
 /home/ritz/programs/rao-chat -m`.
 
+## Issues (written 2026-11-06 from planning section 6)
+
+Build order, each blocked only by earlier ones:
+
+- 302 — the device port (a port of the home's, frames sealed under a
+  paired device's own token)
+- 303 — pairing a device (the `devices` file, `189-pair`, the reference
+  device's connection test)
+- 304 — catching up (positions and digests per room, the device's mirror)
+- 305 — writing from a device (`typed` records into the right gatherer)
+- 306 — live pushing, and several devices at once
+- 307 — choosing an address (home network first, then public)
+- 308 — the locked-screen check-in (the deck, −5 … +5)
+- 309 — the browser's way in (the WebSocket upgrade on the device port)
+- 310 — phase 3 demo
+
+The questions that held them (rubric question 24, 301's questions 1 and
+2, planning question 4) were answered by the builder on 2026-11-06 under
+the owner's standing instruction of 2026-11-02; each answer is a dated
+decision in its issue, and the owner may overturn it.
+
 ## Completed Issues
 (None yet.)
 
 ## In Progress
+- 302 — the device port: built 2026-11-06 (`src/devices/185` to `188`;
+  referees 0 to 6).
 - 301 — the RAM inboxes as the viewer's interface: built 2026-11-05
   (`inbox/<room>/<written>-<id>`, `.room`, `.tree`, written by each
   gatherer; `typed/` in 301's shape, filed once under its own id; the
