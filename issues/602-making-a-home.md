@@ -80,7 +80,15 @@ config, "a stated value in the file, not a silent default in code".
 
 ## Status
 
-Not built yet.
+Built 2026-11-06: `scripts/install-home` (the questions, the option
+store, the environment file, the summary) and
+`src/install/232-make-home.lua` (the writer, and `--show` for the
+suggestions); referees 1 to 7 pass in
+`src/install/tests/233-test-install-home.lua`.  Four broken versions
+were each caught (no listening check, nothing stated, `--silent` taking
+a suggestion, a kept setting rewritten).  This machine has neither `ss`
+nor `netstat`, so referee 3 puts a stand-in `ss` on the `PATH`; the real
+tools' output is read the way rmail reads it, untried here.
 
 ## Rubric
 
@@ -173,6 +181,21 @@ the owner can overturn each.
    Another folder can be given with `--project`.
 7. **The installer's own language is Bash** (the owner's list: Lua,
    Bash, C), as rmail's; every write goes through 232 (Lua).
+
+### While building, 2026-11-06
+
+8. **A port this home already holds is not checked against listeners**:
+   re-running the installer while the home runs would otherwise find its
+   own ports taken.
+9. **Questions are read from standard input** (with line editing when it
+   is a terminal), not from `/dev/tty` as rmail's are: an answer can then
+   be piped in, and input that ends is "no answer" and stops the run
+   rather than taking a suggestion.
+10. **Settings added by the installer go at the end under their
+    question**; a setting already in the file is changed in place (002's
+    `set_config`), so the person's order and comments stay.
+11. **The suggested name falls back to `home`** when the login name cannot
+    be read; `whoami` first, then `id -un`.
 
 ## Related documents
 
