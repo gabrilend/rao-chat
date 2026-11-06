@@ -26,6 +26,18 @@ browser's WebCrypto.
   server) is required, as the standard says; text messages, fragments
   over the cap, and unmasked frames close the connection.
 
+## Status
+
+Built 2026-11-06: in `src/devices/187-device-server.lua`, the upgrade
+(`read_head`, `upgrade_answer`, `accept_value` through libcrypto's SHA-1
+and base64), the WebSocket wrapper (`M.websocket`, one 302 frame per
+binary message) and a client side (`websocket_client`); the setting
+`devices.websocket-path`; and 190 reaching its home as a browser when
+its config has `websocket-path`.  Referees 1 to 4 pass, 2 catching its
+broken version (`src/devices/tests/198-test-browsers-way-in.lua`), with
+5 (the reference device as a browser catches up and is pushed to through
+the upgrade) and 6 (the setting is required).
+
 ## Referees
 
 1. **The upgrade is answered** with the accept value the standard's own
@@ -48,6 +60,25 @@ the owner can overturn each.
    default), so the port gives nothing away to a scanner guessing `/`.
 2. **Serving the page itself is phase 4's** (planning question 5, how to
    trust the page): this issue serves no files.
+
+### While building, 2026-11-06
+
+3. **Every fragment is refused, not only those over the cap**: a 302
+   frame is always sent as one whole binary message (browsers send a
+   `send()` of an ArrayBuffer whole), so fragments are never needed and
+   joining them would be one more thing to get wrong.
+4. **WebSocket pings and pongs are not answered** (only a close is
+   understood, as the end); the device keeps its connection with 302's
+   sealed `ping` (306), so nothing is said outside a sealed frame.
+5. **The request's head is capped at 4096 bytes** (`HEAD_MOST`) and must
+   arrive within the frame deadline.  `Connection` may list other tokens
+   beside `Upgrade` (browsers send `keep-alive, Upgrade`).
+6. **The WebSocket code lives in 187** beside the port it guards, and 190
+   borrows its client half: the device module's numbers end at 199, so
+   there is no number for a file of its own.
+7. **The setting is required**, like every other: a home with no browser
+   still names a path.  It is checked to be `/` and letters, digits and
+   `- . _ ~ /`.
 
 ## Related documents
 

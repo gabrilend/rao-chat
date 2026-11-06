@@ -107,7 +107,7 @@ local function start(address)
     listening = address == "any" and "127.0.0.2" or address
     local h = rooms.open_home(HOME)
     for key, value in pairs({ ["devices.port"] = tostring(PORT), ["devices.address"] = address,
-                              ["devices.frame-deadline"] = "2", ["devices.idle-limit"] = "5",
+                              ["devices.frame-deadline"] = "2", ["devices.idle-limit"] = "5", ["devices.websocket-path"] = "/socket",
                               ["gatherer.ram-root"] = ROOT .. "/ram" }) do
         rooms.set_config(h, key, value)
     end

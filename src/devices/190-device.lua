@@ -115,6 +115,8 @@ end
 -- }}}
 
 -- {{{ function M.read_config
+-- (A config may also hold `websocket-path`: then the device reaches its
+-- home as a browser does, through 309's upgrade.)
 -- device folder → the settings, or nil and why.
 function M.read_config(folder)
     local handle = io.open(folder .. "/config", "rb")
@@ -138,6 +140,7 @@ function M.read_config(folder)
     end
     local good, why = pcall(tokens.check_token, config.token)
     if not good then return nil, "token: " .. tostring(why) end
+    config["websocket-path"] = values["websocket-path"]
     return config
 end
 -- }}}
@@ -211,6 +214,15 @@ function M.read_record(sock, pair)
 end
 -- }}}
 
+-- {{{ local function server_module
+-- 187 as a module, for its WebSocket layer (309), loaded when first needed.
+local loaded_server
+local function server_module()
+    loaded_server = loaded_server or require("187-device-server")
+    return loaded_server
+end
+-- }}}
+
 -- {{{ function M.reach
 -- config → a socket whose home has answered a sealed ping, where (the
 -- address and port), and which setting it was ("home-network" or
@@ -227,6 +239,17 @@ function M.reach(config)
         local address = config[setting]
         local where = address .. " " .. config.port
         local sock, failed = M.connect(config, address, seconds)
+        -- Path: a browser's way in (309) — the upgrade first, then the
+        -- same frames inside WebSocket messages.
+        if sock and config["websocket-path"] then
+            local plain = sock
+            sock, failed = server_module().websocket_client(plain, address, config["websocket-path"])
+            if not sock then
+                plain:close()
+                if M.broken ~= "fall-through" then return nil, where .. " did not take the WebSocket upgrade: " .. failed end
+                tried[#tried + 1] = setting .. ": " .. where .. " did not take the WebSocket upgrade: " .. failed
+            end
+        end
         if sock then
             local pair, id = room_key.key_pair(config.token), new_id()
             local reply, lost
@@ -533,7 +556,7 @@ function M.live(sock, pair, folder, where, config, seconds, out)
         if socket.gettime() - last_sent >= config["keep-alive"] then
             if not send({ kind = "ping", id = new_id() }) then return nil, where .. " closed the connection" end
         end
-        local readable = socket.select({ sock }, nil, 0.2)
+        local readable = socket.select({ sock.raw or sock }, nil, 0.2)
         if readable and #readable > 0 then
             local record, lost = M.read_record(sock, pair)
             if not record then

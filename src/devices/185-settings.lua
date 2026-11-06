@@ -12,10 +12,14 @@
 -- devices.idle-limit — whole seconds a device's connection may be quiet
 --   (no frame begun) after its first frame before the home closes it
 --   (issue 306).  No default; at least 1.
+-- devices.websocket-path — the one path a browser's WebSocket upgrade is
+--   answered on (issue 309), starting with "/"; any other request gets
+--   not a byte.  No default, so a scanner guessing "/" learns nothing.
 
 return {
     "devices.port",
     "devices.address",
     "devices.frame-deadline",
     "devices.idle-limit",
+    "devices.websocket-path",
 }

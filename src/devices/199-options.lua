@@ -1,5 +1,5 @@
 -- 199-options.lua — the undecided choices of the device port (issues
--- 302 and 306), written down for the options tally (scripts/tally-options, issue
+-- 302, 306 and 309), written down for the options tally (scripts/tally-options, issue
 -- 106) and the demos.  Plain data: nothing here runs.  Numbered at the
 -- end of the devices module's block, as 019, 039 and 059 are for theirs,
 -- so the module's later files keep their reading order.
@@ -82,5 +82,23 @@ return {
             },
         },
         leaning = "90, so a phone on a slow network that pings every 30 s is never dropped.",
+    },
+    {
+        id = "devices-websocket-path",
+        question = "On which path does the device port answer a browser's WebSocket upgrade?",
+        waits_on = "owner",
+        detail = "issue 309 (decision 1: a setting with no default)",
+        config_key = "devices.websocket-path",
+        variants = {
+            {
+                name = "/rao-chat-socket",
+                summary = "The one path a browser's upgrade is answered on; every other request gets not a "
+                    .. "byte. A path of the owner's own choosing tells a scanner nothing.",
+                built_in = BUILT .. " (serve_connection, upgrade_answer)",
+                tests = "src/devices/tests/198-test-browsers-way-in.lua (referees 1 and 2)",
+                findings = "Another path, or a plain GET, is closed with not a byte (referee 2).",
+            },
+        },
+        leaning = "A path only the owner's pages know, as a second, weak guard beside the device token.",
     },
 }
