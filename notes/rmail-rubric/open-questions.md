@@ -13,7 +13,10 @@ Open questions section now carries it).  Issue numbers changed meaning in
 places: 211 is the mailbox gatherer, 212 where a mailbox can be reached,
 213 finding housemates, 214 signatures, 215/215a/215b git per mailbox,
 301 the RAM inboxes as the viewer's interface.  New questions found while
-writing those issues are listed at the end.
+writing those issues are listed at the end.  A third mark, **Decided**
+(2026-11-06), is a builder's answer under the owner's standing instruction
+of 2026-11-02 ("If there are open questions, answer them yourself"),
+which the owner may overturn.
 
 ## Blocks all of phase 2
 
@@ -160,8 +163,9 @@ writing those issues are listed at the end.
 ## Running the server (phases 3 and 6)
 
 24. **Which port phones and browsers use**; a WebSocket starts with plain
-    text, which a mailbox port should not answer.  **Held by** 301
-    (question 1).
+    text, which a mailbox port should not answer.  **Decided** 2026-11-06
+    by the builder (301, decision 22; the owner may overturn it): a device
+    port per home, `devices.port`, never a mailbox port; issue 302.
 25. **Hand-editing entries or config while the server runs** (the change
     bell only hears its own program).  Sharper now: a gatherer works on a
     RAM copy, so a hand edit on disk is overwritten at the next sync.
