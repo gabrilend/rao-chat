@@ -311,7 +311,10 @@
             }
             var setting = order[i][0];
             return connect(settings, settings[setting], order[i][1]).then(function (result) {
-                if (result.link) { return { link: result.link, where: result.where, setting: setting }; }
+                if (result.link) {
+                    result.link.where = result.where;
+                    return { link: result.link, where: result.where, setting: setting };
+                }
                 if (result.opened) { return told({ why: result.why }); }
                 tried.push(setting + ": " + result.why);
                 return attempt(i + 1);

@@ -48,3 +48,5 @@ home does not have yet.
 - 403 — reaching the home from the page: built 2026-11-06 (`189 add
   --browser`, `src/web/213-reaching-the-home.js`; referees in
   `src/web/tests/215-test-reaching-the-home.lua`, with the kit `214`).
+- 404 — catching up in the page: built 2026-11-06 (`src/web/216-mirror.js`;
+  referees in `src/web/tests/217-test-catching-up-in-the-page.lua`).

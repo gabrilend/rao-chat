@@ -151,12 +151,14 @@ function M.new(DIR, name, options)
     end
     local function ram_home_of(tag) return rooms.open_home(t.HOME_RAM .. "/" .. home.mailbox_of[tag] .. "/home") end
     local written = 1000000100
-    -- tag, text, from (nil: an address) → the message's id; the inbox is
+    -- tag, text, from (nil: an address), written (nil: the next time) →
+    -- the message's id; the inbox is
     -- not written again until write_inbox
-    function t.add_message(tag, text, from)
+    function t.add_message(tag, text, from, at)
         written = written + 10
+        local when = at or written
         local id = message_log.new_message_id()
-        message_log.append(ram_home_of(tag), tag, { id = id, from = from or "10.0.0.9 5000", written = written,
+        message_log.append(ram_home_of(tag), tag, { id = id, from = from or "10.0.0.9 5000", written = when,
             arrived = written + 1, text = text })
         return id
     end
