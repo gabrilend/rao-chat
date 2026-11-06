@@ -59,3 +59,8 @@ home does not have yet.
   referees in `src/web/tests/224-test-live-in-the-page.lua`).
 - 408 — People and Settings: built 2026-11-06 (`src/web/225-panels.js`;
   referees in `src/web/tests/226-test-people-and-settings.lua`).
+- 409 — phase 4 demo: built 2026-11-06 (`issues/completed/demos/phase-4-demo`,
+  `src/phase-4-demo/227` and `228`; referee `229-test-phase-4-demo.lua`).
+  Two pages, one on each home, talk to each other; Node stands in for
+  both browsers, and the page's drawing is tried only on the stand-in's
+  paper document (405 decision 10), so a real browser is still to try.

@@ -47,3 +47,8 @@ speaking WebSocket, standing in for phase 4's web client.
 
 A scene raises an error when what it shows did not happen, so 200
 counts it as could-not.
+
+`M.helpers`: the small helpers the scenes use (`quote`, `seconds`,
+`read_all`, `shell`, `write_private`, `wait_until`, `alive`, `listens`,
+`holding`, `compare`, `body_lines`, `short`), given out so the phase 4
+demo (228) builds its world and prints its figures the same way.

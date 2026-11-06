@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+#
+# phase-4-demo - shows phase 4 of rao-chat working: the web client.
+#
+# Two homes at 127.0.0.2 and .3, each a real rao-home with its own RAM
+# folder, its gatherer process and its device server, with one room
+# between them (the phase 3 demo's world); a web page paired with each
+# home, each the page's own scripts (src/web) run by the stand-in browser
+# under Node, which stands in for a browser, reaching its home through a
+# WebSocket upgrade.  The demo checks the page's folder, pairs and tests
+# both pages, catches each up, has page A write while both are live (page
+# B is pushed it and answers; page A is pushed the answer), shows each
+# room as the page lays it out, and stops and starts home A's device port
+# (page A comes back by itself).  It prints what is really in the homes'
+# folders and what the pages printed and kept, and each scene passes or
+# fails.  It reads input/ first and writes a goodbye into output/ last.
+#
+# Node must be installed (version 22 or later): without it the demo says
+# so and stops with status 1 before starting anything.
+#
+# Every process opens sockets on loopback addresses only (127.0.0.2 and
+# .3).  The demo runs in a network namespace of its own (unshare -rn),
+# where it brings the namespace's loopback up itself, so nothing can
+# reach a network.  It stops every process it started and removes its
+# folder at the end.
+#
+# Exit status: 0 every scene ran in full, 1 a scene could not run (or no
+# Node), 2 none failed but some ran with a part missing.
+#
+# Usage (from any folder):
+#   phase-4-demo                 the project named below
+#   phase-4-demo <project dir>   another copy of the project
+
+DIR="/home/ritz/programs/rao-chat"
+if [ -n "${1:-}" ]; then
+    DIR="$1"
+fi
+
+if [ ! -d "${DIR}/src/phase-4-demo" ]; then
+    echo "phase-4-demo: ${DIR} does not look like the rao-chat project (no src/phase-4-demo)" >&2
+    exit 1
+fi
+
+# The scratch homes live in RAM: tmp/ points at /tmp/<project>, and inside it
+# shared-memory/ points at /dev/shm/<project>.  Make whichever piece is missing.
+PROJECT="$(basename "${DIR}")"
+mkdir -p "/dev/shm/${PROJECT}" "/tmp/${PROJECT}/tmp"
+if [ ! -e "/tmp/${PROJECT}/shared-memory" ]; then
+    ln -s "/dev/shm/${PROJECT}" "/tmp/${PROJECT}/shared-memory"
+fi
+if [ ! -e "${DIR}/tmp" ]; then
+    ln -s "/tmp/${PROJECT}" "${DIR}/tmp"
+fi
+
+if ! command -v node >/dev/null 2>&1; then
+    echo "phase-4-demo: Node is not installed, and it stands in for the browser here (the page's own scripts" \
+         "are run by src/web/tests/208-stand-in-browser.js); nothing was started" >&2
+    exit 1
+fi
+
+if unshare -rn true 2>/dev/null; then
+    # a network namespace with nothing in it: no packet can leave
+    exec unshare -rn luajit "${DIR}/src/phase-4-demo/227-phase-4-demo.lua" "${DIR}"
+fi
+echo "phase-4-demo: unshare -rn is not allowed here, so running without a network namespace" \
+     "(the demo opens loopback sockets only; the home starters are not run)" >&2
+exec luajit "${DIR}/src/phase-4-demo/227-phase-4-demo.lua" "${DIR}"

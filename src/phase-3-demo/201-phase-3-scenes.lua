@@ -598,4 +598,9 @@ M["edit"] = function(c)
 end
 -- }}}
 
+-- the helpers, for the phase 4 demo (409), which borrows this world
+M.helpers = { quote = quote, seconds = seconds, read_all = read_all, shell = shell, write_private = write_private,
+    wait_until = wait_until, alive = alive, listens = listens, holding = holding, compare = compare,
+    body_lines = body_lines, short = short }
+
 return M
